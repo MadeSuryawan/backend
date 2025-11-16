@@ -1,0 +1,180 @@
+[project]
+name = "fastapi-redis-cache"
+version = "1.0.0"
+description = "Seamless Redis caching integration for FastAPI with SlowAPI rate limiting support"
+readme = "README.md"
+requires-python = ">=3.13"
+authors = [{ name = "Your Name", email = "your.email@example.com" }]
+license = { text = "MIT" }
+keywords = ["fastapi", "redis", "cache", "rate-limiting", "slowapi"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "email-validator>=2.3.0",
+    "fastapi>=0.121.2",
+    "pydantic>=2.12.4",
+    "pydantic-settings>=2.12.0",
+    "redis>=7.0.1",
+    "rich>=14.2.0",
+    "slowapi>=0.1.9",
+    "uvicorn>=0.38.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pyrefly>=0.41.3",
+    "pytest>=9.0.1",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.0.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+exclude = [".git", "__pycache__", ".venv", "venv", ".env"]
+
+[tool.ruff.lint]
+select = [
+    "E",     # Pycodestyle errors (style issues)
+    "W",     # Pycodestyle warnings (style issues)
+    "C90",   # McCabe – complexity metric for functions
+    "N",     # PEP8 Naming – naming conventions
+    "D",     # Pydocstyle – docstring formatting
+    "UP",    # Pyupgrade – upgrades syntax to newer sPython versions
+    "YTT",   # Flake8-2020 – checks for Python 2020 best practices
+    "E4",    # Pycodestyle errors (part of E group)
+    "E7",    # Pycodestyle E7xx errors (naming, etc.)
+    "E9",    # Pycodestyle E9xx errors (syntax)
+    "F",     # Pyflakes – detects syntax errors and basic mistakes
+    "B",     # Flake8-bugbear – common bug patterns
+    "I",     # isort – import ordering checks
+    "ANN",   # flake8-annotations – enforces type annotation style
+    "TRY",   # Tryceratops – try/except usage suggestions
+    "FLY",   # Flynt – f-string conversion suggestions
+    "PL",    # Pylint – integration with Pylint conventions
+    "TID",   # Flake8-tidy-imports – enforces specific import styles (e.g., no relative imports)
+    "SIM",   # Flake8-simplify – code simplification hints
+    "Q",     # Flake8-quotes – enforces quote style consistency
+    "PIE",   # Flake8-pie – Python improvement suggestions
+    "C4",    # Flake8-comprehensions – best practices in comprehensions
+    "ISC",   # Flake8-implicit-str-concat – warns on implicit string concatenation
+    "ICN",   # Flake8-import-conventions – enforces conventional import aliases
+    "ASYNC", # Flake8-async – checks async/await usage
+    "S",     # Flake8-bandit – security issues
+    "BLE",   # Flake8-blind-except – flags bare excepts
+    "FBT",   # Flake8-boolean-trap – potential pitfalls with booleans
+    "B",     # Flake8-bugbear – common bug patterns
+    "A",     # Flake8-builtins – misuse of Python built-in names
+    "COM",   # Flake8-commas – trailing/comma issues
+]
+
+ignore = [
+    "FIX002", # Flake8-fixme - checks for TODO comments
+    "TD002",  # Flake8-todos - checks for TODO comments
+    "TD003",  # Flake8-todos - checks for TODO comments
+    "TD004",  # Flake8-todos - checks for TODO comments
+    "TD005",  # Flake8-todos - checks for TODO comments
+    "TD006",  # Flake8-todos - checks for TODO comments
+    # "F841",    # Local variable `e` is assigned to but never used
+    # "PERF203", # Perflint - performance-related checks
+    "G004", # Flake8-logging-format - logging format string issues
+    "F403", # Pyflakes - Checks for the use of wildcard imports.
+    # "A004",    # Flake8-builtins - built-in name used as variable
+    "F401",    # Pyflakes - imported but unused
+    "PLR2004", # Pylint - Checks for the use of unnamed numerical constants ("magic") values in comparisons.
+    # "D400",    # Pydocstyle - Missing docstring in public module
+    # "TRY300",  # Tryceratops - try/except usage suggestions
+    "D202", # Pydocstyle - blank-line-after-function 
+    "F405", # Pyflakes - Checks for names that might be undefined, but may also be defined in a wildcard import
+    "E501", # Pycodestyle - line too long
+    "D1",   # Pydocstyle - missing docstring in public module, class, or function
+    # "FBT003",  # Flake8-boolean-trap - boolean position value in function call
+    # "D203",    # Pydocstyle - one blank line required before class docstring
+    # "D212",    # Pydocstyle - summary line should be immediately after the opening quotes.
+    # "D401",    # Pydocstyle - Checks for docstring first lines that are not in an imperative mood.
+    # "S311",    # Flake8-bandit - Standard pseudo-random generators are not suitable for security/cryptographic purposes
+    # "PERF401", # Perflint - Checks for for loops that can be replaced by a list comprehension.
+    # "RET504",  # Flake8-return - Checks for variable assignments that immediately precede a return of the assigned variable
+    # "FA102",   # Flake8-future-annotations - Missing `from __future__ import annotations`, but uses PEP 604 union
+    "PLW0603", # Pylint - global-statement
+    # "UP006",   # 
+    "S101", # Flake8-bandit - Checks for uses of the assert keyword.
+    "S106", # Flake8-bandit - Checks for hardcoded password strings.
+    "S105", # Flake8-bandit - Checks for hardcoded password strings.
+    "S603", # Flake8-bandit - Checks for uses of the exec function.
+    "D413", # Pydocstyle - Checks for correct order of sections in a docstring.
+]
+
+# 3. Avoid trying to fix flake8-bugbear (`B`) violations.
+unfixable = ["B"]
+fixable = [
+    "Q000",
+    "COM812",
+    "PIE790",
+    "W293",
+    "D212",
+    "D205",
+    "ANN201",
+    "D415",
+] # List the rules you want to be fixable
+
+# 4. Ignore `E402` (import violations) in all `__init__.py` files, and in selected subdirectories.
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402"]
+"**/{tests,docs,tools}/*" = ["E402"]
+
+
+[tool.ruff.format]
+# 5. Use double quotes in `ruff format`.
+quote-style = "double"
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = [
+    "-v",
+    "-p",
+    "no:warnings",
+    "--import-mode=importlib",
+    "--strict-markers",
+    "--tb=short",
+    "--cov=app",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+]
+
+[tool.pyrefly]
+project-includes = ["**/*.py*", "**/*.ipynb"]
+project-excludes = [
+    "build",
+    "dist",
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "**/__pycache__",
+    "**/*venv/**",
+    "**/.[!/.]*/**",
+    "**/node_modules",
+]
