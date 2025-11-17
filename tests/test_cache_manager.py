@@ -1,9 +1,12 @@
 """Tests for cache manager."""
 
 from collections.abc import AsyncGenerator
+from unittest.mock import Mock, patch
 
 import pytest
 
+from app.clients.memory_client import MemoryClient
+from app.errors.exceptions import RedisConnectionError
 from app.managers.cache_manager import CacheManager
 
 
@@ -13,6 +16,8 @@ async def cache_manager() -> AsyncGenerator[CacheManager]:
     manager = CacheManager()
     try:
         await manager.initialize()
+        await manager.clear()  # Clear cache before each test
+        manager.reset_statistics()  # Reset statistics before each test
         yield manager
     finally:
         await manager.shutdown()
@@ -22,7 +27,7 @@ async def cache_manager() -> AsyncGenerator[CacheManager]:
 async def test_cache_manager_initialization(cache_manager: CacheManager) -> None:
     """Test cache manager initialization."""
     assert cache_manager is not None
-    assert cache_manager.redis_client is not None
+    assert cache_manager._client is not None
 
 
 @pytest.mark.asyncio
@@ -183,3 +188,21 @@ async def test_cache_clear_with_statistics_reset(cache_manager: CacheManager) ->
     assert stats_after["hits"] == 0
     assert stats_after["misses"] == 3  # Three get calls after clear all miss
     assert stats_after["sets"] == 0
+
+
+@pytest.mark.asyncio
+@patch("app.clients.redis_client.RedisClient.connect", side_effect=RedisConnectionError)
+async def test_cache_manager_fallback_to_memory(mock_connect: Mock) -> None:
+    """Test that CacheManager falls back to in-memory cache when Redis connection fails."""
+    manager = CacheManager()
+    await manager.initialize()
+
+    assert not manager.is_redis_available
+    assert isinstance(manager._client, MemoryClient)
+
+    # Test a basic operation
+    await manager.set("key", {"value": "test"}, namespace="fallback")
+    result = await manager.get("key", namespace="fallback")
+    assert result == {"value": "test"}
+
+    await manager.shutdown()

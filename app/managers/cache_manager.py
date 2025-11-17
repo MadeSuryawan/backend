@@ -5,9 +5,11 @@ from hashlib import sha256
 from logging import getLogger
 from typing import Any
 
+from app.clients.memory_client import MemoryClient
 from app.clients.redis_client import RedisClient
-from app.configs.settings import CacheConfig, RedisCacheConfig
+from app.configs.settings import CacheConfig, RedisCacheConfig, settings
 from app.data.statistics import CacheStatistics
+from app.errors.exceptions import RedisConnectionError
 from app.managers.cache_types import CacheCallback, CacheKey
 from app.utils import (
     compress,
@@ -25,74 +27,59 @@ class CacheManager:
 
     def __init__(self) -> None:
         """Initialize cache manager."""
-        self.config = RedisCacheConfig()
-        self.redis_client = RedisClient(self.config)
+        self.redis_client = RedisClient(RedisCacheConfig())
+        self.memory_client = MemoryClient()
+        self._client: RedisClient | MemoryClient = self.redis_client
+        self.is_redis_available = False
         self.cache_config = CacheConfig()
         self.statistics = CacheStatistics()
 
     async def initialize(self) -> None:
         """Initialize cache manager by connecting to Redis.
 
-        Raises:
-            RedisConnectionError: If connection fails.
+        If the Redis connection fails, it falls back to an in-memory cache.
         """
-        await self.redis_client.connect()
+        try:
+            await self.redis_client.connect()
+            self._client = self.redis_client
+            self.is_redis_available = True
+            logger.info("Redis connection successful. Cache is using Redis.")
+        except RedisConnectionError:
+            logger.warning("Redis connection failed. Falling back to in-memory cache.")
+            self._client = self.memory_client
+            self.is_redis_available = False
         logger.info("Cache manager initialized successfully.")
 
     async def shutdown(self) -> None:
-        """Shutdown cache manager by closing Redis connection."""
-        await self.redis_client.disconnect()
+        """Shutdown cache manager by closing the client connection."""
+        if isinstance(self._client, RedisClient):
+            await self._client.disconnect()
+        elif isinstance(self._client, MemoryClient):
+            await self._client.close()
         logger.info("Cache manager shutdown successfully.")
 
     def _build_key(self, key: str, namespace: str | None = None) -> CacheKey:
-        """Build full cache key with prefix and namespace.
-
-        Args:
-            key: Base cache key.
-            namespace: Optional namespace.
-
-        Returns:
-            Full cache key.
-        """
-        if namespace:
-            return f"{self.cache_config.key_prefix}{namespace}:{key}"
-        return f"{self.cache_config.key_prefix}{key}"
-
-    def _hash_key(self, key: str) -> str:
-        """Generate hash of key for long keys.
-
-        Args:
-            key: Cache key.
-
-        Returns:
-            SHA256 hash of key.
-        """
-        return sha256(key.encode()).hexdigest()
+        """Build full cache key with prefix and namespace."""
+        prefix = self.cache_config.key_prefix
+        return f"{prefix}:{namespace}:{key}" if namespace else f"{prefix}:{key}"
 
     async def get(
         self,
         key: str,
         namespace: str | None = None,
     ) -> object | None:
-        """Get value from cache.
-
-        Args:
-            key: Cache key.
-            namespace: Optional namespace.
-
-        Returns:
-            Cached value or None if not found.
-        """
+        """Get value from cache."""
         try:
             full_key = self._build_key(key, namespace)
-            cached_value = await self.redis_client.get(full_key)
+            cached_value = await self._client.get(full_key)
 
             if cached_value is None:
                 self.statistics.record_miss()
                 return None
 
             self.statistics.record_hit()
-            self.statistics.record_read(len(cached_value.encode("utf-8")))
+            read_bytes = len(cached_value.encode("utf-8")) if isinstance(cached_value, str) else 0
+            self.statistics.record_read(read_bytes)
 
             # Decompress if needed
             if isinstance(cached_value, str):
@@ -111,18 +98,7 @@ class CacheManager:
         ttl: int | None = None,
         namespace: str | None = None,
     ) -> bool:
-        """Set value in cache.
-
-        Args:
-            key: Cache key.
-            value: Value to cache.
-            ttl: Time to live in seconds. Uses default if not provided.
-            namespace: Optional namespace.
-            compress: Whether to compress. Uses config setting if not provided.
-
-        Returns:
-            True if successful.
-        """
+        """Set value in cache."""
         try:
             full_key = self._build_key(key, namespace)
             serialized = serialize(value)
@@ -138,7 +114,7 @@ class CacheManager:
             ex = ttl if ttl is not None else self.cache_config.default_ttl
             ex = min(ex, self.cache_config.max_ttl)
 
-            result = await self.redis_client.set(full_key, serialized, ex=ex)
+            result = await self._client.set(full_key, serialized, ex=ex)
             self.statistics.record_set(len(serialized.encode("utf-8")))
         except Exception:
             logger.exception(f"Cache set failed for key {key}")
@@ -147,18 +123,10 @@ class CacheManager:
         return result
 
     async def delete(self, *keys: str, namespace: str | None = None) -> int:
-        """Delete keys from cache.
-
-        Args:
-            *keys: Cache keys to delete.
-            namespace: Optional namespace.
-
-        Returns:
-            Number of keys deleted.
-        """
+        """Delete keys from cache."""
         try:
             full_keys = [self._build_key(key, namespace) for key in keys]
-            deleted_count = await self.redis_client.delete(*full_keys)
+            deleted_count = await self._client.delete(*full_keys)
             self.statistics.record_delete()
         except Exception:
             logger.exception("Cache delete failed")
@@ -167,18 +135,10 @@ class CacheManager:
         return deleted_count
 
     async def exists(self, *keys: str, namespace: str | None = None) -> int:
-        """Check if keys exist.
-
-        Args:
-            *keys: Cache keys to check.
-            namespace: Optional namespace.
-
-        Returns:
-            Number of keys that exist.
-        """
+        """Check if keys exist."""
         try:
             full_keys = [self._build_key(key, namespace) for key in keys]
-            return await self.redis_client.exists(*full_keys)
+            return await self._client.exists(*full_keys)
         except Exception:
             logger.exception("Cache exists check failed")
             self.statistics.record_error()
@@ -193,24 +153,13 @@ class CacheManager:
         *,
         force_refresh: bool = False,
     ) -> object:
-        """Get from cache or set using callback if not found.
-
-        Args:
-            key: Cache key.
-            callback: Async function to call if cache miss.
-            ttl: Time to live in seconds.
-            namespace: Optional namespace.
-            force_refresh: Force refresh from callback.
-
-        Returns:
-            Cached or freshly computed value.
-        """
+        """Get from cache or set using callback if not found."""
         if not force_refresh:
             try:
                 cached = await self.get(key, namespace)
                 if cached is not None:
                     return cached
-            except RuntimeError as e:
+            except RedisConnectionError as e:
                 logger.warning(f"Failed to retrieve from cache: {e}")
 
         # Call callback
@@ -219,20 +168,33 @@ class CacheManager:
         return value
 
     async def clear(self, namespace: str | None = None) -> int:
-        """Clear all cache entries, optionally for a namespace.
-
-        Args:
-            namespace: Optional namespace to clear.
-
-        Returns:
-            Number of keys deleted.
-        """
+        """Clear all cache entries, optionally for a namespace."""
         try:
-            # For now, flush entire database
-            # In production, consider using SCAN pattern matching
-            await self.redis_client.flush_db()
-            self.statistics.reset()
-            logger.info("Cache cleared successfully.")
+            if self.is_redis_available and isinstance(self._client, RedisClient):
+                prefix = self.cache_config.key_prefix
+                pattern = f"{prefix}:{namespace}:*" if namespace else f"{prefix}:*"
+                # Use scan_keys to get all matching keys
+                all_keys = []
+                cursor = 0
+                while True:
+                    cursor, keys = await self._client.scan_keys(pattern, cursor=cursor)
+                    all_keys.extend(keys)
+                    if cursor == 0:
+                        break
+
+                if all_keys:
+                    deleted_count = await self._client.delete(*all_keys)
+                    self.statistics.record_delete()
+                    logger.info(f"Cleared {deleted_count} keys for pattern '{pattern}'.")
+                self.statistics.reset() # Reset statistics after clearing Redis cache
+                return len(all_keys) if all_keys else 0
+
+            # Fallback for in-memory or if Redis is unavailable
+            if isinstance(self._client, MemoryClient):
+                await self._client.flush_all()
+                self.statistics.reset()
+                logger.info("In-memory cache cleared (flushed all).")
+                return 0  # MemoryClient flush_all doesn't return count
         except Exception:
             logger.exception("Cache clear failed")
             self.statistics.record_error()
@@ -252,7 +214,7 @@ class CacheManager:
         """
         try:
             full_key = self._build_key(key, namespace)
-            return await self.redis_client.expire(full_key, seconds)
+            return await self._client.expire(full_key, seconds)
         except Exception:
             logger.exception(f"Cache expire failed for key {key}")
             self.statistics.record_error()
@@ -270,20 +232,20 @@ class CacheManager:
         """
         try:
             full_key = self._build_key(key, namespace)
-            return await self.redis_client.ttl(full_key)
+            return await self._client.ttl(full_key)
         except Exception:
             logger.exception(f"Cache ttl check failed for key {key}")
             self.statistics.record_error()
             raise
 
     async def ping(self) -> bool | Awaitable[bool]:
-        """Ping Redis server.
+        """Ping the cache server.
 
         Returns:
-            True if server is reachable.
+            True if the server is reachable.
         """
         try:
-            return await self.redis_client.ping()
+            return await self._client.ping()
         except Exception:
             logger.exception("Cache ping failed")
             return False

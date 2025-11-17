@@ -57,7 +57,7 @@ class RedisClient:
             if self.config.ssl:
                 pool_kwargs["ssl"] = True
 
-            self._pool = ConnectionPool(**pool_kwargs)  # type: ignore[arg-type]
+            self._pool = ConnectionPool(**pool_kwargs)
             self._redis = Redis(connection_pool=self._pool)
             # Test connection with ping
             ping_result = self._redis.ping()
@@ -248,18 +248,34 @@ class RedisClient:
         return ping_result
 
     async def info(self) -> dict[str, Any]:
-        """Get Redis server info.
-
-        Returns:
-            Server info dictionary.
-
-        Raises:
-            RedisConnectionError: If operation fails.
-        """
+        """Get Redis server info."""
         try:
             info = await self.client.info()
             return info if isinstance(info, dict) else {}
         except RedisError as e:
             logger.exception("Failed to get server info")
             mssg = f"Cache info operation failed: {e}"
+            raise RedisConnectionError(mssg) from e
+
+    async def scan_keys(self, pattern: str, cursor: int = 0) -> tuple[int, list[str]]:
+        """Scan keys in the Redis database using the SCAN command.
+
+        Args:
+            pattern: Pattern to match keys against.
+            cursor: The cursor position to start scanning from.
+
+        Returns:
+            A tuple containing the new cursor and a list of keys found in this iteration.
+
+        Raises:
+            RedisConnectionError: If operation fails.
+        """
+        try:
+            new_cursor, keys = await self.client.scan(cursor, match=pattern)
+            return int(new_cursor), [
+                key.decode("utf-8") if isinstance(key, bytes) else key for key in keys
+            ]
+        except RedisError as e:
+            logger.exception(f"Failed to scan keys with pattern {pattern}")
+            mssg = f"Cache scan_keys operation failed for pattern {pattern}: {e}"
             raise RedisConnectionError(mssg) from e
