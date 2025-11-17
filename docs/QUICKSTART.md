@@ -5,7 +5,7 @@ Get started with the FastAPI Redis Cache in 5 minutes.
 ## Prerequisites
 
 - Python 3.11 or higher
-- Redis 6.0 or higher
+- Redis 6.0 or higher (optional, for distributed caching)
 - `uv` (recommended) or `pip`
 
 ## Installation
@@ -29,14 +29,16 @@ Get started with the FastAPI Redis Cache in 5 minutes.
 
 ## Running the Application
 
-1. **Start Redis**:
-    Make sure you have a Redis server running. You can use Docker for a quick setup:
+1. **Start Redis (Optional)**:
+    If you have a Redis server, make sure it's running. You can use Docker for a quick setup:
 
     ```bash
     docker run -d -p 6379:6379 -p 8081:8081 redis/redis-stack:latest
     ```
 
     This also provides a Redis Commander UI at `http://localhost:8081`.
+
+    > **Note**: If Redis is not available, the application will automatically fall back to a temporary in-memory cache.
 
 2. **Create a `.env` file**:
     Copy the `.env.example` to `.env` if it exists, or create a new one. The default settings should work with a local Redis instance.
@@ -126,7 +128,7 @@ Make the same request again.
 curl http://localhost:8000/items/1
 ```
 
-The response will be served instantly from Redis, and you will **not** see the "Fetching item..." message in the logs.
+The response will be served instantly from the cache (Redis or in-memory), and you will **not** see the "Fetching item..." message in the logs.
 
 ### Step 3: Check Cache Statistics
 

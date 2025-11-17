@@ -44,8 +44,8 @@ class CacheManager:
             self._client = self.redis_client
             self.is_redis_available = True
             logger.info("Redis connection successful. Cache is using Redis.")
-        except RedisConnectionError:
-            logger.warning("Redis connection failed. Falling back to in-memory cache.")
+        except RedisConnectionError as e:
+            logger.warning(f"Redis connection failed: {e}. Falling back to in-memory cache.")
             self._client = self.memory_client
             self.is_redis_available = False
         logger.info("Cache manager initialized successfully.")
@@ -186,7 +186,7 @@ class CacheManager:
                     deleted_count = await self._client.delete(*all_keys)
                     self.statistics.record_delete()
                     logger.info(f"Cleared {deleted_count} keys for pattern '{pattern}'.")
-                self.statistics.reset() # Reset statistics after clearing Redis cache
+                self.statistics.reset()  # Reset statistics after clearing Redis cache
                 return len(all_keys) if all_keys else 0
 
             # Fallback for in-memory or if Redis is unavailable

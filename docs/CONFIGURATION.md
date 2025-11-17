@@ -67,6 +67,10 @@ cache_config = CacheConfig(
 )
 ```
 
+## In-Memory Cache Fallback (Zero-Configuration)
+
+The in-memory cache fallback is a **zero-configuration** feature. It is automatically enabled if the application fails to connect to the Redis server on startup. There are no specific environment variables or settings to configure it.
+
 ## Environment Variables
 
 Configure the application by setting environment variables. The variables are prefixed based on the configuration class they belong to.

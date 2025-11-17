@@ -2,14 +2,15 @@
 
 ## Project Overview
 
-A production-ready, type-safe Redis caching implementation for FastAPI. This project demonstrates best practices in modern Python development, including a modular architecture, full type hinting, and seamless integration with the FastAPI framework.
+A production-ready, type-safe Redis caching implementation for FastAPI. This project demonstrates best practices in modern Python development, including a modular architecture, full type hinting, and a resilient in-memory fallback mechanism.
 
 ## Key Features Implemented
 
 ### 1. **Core Caching System**
 
 - ✅ Async Redis client with robust connection pooling (`app/clients/redis_client.py`).
-- ✅ High-level `CacheManager` for orchestrating all cache operations (`app/managers/cache_manager.py`).
+- ✅ **In-Memory Fallback**: A seamless, zero-configuration in-memory cache (`app/clients/memory_client.py`) that is automatically used if the Redis connection fails.
+- ✅ High-level `CacheManager` for orchestrating all cache operations and managing the fallback logic (`app/managers/cache_manager.py`).
 - ✅ Automatic JSON serialization with optional GZIP compression (`app/utils/cache_serializer.py`).
 - ✅ Namespace support for cache key organization and targeted clearing.
 - ✅ Configurable TTL per operation, with global defaults.
@@ -36,7 +37,7 @@ A production-ready, type-safe Redis caching implementation for FastAPI. This pro
 - ✅ Comprehensive error handling that prevents cache failures from crashing the app.
 - ✅ Detailed logging with `rich` for better readability.
 - ✅ Code quality enforced by `ruff` (linting, formatting, import sorting).
-- ✅ Unit and integration tests using `pytest` and `pytest-asyncio`.
+- ✅ Unit and integration tests using `pytest` and `pytest-asyncio`, including tests for the fallback mechanism.
 
 ## Project Structure
 
@@ -45,7 +46,8 @@ app/
 ├── __init__.py
 ├── main.py                 # FastAPI app setup and main endpoints
 ├── clients/
-│   └── redis_client.py     # Redis connection management
+│   ├── redis_client.py     # Redis connection management
+│   └── memory_client.py    # In-memory cache client (for fallback)
 ├── configs/
 │   └── settings.py         # Pydantic configuration models
 ├── data/
@@ -124,6 +126,6 @@ The application is built with production readiness in mind, featuring:
 - ✅ Structured logging for better observability.
 - ✅ Health check endpoints for monitoring.
 - ✅ Secure header middleware.
-- ✅ Resilient error handling.
+- ✅ Resilient error handling and in-memory fallback.
 
 This project serves as a robust and maintainable foundation for a caching layer in any FastAPI application.

@@ -13,14 +13,15 @@ A seamless, production-ready Redis caching implementation for FastAPI with SlowA
 - **SlowAPI Integration**: Works seamlessly with existing rate limiters
 - **Type Hints**: Full type hints for better IDE support
 - **Error Handling**: Comprehensive exception handling and logging
+- **In-Memory Fallback**: Automatically falls back to an in-memory cache if Redis is unavailable
 - **Management Routes**: Built-in endpoints for cache inspection and management
 
 ## Installation
 
 ### Prerequisites
 
-- Python 3.11+
-- Redis 6.0+
+- Python 3.13+
+- Redis 6.0+ (optional, for Redis caching)
 - `uv` (recommended) or `pip`
 
 ### Setup
@@ -63,6 +64,7 @@ add_cache_routes(app, cache_manager)
 @app.get("/items")
 @cached(cache_manager, ttl=600, namespace="items")
 async def get_items():
+    # This endpoint will be cached. If Redis is down, it will use the in-memory cache.
     return {"items": []}
 ```
 
@@ -93,6 +95,14 @@ config = Settings(
 # For demonstration, assuming it's already configured globally or passed in.
 # cache_manager.initialize(config.redis, config.cache)
 ```
+
+## In-Memory Fallback
+
+If the Redis server is unavailable upon application startup, the `CacheManager` will automatically fall back to a simple in-memory cache. This ensures that the application can continue to function without a hard dependency on Redis, although the cache will be non-persistent and local to each application instance.
+
+- **Automatic**: No configuration is needed to enable the fallback.
+- **Resilience**: Your application remains operational even if Redis is down.
+- **Testing**: The fallback mechanism is thoroughly tested using mocking to simulate Redis connection failures.
 
 ## Decorators
 
@@ -289,6 +299,12 @@ pytest tests/ -v
 # With coverage
 pytest tests/ --cov=app --cov-report=html
 ```
+
+### In-Memory Cache and Fallback Testing
+
+The in-memory cache is tested in `tests/test_memory_client.py`, which covers all of its methods.
+
+The fallback mechanism is tested in `tests/test_cache_manager.py` in the `test_cache_manager_fallback_to_memory` test. This test uses `unittest.mock.patch` to simulate a `RedisConnectionError` being raised when the `RedisClient.connect` method is called. This forces the `CacheManager` to fall back to the `MemoryClient`, and the test then asserts that the `CacheManager` is using the `MemoryClient` and that caching operations still work as expected.
 
 ## Best Practices
 

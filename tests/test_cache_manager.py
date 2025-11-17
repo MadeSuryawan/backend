@@ -191,7 +191,10 @@ async def test_cache_clear_with_statistics_reset(cache_manager: CacheManager) ->
 
 
 @pytest.mark.asyncio
-@patch("app.clients.redis_client.RedisClient.connect", side_effect=RedisConnectionError)
+@patch(
+    "app.clients.redis_client.RedisClient.connect",
+    side_effect=RedisConnectionError("Test error"),
+)
 async def test_cache_manager_fallback_to_memory(mock_connect: Mock) -> None:
     """Test that CacheManager falls back to in-memory cache when Redis connection fails."""
     manager = CacheManager()

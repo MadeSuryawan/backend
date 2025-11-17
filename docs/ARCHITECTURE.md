@@ -2,7 +2,7 @@
 
 ## Overview
 
-The FastAPI Redis Cache implementation is designed with a modular, multi-layered architecture that emphasizes separation of concerns, maintainability, and performance.
+The FastAPI Redis Cache implementation is designed with a modular, multi-layered architecture that emphasizes separation of concerns, maintainability, and performance. It includes a resilient in-memory fallback mechanism to ensure high availability.
 
 ## Module Structure
 
@@ -11,7 +11,8 @@ app/
 ├── __init__.py
 ├── main.py                 # FastAPI app setup and main endpoints
 ├── clients/
-│   └── redis_client.py     # Redis connection management
+│   ├── redis_client.py     # Redis connection management
+│   └── memory_client.py    # In-memory cache client (for fallback)
 ├── configs/
 │   └── settings.py         # Pydantic configuration models
 ├── data/
@@ -43,13 +44,10 @@ Pydantic-based settings management for:
 
 Benefits include environment variable support, type validation, and runtime safety.
 
-### 2. Client Layer (`app/clients/redis_client.py`)
+### 2. Client Layer (`app/clients/`)
 
-An async wrapper around the `redis-py` library that provides:
-
-- Robust connection pooling.
-- Graceful error handling and health checks.
-- Type-safe, low-level Redis commands (`get`, `set`, `delete`).
+- **`redis_client.py`**: An async wrapper around the `redis-py` library that provides robust connection pooling, graceful error handling, and type-safe, low-level Redis commands.
+- **`memory_client.py`**: A simple, dictionary-based in-memory cache client that mimics the `RedisClient`'s API. It serves as a seamless, zero-configuration fallback when Redis is unavailable.
 
 ### 3. Utilities Layer (`app/utils/`)
 
@@ -67,28 +65,9 @@ A thread-safe class for tracking cache statistics:
 
 ### 5. Manager Layer (`app/managers/cache_manager.py`)
 
-The `CacheManager` is the heart of the caching system, providing a high-level API for all caching operations:
+The `CacheManager` is the heart of the caching system, providing a high-level API for all caching operations. It orchestrates the clients, serializer, and statistics tracker.
 
-```python
-# Core operations
-await cache_manager.get(key, namespace)
-await cache_manager.set(key, value, ttl, namespace, compress)
-await cache_manager.delete(key, namespace)
-await cache_manager.exists(key)
-
-# Advanced operations
-await cache_manager.get_or_set(key, callback, ttl, namespace, force_refresh)
-await cache_manager.expire(key, seconds)
-await cache_manager.ttl(key)
-await cache_manager.clear(namespace)
-
-# Lifecycle and monitoring
-await cache_manager.initialize()
-await cache_manager.shutdown()
-cache_manager.get_statistics()
-```
-
-It integrates the Redis client, serializer, and statistics tracker to provide a cohesive caching service.
+**Key Responsibility**: During initialization, it attempts to connect to Redis. If the connection fails, it automatically switches to the `MemoryClient`, ensuring the caching functionality remains available.
 
 ### 6. Decorators Layer (`app/decorators/caching.py`)
 
@@ -97,25 +76,31 @@ Provides easy-to-use decorators for applying caching logic to FastAPI endpoints:
 - **`@cached`**: Automatically caches the result of an endpoint.
 - **`@cache_busting`**: Invalidates one or more cache keys when a mutation endpoint (e.g., POST, PUT, DELETE) is called.
 
-Both decorators support custom key generation logic through `key_builder` functions.
-
 ### 7. Middleware & Lifespan (`app/middleware/middleware.py`)
 
 - **Lifespan Manager**: The `lifespan` function handles the application's startup and shutdown events, ensuring that the `CacheManager` and its connection pool are initialized and closed gracefully.
-- **Standard Middleware**: Includes middleware for request logging, security headers, CORS, and GZip compression.
 
 ### 8. Routes Layer (`app/routes/cache.py`)
 
-Exposes administrative API endpoints for managing and monitoring the cache:
-
-- `GET /cache/stats`: View current cache statistics.
-- `GET /cache/ping`: Health check for the Redis connection.
-- `DELETE /cache/clear`: Purge all keys from the cache.
-- `POST /cache/clear/{namespace}`: Purge keys from a specific namespace.
+Exposes administrative API endpoints for managing and monitoring the cache, which work with both Redis and the in-memory fallback.
 
 ## Data Flow
 
-### Cache Hit Flow
+### Cache Initialization Flow
+
+```plaintext
+Application Startup
+  ↓
+Lifespan Event
+  ↓
+CacheManager.initialize()
+  ↓
+Attempt RedisClient.connect()
+  ├── Success: Use RedisClient
+  └── Failure (RedisConnectionError): Use MemoryClient (Fallback)
+```
+
+### Cache Hit Flow (Redis or In-Memory)
 
 ```plaintext
 Request
@@ -126,14 +111,14 @@ Generate cache key
   ↓
 CacheManager.get(key)
   ↓
-RedisClient.get(key)
+ActiveClient.get(key) (RedisClient or MemoryClient)
   ↓
 Decompress (if needed) & Deserialize
   ↓
 Return cached response to client
 ```
 
-### Cache Miss Flow
+### Cache Miss Flow (Redis or In-Memory)
 
 ```plaintext
 Request
@@ -152,25 +137,7 @@ CacheManager.set(key, result)
   ↓
 Serialize & Compress (if needed)
   ↓
-RedisClient.set(key, value, ex=ttl)
-  ↓
-Return response to client
-```
-
-### Cache Busting Flow
-
-```plaintext
-Mutation Request (POST/PUT/DELETE)
-  ↓
-Execute endpoint function
-  ↓
-@cache_busting decorator
-  ↓
-Generate keys to invalidate
-  ↓
-CacheManager.delete(*keys)
-  ↓
-RedisClient.delete(*keys)
+ActiveClient.set(key, value, ex=ttl)
   ↓
 Return response to client
 ```
@@ -188,4 +155,4 @@ Exception
       └─ ...and others
 ```
 
-The system is designed to be resilient; a cache failure will be logged but will not crash the application. The endpoint will execute as if it were a cache miss.
+The system is designed to be resilient. If Redis is the active client and a command fails, the error is logged, and the operation proceeds as a cache miss. If the `CacheManager` has fallen back to the in-memory cache, operations are generally safe from I/O errors.
