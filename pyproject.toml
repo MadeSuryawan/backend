@@ -155,6 +155,8 @@ addopts = [
     "-v",
     "-p",
     "no:warnings",
+    "--cache-clear",
+    "--capture=tee-sys",
     "--import-mode=importlib",
     "--strict-markers",
     "--tb=short",

@@ -1,33 +1,33 @@
 """Main cache manager for Redis caching operations."""
 
-import hashlib
-import logging
-from collections.abc import Awaitable, Coroutine
+from collections.abc import Awaitable
+from hashlib import sha256
+from logging import getLogger
 from typing import Any
 
 from app.clients.redis_client import RedisClient
-from app.configs.config import ApplicationConfig, CacheConfig
-from app.errors.exceptions import RedisConnectionError
-from app.serializer import CacheSerializer
-from app.statistics import CacheStatistics
-from app.types.types import CacheCallback, CacheKey
+from app.configs.settings import CacheConfig, RedisCacheConfig
+from app.data.statistics import CacheStatistics
+from app.managers.cache_types import CacheCallback, CacheKey
+from app.utils import (
+    compress,
+    decompress,
+    deserialize,
+    do_compress,
+    serialize,
+)
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 
 class CacheManager:
     """Main cache manager for Redis operations with advanced features."""
 
     def __init__(self) -> None:
-        """Initialize cache manager.
-
-        Args:
-            config: Application configuration.
-        """
-        self.config = ApplicationConfig()
-        self.redis_client = RedisClient(self.config.redis)
-        self.cache_config = self.config.cache
-        self.serializer = CacheSerializer()
+        """Initialize cache manager."""
+        self.config = RedisCacheConfig()
+        self.redis_client = RedisClient(self.config)
+        self.cache_config = CacheConfig()
         self.statistics = CacheStatistics()
 
     async def initialize(self) -> None:
@@ -67,13 +67,13 @@ class CacheManager:
         Returns:
             SHA256 hash of key.
         """
-        return hashlib.sha256(key.encode()).hexdigest()
+        return sha256(key.encode()).hexdigest()
 
     async def get(
         self,
         key: str,
         namespace: str | None = None,
-    ) -> Any:
+    ) -> object | None:
         """Get value from cache.
 
         Args:
@@ -96,9 +96,9 @@ class CacheManager:
 
             # Decompress if needed
             if isinstance(cached_value, str):
-                cached_value = self.serializer.decompress(cached_value)
+                cached_value = decompress(cached_value)
 
-            return self.serializer.deserialize(cached_value)
+            return deserialize(cached_value)
         except Exception:
             logger.exception(f"Cache get failed for key {key}")
             self.statistics.record_error()
@@ -107,11 +107,9 @@ class CacheManager:
     async def set(
         self,
         key: str,
-        value: Any,
+        value: dict[str, Any],
         ttl: int | None = None,
         namespace: str | None = None,
-        *,
-        compress: bool | None = None,
     ) -> bool:
         """Set value in cache.
 
@@ -127,17 +125,14 @@ class CacheManager:
         """
         try:
             full_key = self._build_key(key, namespace)
-            serialized = self.serializer.serialize(value)
+            serialized = serialize(value)
 
             # Determine compression
-            should_compress = (
-                compress if compress is not None else self.cache_config.compression_enabled
-            )
-            if should_compress and self.serializer.should_compress(
+            if self.cache_config.compression_enabled and do_compress(
                 serialized,
                 self.cache_config.compression_threshold,
             ):
-                serialized = self.serializer.compress(serialized)
+                serialized = compress(serialized)
 
             # Set expiration
             ex = ttl if ttl is not None else self.cache_config.default_ttl
@@ -197,7 +192,7 @@ class CacheManager:
         namespace: str | None = None,
         *,
         force_refresh: bool = False,
-    ) -> Coroutine[Any, Any, Any]:
+    ) -> object:
         """Get from cache or set using callback if not found.
 
         Args:

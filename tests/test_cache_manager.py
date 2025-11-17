@@ -113,7 +113,7 @@ async def test_cache_statistics(cache_manager: CacheManager) -> None:
     cache_manager.reset_statistics()
 
     # Perform operations
-    await cache_manager.set("key1", "value1")
+    await cache_manager.set("key1", {"data": "value1"})
     await cache_manager.get("key1")  # Hit
     await cache_manager.get("key2")  # Miss
 
@@ -135,8 +135,8 @@ async def test_cache_ping(cache_manager: CacheManager) -> None:
 async def test_cache_clear(cache_manager: CacheManager) -> None:
     """Test cache clear operation."""
     # Set multiple values
-    await cache_manager.set("key1", "value1")
-    await cache_manager.set("key2", "value2")
+    await cache_manager.set("key1", {"data": "value1"})
+    await cache_manager.set("key2", {"data": "value2"})
 
     # Clear cache
     await cache_manager.clear()
@@ -155,9 +155,9 @@ async def test_cache_clear_with_statistics_reset(cache_manager: CacheManager) ->
     cache_manager.reset_statistics()
 
     # Set multiple values and perform operations
-    await cache_manager.set("key1", "value1")
-    await cache_manager.set("key2", "value2")
-    await cache_manager.set("key3", "value3")
+    await cache_manager.set("key1", {"data": "value1"})
+    await cache_manager.set("key2", {"data": "value2"})
+    await cache_manager.set("key3", {"data": "value3"})
     await cache_manager.get("key1")  # Hit
     await cache_manager.get("key4")  # Miss
 

@@ -137,3 +137,5 @@ dmypy.json
 .env.*.local
 redis/
 *.db
+
+logs/

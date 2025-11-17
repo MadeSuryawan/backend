@@ -61,21 +61,6 @@ async def get_cache_stats() -> CacheStatsResponse:
         return CacheStatsResponse(status="error", data={"message": str(e)})
 
 
-@router.delete("/clear", response_model=CacheClearResponse, tags=["cache"])
-async def clear_cache() -> CacheClearResponse:
-    """Clear all cache entries.
-
-    Returns:
-        Clear operation result.
-    """
-    try:
-        await cache_manager.clear()
-        return CacheClearResponse(status="success", message="Cache cleared successfully")
-    except Exception as e:
-        logger.exception("Failed to clear cache")
-        return CacheClearResponse(status="error", message=str(e), error_code=500)
-
-
 @router.get("/ping", response_model=CachePingResponse, tags=["cache"])
 async def ping_cache() -> CachePingResponse:
     """Ping cache server.
@@ -110,6 +95,21 @@ async def reset_stats() -> CacheResetStatsResponse:
         logger.exception("Failed to reset cache stats")
         return CacheResetStatsResponse(status="error", message=str(e), error_code=500)
     return CacheResetStatsResponse(status="success", message="Cache statistics reset")
+
+
+@router.delete("/clear", response_model=CacheClearResponse, tags=["cache"])
+async def clear_cache() -> CacheClearResponse:
+    """Clear all cache entries.
+
+    Returns:
+        Clear operation result.
+    """
+    try:
+        await cache_manager.clear()
+        return CacheClearResponse(status="success", message="Cache cleared successfully")
+    except Exception as e:
+        logger.exception("Failed to clear cache")
+        return CacheClearResponse(status="error", message=str(e), error_code=500)
 
 
 def create_cache_error_handler(app: FastAPI) -> None:

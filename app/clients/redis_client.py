@@ -9,7 +9,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import RedisError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
-from app.configs.config import RedisCacheConfig
+from app.configs.settings import RedisCacheConfig
 
 logger = getLogger(__name__)
 

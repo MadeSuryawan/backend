@@ -8,7 +8,6 @@ from logging import getLogger
 from typing import Any
 
 from app.managers.cache_manager import CacheManager
-from app.types.types import CacheCallback
 
 logger = getLogger(__name__)
 
@@ -18,8 +17,6 @@ def cached(
     ttl: int | None = None,
     namespace: str | None = None,
     key_builder: Callable[..., str] | None = None,
-    *,
-    compress: bool | None = None,
 ) -> Callable:
     """FastAPI endpoint result caching decorator.
 
@@ -28,7 +25,6 @@ def cached(
         ttl: Time to live in seconds.
         namespace: Cache namespace.
         key_builder: Custom function to build cache key from args/kwargs.
-        compress: Whether to compress cached values.
 
     Returns:
         Decorated function.
@@ -42,7 +38,7 @@ def cached(
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        async def wrapper(*args: list[Any], **kwargs: dict[str, Any]) -> Any:
+        async def wrapper(*args: list[Any], **kwargs: dict[str, Any]) -> object:
             # Build cache key
             if key_builder:
                 cache_key = key_builder(*args, **kwargs)
@@ -68,7 +64,6 @@ def cached(
                     result,
                     ttl=ttl,
                     namespace=namespace,
-                    compress=compress,
                 )
                 logger.debug(f"Cached result for key: {cache_key}")
             except RuntimeError as e:
@@ -107,7 +102,7 @@ def cache_busting(
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
-        async def wrapper(*args: list[Any], **kwargs: dict[str, Any]) -> Any:
+        async def wrapper(*args: list[Any], **kwargs: dict[str, Any]) -> object:
             # Execute function
             result = await func(*args, **kwargs)
 

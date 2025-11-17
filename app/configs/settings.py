@@ -5,6 +5,7 @@ values for the BaliBlissed backend application.
 """
 
 from pathlib import Path
+from typing import Literal
 
 # from google.genai.types import (
 #     GenerateContentConfig,
@@ -101,6 +102,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    APP_NAME: str = "BaliBlissed FastAPI Backend"
+    DEBUG: bool = False
+
     # AI Configuration
     GEMINI_API_KEY: str | None = None
     AI_REQUEST_TIMEOUT: int = 60  # seconds
@@ -110,7 +114,7 @@ class Settings(BaseSettings):
 
     # Environment
     ENVIRONMENT: str = "development"
-    LOG_TO_FILE: bool = False
+    LOG_TO_FILE: bool = True
     PRODUCTION_FRONTEND_URL: str | None = None
 
     # Email Configuration
@@ -161,3 +165,37 @@ def no_email_config_error() -> None:
 #     print(f"Configuration error: {e}")
 #     raise
 settings = Settings()
+
+
+class RedisCacheConfig(BaseSettings):
+    """Redis cache configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="REDIS_", case_sensitive=False)
+
+    host: str = settings.REDIS_HOST
+    port: int = settings.REDIS_PORT
+    db: int = settings.REDIS_DB
+    password: str | None = settings.REDIS_PASSWORD
+    ssl: bool = False
+    socket_timeout: float = 5.0
+    socket_connect_timeout: float = 5.0
+    socket_keepalive: bool = True
+    health_check_interval: int = 30
+    max_connections: int = 50
+    decode_responses: bool = True
+    encoding: str = "utf-8"
+
+
+class CacheConfig(BaseSettings):
+    """Cache configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="CACHE_", case_sensitive=False)
+
+    default_ttl: int = 3600  # 1 hour
+    max_ttl: int = 86400  # 24 hours
+    key_prefix: str = "cache:"
+    compression_enabled: bool = True
+    compression_threshold: int = 1024  # bytes
+    strategy: Literal["LRU", "FIFO"] = "LRU"
+    enable_statistics: bool = True
+    cleanup_interval: int = 300  # 5 minutes

@@ -8,33 +8,31 @@ cleanup.
 
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from logging import (
-    INFO,
-    FileHandler,
-    NullHandler,
-    StreamHandler,
-    basicConfig,
-    getLogger,
-)
+from logging import basicConfig, getLogger
+from pathlib import Path
 from time import time
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from rich.logging import RichHandler
 
 from app.configs.settings import settings
 from app.managers.cache_manager import cache_manager
+from app.utils.helpers import file_logger
+
+if log_to_file := settings.LOG_TO_FILE:
+    Path("logs").mkdir(parents=True, exist_ok=True)
 
 # --- Logging Configuration ---
 basicConfig(
-    level=INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        StreamHandler(),
-        FileHandler("logs/app.log") if settings.LOG_TO_FILE else NullHandler(),
-    ],
+    level="NOTSET",
+    format="%(message)s",
+    datefmt="%X",
+    handlers=[RichHandler(rich_tracebacks=True)],
 )
-logger = getLogger(__name__)
+logger = getLogger("rich")
+file_logger(logger)
 
 
 @asynccontextmanager
@@ -46,8 +44,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Initialize services
     try:
-        # if settings.LOG_TO_FILE:
-        #     logger.info("Logging to file enabled")
+        if log_to_file:
+            logger.info("Logging to file enabled")
 
         await cache_manager.initialize()
         logger.info("Cache manager started")

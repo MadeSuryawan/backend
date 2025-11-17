@@ -1,13 +1,14 @@
+# app/main.py
 """FastAPI Redis Cache - Seamless caching integration with Redis for FastAPI."""
 
-import logging
+from logging import getLogger
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.decorators.decorators import cache_busting, cached
+from app.decorators.caching import cache_busting, cached
 from app.managers.cache_manager import cache_manager
 from app.middleware.middleware import (
     add_compression,
@@ -17,10 +18,10 @@ from app.middleware.middleware import (
     lifespan,
 )
 from app.routes.cache import router as cache_router
+from app.utils.helpers import file_logger
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = file_logger(getLogger(__name__))
 
 # FastAPI app
 app = FastAPI(
@@ -73,20 +74,21 @@ async def root() -> dict[str, str]:
     return {"message": "Welcome to FastAPI Redis Cache"}
 
 
-@app.get("/items", tags=["items"])
-@limiter.limit("100/minute")
-@cached(cache_manager, ttl=600, namespace="items")
-async def get_all_items(request: Request) -> dict[str, list[Item]]:
-    """Get all items with caching.
+@app.post("/create-item", tags=["items"])
+@limiter.limit("50/minute")
+@cache_busting(cache_manager, keys=["get_all_items"], namespace="items")
+async def create_item(item: Item, request: Request) -> Item:
+    """Create new item with cache busting.
 
-    Rate limited to 100 requests per minute.
-    Results cached for 10 minutes.
+    Rate limited to 50 requests per minute.
+    Invalidates the items list cache.
     """
-    logger.info("Fetching all items")
-    return {"items": list(items_db.values())}
+    logger.info(f"Creating item: {item.name}")
+    items_db[item.id] = item
+    return item
 
 
-@app.get("/items/{item_id}", tags=["items"])
+@app.get("/get-item/{item_id}", tags=["items"])
 @limiter.limit("200/minute")
 @cached(
     cache_manager,
@@ -106,21 +108,20 @@ async def get_item(item_id: int, request: Request) -> Item:
     return items_db[item_id]
 
 
-@app.post("/items", tags=["items"])
-@limiter.limit("50/minute")
-@cache_busting(cache_manager, keys=["get_all_items"], namespace="items")
-async def create_item(item: Item, request: Request) -> Item:
-    """Create new item with cache busting.
+@app.get("/all-items", tags=["items"])
+@limiter.limit("100/minute")
+@cached(cache_manager, ttl=600, namespace="items")
+async def get_all_items(request: Request) -> dict[str, list[Item]]:
+    """Get all items with caching.
 
-    Rate limited to 50 requests per minute.
-    Invalidates the items list cache.
+    Rate limited to 100 requests per minute.
+    Results cached for 10 minutes.
     """
-    logger.info(f"Creating item: {item.name}")
-    items_db[item.id] = item
-    return item
+    logger.info("Fetching all items")
+    return {"items": list(items_db.values())}
 
 
-@app.put("/items/{item_id}", tags=["items"])
+@app.put("/update-item/{item_id}", tags=["items"])
 @limiter.limit("50/minute")
 @cache_busting(
     cache_manager,
@@ -144,7 +145,7 @@ async def update_item(item_id: int, item_update: ItemUpdate, request: Request) -
     return updated_item
 
 
-@app.delete("/items/{item_id}", tags=["items"])
+@app.delete("/delete-item/{item_id}", tags=["items"])
 @limiter.limit("50/minute")
 @cache_busting(
     cache_manager,
