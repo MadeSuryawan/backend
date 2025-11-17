@@ -19,8 +19,9 @@ A seamless, production-ready Redis caching implementation for FastAPI with SlowA
 
 ### Prerequisites
 
-- Python 3.13+
+- Python 3.11+
 - Redis 6.0+
+- `uv` (recommended) or `pip`
 
 ### Setup
 
@@ -33,13 +34,11 @@ cd fastapi-redis-cache
 - Install dependencies (requires Python environment):
 
 ```bash
+# Using uv (recommended)
+uv pip install -e ".[dev]"
+
+# Or using pip
 pip install -e ".[dev]"
-```
-
-Or install specific dependencies:
-
-```bash
-pip install fastapi redis pydantic pydantic-settings slowapi httpx pytest pytest-asyncio
 ```
 
 ## Quick Start
@@ -48,12 +47,14 @@ pip install fastapi redis pydantic pydantic-settings slowapi httpx pytest pytest
 
 ```python
 from fastapi import FastAPI
-from src import setup_cache, add_cache_routes, cached
+from app.decorators.caching import cached
+from app.managers.cache_manager import CacheManager
+from app.routes.cache import add_cache_routes
 
 app = FastAPI()
 
 # Setup cache
-cache_manager = setup_cache(app)
+cache_manager = CacheManager()
 
 # Add cache management routes
 add_cache_routes(app, cache_manager)
@@ -68,9 +69,9 @@ async def get_items():
 ### Configuration
 
 ```python
-from src import ApplicationConfig, RedisCacheConfig, CacheConfig
+from app.configs.settings import Settings, RedisCacheConfig, CacheConfig
 
-config = ApplicationConfig(
+config = Settings(
     debug=False,
     environment="production",
     redis=RedisCacheConfig(
@@ -88,7 +89,9 @@ config = ApplicationConfig(
     ),
 )
 
-cache_manager = setup_cache(app, config)
+# The cache_manager should be initialized with the config, typically in the lifespan event
+# For demonstration, assuming it's already configured globally or passed in.
+# cache_manager.initialize(config.redis, config.cache)
 ```
 
 ## Decorators
@@ -96,6 +99,8 @@ cache_manager = setup_cache(app, config)
 ### @cached - Cache endpoint results
 
 ```python
+from app.decorators.caching import cached
+
 @app.get("/items/{item_id}")
 @cached(cache_manager, ttl=300, namespace="items")
 async def get_item(item_id: int):
@@ -118,20 +123,22 @@ async def get_item(item_id: int):
 ### @cache_busting - Invalidate cache on mutations
 
 ```python
+from app.decorators.caching import cache_busting
+
 @app.post("/items")
-@cache_busting(cache_manager, keys=["items_list"], namespace="items")
-async def create_item(item: Item):
-    # Invalidates the items_list cache entry
+@cache_busting(cache_manager, namespace="items") # Clears the entire 'items' namespace
+async def create_item(item: dict):
+    # Invalidates the 'items' namespace
     return item
 
-# With custom key builder
+# With custom key builder to bust specific keys
 @app.put("/items/{item_id}")
 @cache_busting(
     cache_manager,
-    key_builder=lambda item_id, **kw: [f"item_{item_id}", "items_list"],
+    key_builder=lambda item_id, **kw: [f"item_{item_id}", "items_list"], # Busts specific item and a list
     namespace="items",
 )
-async def update_item(item_id: int, item: Item):
+async def update_item(item_id: int, item: dict):
     return item
 ```
 
@@ -144,10 +151,10 @@ await cache_manager.set(key, value, ttl=3600, namespace="items")
 # Get value
 value = await cache_manager.get(key, namespace="items")
 
-# Delete keys
+# Delete keys (can take multiple keys)
 deleted = await cache_manager.delete(key1, key2, namespace="items")
 
-# Check existence
+# Check existence (can take multiple keys)
 exists = await cache_manager.exists(key1, key2, namespace="items")
 
 # Get or set (cache-aside pattern)
@@ -155,15 +162,16 @@ value = await cache_manager.get_or_set(
     key,
     callback=lambda: expensive_operation(),
     ttl=3600,
+    namespace="items", # Added namespace for consistency
     force_refresh=False
 )
 
 # TTL operations
-ttl = await cache_manager.ttl(key)
-await cache_manager.expire(key, seconds=3600)
+ttl = await cache_manager.ttl(key, namespace="items") # Added namespace
+await cache_manager.expire(key, seconds=3600, namespace="items") # Added namespace
 
-# Clear all cache
-await cache_manager.clear()
+# Clear all cache in a namespace
+await cache_manager.clear(namespace="items") # Added namespace
 
 # Health check
 is_alive = await cache_manager.ping()
@@ -180,6 +188,7 @@ The following routes are automatically added:
 - `GET /cache/stats` - Get cache statistics (hits, misses, etc.)
 - `GET /cache/ping` - Check if cache server is reachable
 - `DELETE /cache/clear` - Clear all cache entries
+- `POST /cache/clear/{namespace}` - Clear all cache entries within a specific namespace
 - `GET /cache/reset-stats` - Reset statistics
 
 ## Integration with SlowAPI
@@ -218,17 +227,24 @@ async def get_items(request):
 
 - `default_ttl`: Default TTL in seconds (default: 3600)
 - `max_ttl`: Maximum allowed TTL (default: 86400)
-- `key_prefix`: Prefix for all cache keys (default: "cache:")
-- `compression_enabled`: Enable compression (default: False)
+- `namespace_prefix`: Prefix for all cache keys (default: "fastapi-cache")
+- `compression_enabled`: Enable compression (default: True)
 - `compression_threshold`: Min size for compression in bytes (default: 1024)
-- `strategy`: Eviction strategy "LRU" or "FIFO" (default: "LRU")
-- `enable_statistics`: Track statistics (default: True)
+- `statistics_enabled`: Track statistics (default: True)
 
 ## Environment Variables
 
 Configure via environment variables with appropriate prefixes:
 
 ```bash
+# Application configuration
+APP_NAME="FastAPI Redis Cache"
+DESCRIPTION="A production-ready caching solution for FastAPI."
+DEBUG=true
+LOG_TO_FILE=true
+ENVIRONMENT="development"
+PRODUCTION_FRONTEND_URL="https://your-frontend.com"
+
 # Redis configuration
 REDIS_HOST=localhost
 REDIS_PORT=6379
@@ -239,20 +255,21 @@ REDIS_SSL=false
 # Cache configuration
 CACHE_DEFAULT_TTL=3600
 CACHE_MAX_TTL=86400
-CACHE_COMPRESSION_ENABLED=false
+CACHE_NAMESPACE_PREFIX="fastapi-cache"
+CACHE_COMPRESSION_ENABLED=true
 CACHE_COMPRESSION_THRESHOLD=1024
-
-# Application configuration
-ENVIRONMENT=production
-DEBUG=false
+CACHE_STATISTICS_ENABLED=true
 ```
 
 ## Error Handling
 
-All exceptions inherit from `CacheException`:
+All exceptions inherit from `CacheException` (defined in `app/errors/exceptions.py`):
 
 ```python
-from src import CacheException, RedisConnectionError
+from app.errors.exceptions import CacheException, RedisConnectionError
+from logging import getLogger
+
+logger = getLogger(__name__)
 
 try:
     value = await cache_manager.get(key)
@@ -270,7 +287,7 @@ Run tests with pytest:
 pytest tests/ -v
 
 # With coverage
-pytest tests/ --cov=src --cov-report=html
+pytest tests/ --cov=app --cov-report=html
 ```
 
 ## Best Practices
@@ -284,13 +301,13 @@ pytest tests/ --cov=src --cov-report=html
 2. **Set appropriate TTLs**: Balance freshness and performance
 
    ```python
-   @cached(cache_manager, ttl=300)  # 5 minutes for frequently updated data
+   @cached(cache_manager, ttl=300, namespace="data")  # 5 minutes for frequently updated data
    ```
 
 3. **Implement cache busting**: Invalidate related caches on mutations
 
    ```python
-   @cache_busting(cache_manager, keys=["users_list"])
+   @cache_busting(cache_manager, namespace="users") # Clears the entire 'users' namespace
    async def update_user(user_id: int):
        pass
    ```
@@ -305,8 +322,10 @@ pytest tests/ --cov=src --cov-report=html
 5. **Handle cache failures gracefully**: Don't let cache errors break your app
 
    ```python
+   from app.errors.exceptions import CacheException
+
    try:
-       cached_value = await cache_manager.get(key)
+       cached_value = await cache_manager.get(key, namespace="data")
    except CacheException:
        cached_value = None
    ```
@@ -327,37 +346,6 @@ pytest tests/ --cov=src --cov-report=html
 - Type hints prevent injection attacks
 - Input validation through Pydantic
 
-## Example Application
-
-See `example_app.py` for a complete working example with:
-
-- Full CRUD operations
-- Caching decorators
-- Cache busting
-- Rate limiting with SlowAPI
-- Cache management endpoints
-
-Run the example:
-
-```bash
-python example_app.py
-```
-
-Then visit `http://localhost:8000/docs` for interactive API documentation.
-
-## Contributing
-
-Contributions welcome! Please ensure:
-
-- All code follows PEP 8 and Ruff rules
-- Full type hints are provided
-- Tests cover new functionality
-- Documentation is updated
-
 ## License
 
 MIT License - See LICENSE file for details
-
-## Support
-
-For issues, questions, or contributions, please refer to the project repository.

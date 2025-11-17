@@ -1,321 +1,165 @@
 # Quick Start Guide
 
-Get started with FastAPI Redis Cache in 5 minutes!
+Get started with the FastAPI Redis Cache in 5 minutes.
 
 ## Prerequisites
 
-- Python 3.13 or higher
+- Python 3.11 or higher
 - Redis 6.0 or higher
-- Redis server running locally or accessible
+- `uv` (recommended) or `pip`
 
 ## Installation
 
-- **Clone the project**
+1. **Clone the project**:
 
-```bash
-cd fastapi-redis-cache
-```
+    ```bash
+    git clone https://github.com/your-repo/fastapi-redis-caching.git
+    cd fastapi-redis-caching
+    ```
 
-- **Install dependencies**
+2. **Install dependencies**:
 
-```bash
-pip install -e ".[dev]"
-```
+    ```bash
+    # Using uv (recommended)
+    uv pip install -e ".[dev]"
 
-## Running the Example
+    # Or using pip
+    pip install -e ".[dev]"
+    ```
 
-- **Start Redis** (if not already running):
+## Running the Application
 
-```bash
-# Using Docker
-docker run -d -p 6379:6379 redis:latest
+1. **Start Redis**:
+    Make sure you have a Redis server running. You can use Docker for a quick setup:
 
-# Or using local Redis installation
-redis-server
-```
+    ```bash
+    docker run -d -p 6379:6379 -p 8081:8081 redis/redis-stack:latest
+    ```
 
-- **Run the example application**:
+    This also provides a Redis Commander UI at `http://localhost:8081`.
 
-```bash
-python example_app.py
-```
+2. **Create a `.env` file**:
+    Copy the `.env.example` to `.env` if it exists, or create a new one. The default settings should work with a local Redis instance.
 
-- **Visit the API documentation**:
+3. **Run the FastAPI server**:
 
-Open your browser to `http://localhost:8000/docs`
+    ```bash
+    python main.py
+    ```
+
+    The server will start with auto-reload.
+
+4. **Access the API**:
+    - **API Docs (Swagger)**: `http://localhost:8000/docs`
+    - **Health Check**: `http://localhost:8000/health`
 
 ## Basic Usage
 
-### 1. Simple Caching
+### 1. Caching an Endpoint
+
+Decorate your FastAPI route with `@cached` to automatically cache its response.
 
 ```python
-from fastapi import FastAPI
-from src import setup_cache, cached
+# In app/main.py
+from app.decorators.caching import cached
+from app.managers.cache_manager import cache_manager
 
-app = FastAPI()
-cache_manager = setup_cache(app)
-
-@app.get("/items")
-@cached(cache_manager, ttl=600, namespace="items")
-async def get_items():
-    # This will be cached for 10 minutes
-    return {"items": []}
+@app.get("/items/{item_id}")
+@cached(cache_manager, ttl=300, namespace="items")
+async def get_item(item_id: int):
+    # This function will only run on a cache miss
+    print(f"Fetching item {item_id} from the database...")
+    return {"item_id": item_id, "name": f"Item {item_id}"}
 ```
 
-### 2. Cache Busting on Updates
+### 2. Busting the Cache on Updates
+
+Use the `@cache_busting` decorator on endpoints that modify data to invalidate the cache. By default, it clears the entire namespace.
 
 ```python
-from src import cache_busting
+# In app/main.py
+from app.decorators.caching import cache_busting
 
 @app.post("/items")
-@cache_busting(cache_manager, keys=["get_items"], namespace="items")
-async def create_item(item: Item):
-    # This will invalidate the get_items cache
-    return item
-
-@app.delete("/items/{item_id}")
-@cache_busting(cache_manager, keys=["get_items"], namespace="items")
-async def delete_item(item_id: int):
-    # This will also invalidate the get_items cache
-    return {"message": "Item deleted"}
+@cache_busting(cache_manager, namespace="items")
+async def create_item(item: dict):
+    # This will clear the "items" namespace after execution
+    print(f"Creating item: {item}")
+    return {"status": "created", "item": item}
 ```
 
 ### 3. Manual Cache Operations
 
-```python
-# Set value
-await cache_manager.set("user_123", {"name": "John"}, ttl=3600)
-
-# Get value
-user = await cache_manager.get("user_123")
-
-# Delete key
-await cache_manager.delete("user_123")
-
-# Clear all cache
-await cache_manager.clear()
-```
-
-### 4. With Rate Limiting (SlowAPI)
+You can interact with the `cache_manager` directly for more granular control.
 
 ```python
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from app.managers.cache_manager import cache_manager
 
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
+async def some_function():
+    # Set a value
+    await cache_manager.set("user:123", {"name": "John Doe"}, ttl=3600, namespace="users")
 
-@app.get("/items")
-@limiter.limit("100/minute")
-@cached(cache_manager, ttl=600)
-async def get_items(request):
-    return {"items": []}
+    # Get a value
+    user = await cache_manager.get("user:123", namespace="users")
+
+    # Delete a key
+    await cache_manager.delete("user:123", namespace="users")
 ```
 
 ## Testing the Cache
 
-### Test 1: Cache Hit
+### Step 1: First Request (Cache Miss)
+
+Open your terminal and make a request to a cached endpoint.
 
 ```bash
-# First request (cache miss)
-curl http://localhost:8000/items
+curl http://localhost:8000/items/1
+```
 
-# Second request (cache hit) - should be instant
-curl http://localhost:8000/items
+In the server logs, you will see the "Fetching item..." message, indicating the function body was executed.
 
-# Check cache statistics
+### Step 2: Second Request (Cache Hit)
+
+Make the same request again.
+
+```bash
+curl http://localhost:8000/items/1
+```
+
+The response will be served instantly from Redis, and you will **not** see the "Fetching item..." message in the logs.
+
+### Step 3: Check Cache Statistics
+
+Visit the statistics endpoint to see the hit/miss ratio.
+
+```bash
 curl http://localhost:8000/cache/stats
 ```
 
-### Test 2: Cache Busting
+You should see `{"hits":1,"misses":1,...}`.
+
+### Step 4: Bust the Cache
+
+Call an endpoint decorated with `@cache_busting`.
 
 ```bash
-# Create an item (this busts the cache)
 curl -X POST http://localhost:8000/items \
   -H "Content-Type: application/json" \
-  -d '{"id": 1, "name": "Test Item", "price": 9.99}'
-
-# Check statistics to see busted cache
-curl http://localhost:8000/cache/stats
+  -d '{"id": 2, "name": "Test Item"}'
 ```
 
-### Test 3: Rate Limiting
+### Step 5: Verify Cache was Busted
+
+Make a request to the original cached endpoint again.
 
 ```bash
-# Rapid requests (will hit rate limit after 100 requests in 1 minute)
-for i in {1..101}; do
-  curl http://localhost:8000/items
-done
+curl http://localhost:8000/items/1
 ```
 
-## Configuration
-
-### Environment Variables
-
-Create a `.env` file:
-
-```bash
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-
-# Cache
-CACHE_DEFAULT_TTL=3600
-CACHE_COMPRESSION_ENABLED=false
-
-# App
-ENVIRONMENT=development
-DEBUG=true
-```
-
-### Python Configuration
-
-```python
-from src import ApplicationConfig, RedisCacheConfig, CacheConfig
-
-config = ApplicationConfig(
-    debug=True,
-    environment="development",
-    redis=RedisCacheConfig(
-        host="localhost",
-        port=6379,
-    ),
-    cache=CacheConfig(
-        default_ttl=3600,
-        compression_enabled=False,
-    ),
-)
-
-cache_manager = setup_cache(app, config)
-```
-
-## Common Tasks
-
-### Check Cache Health
-
-```python
-# Check if Redis is reachable
-is_alive = await cache_manager.ping()
-print(f"Redis status: {'Connected' if is_alive else 'Disconnected'}")
-```
-
-### Get Cache Statistics
-
-```python
-stats = cache_manager.get_statistics()
-print(f"Hit rate: {stats['hit_rate']}")
-print(f"Total hits: {stats['hits']}")
-print(f"Total misses: {stats['misses']}")
-```
-
-### Clear Cache Manually
-
-```python
-# Clear all cache
-await cache_manager.clear()
-
-# Or via API
-curl -X DELETE http://localhost:8000/cache/clear
-```
-
-### Reset Statistics
-
-```python
-# Clear statistics
-cache_manager.reset_statistics()
-
-# Or via API
-curl http://localhost:8000/cache/reset-stats
-```
-
-## Debugging
-
-### Enable Logging
-
-```python
-import logging
-
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger("src")
-```
-
-### Check Cache Keys
-
-```python
-# Get cache statistics
-stats = await cache_manager.get_statistics()
-print(stats)
-
-# Check if key exists
-exists = await cache_manager.exists("my_key")
-print(f"Key exists: {exists}")
-
-# Check TTL
-ttl = await cache_manager.ttl("my_key")
-print(f"TTL: {ttl} seconds")
-```
+You will see the "Fetching item..." message again, as the cache for the "items" namespace was cleared.
 
 ## Next Steps
 
-1. **Read the full documentation**: See `README.md`
-2. **Explore architecture**: See `docs/ARCHITECTURE.md`
-3. **Configure for production**: See `docs/CONFIGURATION.md`
-4. **Review the example app**: See `example_app.py`
-5. **Run tests**: `pytest tests/`
-
-## Troubleshooting
-
-### Connection Refused
-
-If you get "Connection refused":
-
-1. Check Redis is running: `redis-cli ping`
-2. Verify host and port in configuration
-3. Check firewall rules
-
-### Cache Not Working
-
-If cache seems disabled:
-
-1. Check statistics: `curl http://localhost:8000/cache/stats`
-2. Verify Redis connection: `curl http://localhost:8000/cache/ping`
-3. Check logs for errors
-
-### Performance Issues
-
-If cache seems slow:
-
-1. Check Redis performance: `redis-cli --latency`
-2. Monitor connection pool: Check `REDIS_MAX_CONNECTIONS` setting
-3. Review cache hit rate: `curl http://localhost:8000/cache/stats`
-
-## API Endpoints Reference
-
-### Cache Management
-
-- `GET /cache/stats` - Get cache statistics
-- `GET /cache/ping` - Check cache connection
-- `DELETE /cache/clear` - Clear all cache
-- `GET /cache/reset-stats` - Reset statistics
-
-### Example Endpoints
-
-- `GET /` - Root endpoint
-- `GET /health` - Health check
-- `GET /items` - Get all items (cached)
-- `GET /items/{item_id}` - Get item (cached)
-- `POST /items` - Create item (cache busted)
-- `PUT /items/{item_id}` - Update item (cache busted)
-- `DELETE /items/{item_id}` - Delete item (cache busted)
-
-## Support
-
-For issues or questions:
-
-1. Check the documentation
-2. Review example code
-3. Check logs for errors
-4. Run tests to verify setup
-
-Happy caching! 🚀
+1. **Explore the Architecture**: Read `docs/ARCHITECTURE.md` for a deep dive into the components.
+2. **Review Configuration Options**: See `docs/CONFIGURATION.md` for all available settings.
+3. **Run the Tests**: Execute `pytest` in your terminal to run the full test suite.

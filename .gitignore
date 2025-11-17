@@ -5,7 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
-
+.genkit/
 dump.rdb
 
 # Distribution / packaging

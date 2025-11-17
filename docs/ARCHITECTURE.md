@@ -2,451 +2,190 @@
 
 ## Overview
 
-The FastAPI Redis Cache implementation is designed with a modular, layered architecture that emphasizes separation of concerns and maintainability.
+The FastAPI Redis Cache implementation is designed with a modular, multi-layered architecture that emphasizes separation of concerns, maintainability, and performance.
 
 ## Module Structure
 
-```plain text
-src/
-├── __init__.py              # Main package exports
-├── config.py                # Configuration models
-├── exceptions.py            # Custom exceptions
-├── types.py                 # Type definitions
-├── redis_client.py          # Redis connection management
-├── serializer.py            # Serialization/compression
-├── statistics.py            # Cache statistics
-├── cache_manager.py         # Core cache logic
-├── decorators.py            # FastAPI decorators
-└── fastapi_integration.py   # FastAPI setup helpers
+```plaintext
+app/
+├── __init__.py
+├── main.py                 # FastAPI app setup and main endpoints
+├── clients/
+│   └── redis_client.py     # Redis connection management
+├── configs/
+│   └── settings.py         # Pydantic configuration models
+├── data/
+│   └── statistics.py       # Cache statistics tracking
+├── decorators/
+│   └── caching.py          # @cached and @cache_busting decorators
+├── errors/
+│   └── exceptions.py       # Custom exception classes
+├── managers/
+│   └── cache_manager.py    # Core cache logic and operations
+├── middleware/
+│   └── middleware.py       # Request/response middleware and lifespan
+├── routes/
+│   └── cache.py            # Cache management API routes
+└── utils/
+    ├── cache_serializer.py # Serialization and compression
+    └── helpers.py          # Utility functions
 ```
 
 ## Core Components
 
-### 1. Configuration Layer (`config.py`)
+### 1. Configuration Layer (`app/configs/settings.py`)
 
-Pydantic-based configuration models for:
+Pydantic-based settings management for:
 
-- **RedisCacheConfig**: Redis connection parameters
-- **CacheConfig**: Cache behavior settings
-- **ApplicationConfig**: Overall application configuration
+- **Settings**: Top-level application configuration.
+- **RedisCacheConfig**: Redis connection parameters.
+- **CacheConfig**: Cache behavior settings (TTL, compression, etc.).
 
-Benefits:
+Benefits include environment variable support, type validation, and runtime safety.
 
-- Environment variable support
-- Type validation
-- IDE autocompletion
-- Runtime safety
+### 2. Client Layer (`app/clients/redis_client.py`)
 
-### 2. Redis Client (`redis_client.py`)
+An async wrapper around the `redis-py` library that provides:
 
-Async wrapper around `redis-py` providing:
+- Robust connection pooling.
+- Graceful error handling and health checks.
+- Type-safe, low-level Redis commands (`get`, `set`, `delete`).
 
-- Connection pooling
-- Error handling
-- Type safety
-- Health checks
-- Information retrieval
+### 3. Utilities Layer (`app/utils/`)
 
-Key features:
+- **`cache_serializer.py`**: Handles JSON serialization/deserialization and optional GZIP compression for cached values. It uses a marker to distinguish compressed data.
+- **`helpers.py`**: Contains miscellaneous utility functions, including loggers and request processors.
 
-- Automatic connection management
-- Graceful error handling
-- Detailed logging
-- Connection reuse
+### 4. Data Layer (`app/data/statistics.py`)
 
-### 3. Serialization (`serializer.py`)
+A thread-safe class for tracking cache statistics:
 
-JSON serialization with optional compression:
+- Hits and misses.
+- Cache operations (set, delete).
+- Bytes read/written.
+- Hit rate calculation.
 
-- **Serialize**: Python objects → JSON strings
-- **Deserialize**: JSON strings → Python objects
-- **Compress**: GZIP compression for large values
-- **Decompress**: GZIP decompression with marker detection
+### 5. Manager Layer (`app/managers/cache_manager.py`)
 
-Compression:
-
-- Opt-in per operation
-- Configurable threshold
-- Marker-based detection
-- Base64 encoding for safety
-
-### 4. Statistics (`statistics.py`)
-
-Thread-safe statistics tracking:
-
-- Hits and misses
-- Cache operations (set, delete)
-- Evictions
-- Errors
-- Bytes read/written
-- Hit rate calculation
-
-Thread safety:
-
-- Lock-based synchronization
-- Safe concurrent access
-- No race conditions
-
-### 5. Cache Manager (`cache_manager.py`)
-
-High-level cache operations:
+The `CacheManager` is the heart of the caching system, providing a high-level API for all caching operations:
 
 ```python
 # Core operations
 await cache_manager.get(key, namespace)
 await cache_manager.set(key, value, ttl, namespace, compress)
-await cache_manager.delete(*keys, namespace)
-await cache_manager.exists(*keys, namespace)
+await cache_manager.delete(key, namespace)
+await cache_manager.exists(key)
 
 # Advanced operations
 await cache_manager.get_or_set(key, callback, ttl, namespace, force_refresh)
-await cache_manager.expire(key, seconds, namespace)
-await cache_manager.ttl(key, namespace)
+await cache_manager.expire(key, seconds)
+await cache_manager.ttl(key)
 await cache_manager.clear(namespace)
 
-# Utilities
-await cache_manager.ping()
+# Lifecycle and monitoring
+await cache_manager.initialize()
+await cache_manager.shutdown()
 cache_manager.get_statistics()
-cache_manager.reset_statistics()
 ```
 
-Key features:
+It integrates the Redis client, serializer, and statistics tracker to provide a cohesive caching service.
 
-- Namespace support
-- Configurable TTL
-- Optional compression
-- Automatic serialization
-- Error resilience
+### 6. Decorators Layer (`app/decorators/caching.py`)
 
-### 6. Decorators (`decorators.py`)
+Provides easy-to-use decorators for applying caching logic to FastAPI endpoints:
 
-Two main decorators:
+- **`@cached`**: Automatically caches the result of an endpoint.
+- **`@cache_busting`**: Invalidates one or more cache keys when a mutation endpoint (e.g., POST, PUT, DELETE) is called.
 
-#### @cached
+Both decorators support custom key generation logic through `key_builder` functions.
 
-```python
-@cached(
-    cache_manager,
-    ttl=600,
-    namespace="items",
-    key_builder=optional_function,
-    compress=True
-)
-async def get_items():
-    return {}
-```
+### 7. Middleware & Lifespan (`app/middleware/middleware.py`)
 
-Features:
+- **Lifespan Manager**: The `lifespan` function handles the application's startup and shutdown events, ensuring that the `CacheManager` and its connection pool are initialized and closed gracefully.
+- **Standard Middleware**: Includes middleware for request logging, security headers, CORS, and GZip compression.
 
-- Automatic key generation or custom builder
-- Miss handling with callback execution
-- Result caching
-- Hit tracking
+### 8. Routes Layer (`app/routes/cache.py`)
 
-#### @cache_busting
+Exposes administrative API endpoints for managing and monitoring the cache:
 
-```python
-@cache_busting(
-    cache_manager,
-    keys=["list", "count"],
-    namespace="items",
-    key_builder=optional_function
-)
-async def update_item(item_id):
-    return {}
-```
-
-Features:
-
-- Selective cache invalidation
-- Custom key builders
-- Mutation support (POST, PUT, DELETE)
-
-### 7. FastAPI Integration (`fastapi_integration.py`)
-
-Four main functions:
-
-#### setup_cache(app, config)
-
-- Initializes cache manager
-- Sets up lifespan events
-- Returns configured manager
-
-#### add_cache_routes(app, cache_manager)
-
-Adds management endpoints:
-
-- `GET /cache/stats` - Statistics
-- `GET /cache/ping` - Health check
-- `DELETE /cache/clear` - Cache purge
-- `GET /cache/reset-stats` - Stats reset
-
-#### create_cache_error_handler(app)
-
-Global exception handler for `CacheException`
-
-#### CacheMiddleware
-
-Extensible middleware for request/response caching
+- `GET /cache/stats`: View current cache statistics.
+- `GET /cache/ping`: Health check for the Redis connection.
+- `DELETE /cache/clear`: Purge all keys from the cache.
+- `POST /cache/clear/{namespace}`: Purge keys from a specific namespace.
 
 ## Data Flow
 
 ### Cache Hit Flow
 
-```plain text
+```plaintext
 Request
   ↓
 @cached decorator
   ↓
 Generate cache key
   ↓
-cache_manager.get(key)
+CacheManager.get(key)
   ↓
 RedisClient.get(key)
   ↓
-Deserialize + Decompress
+Decompress (if needed) & Deserialize
   ↓
-Return to client
+Return cached response to client
 ```
 
 ### Cache Miss Flow
 
-```plain text
+```plaintext
 Request
   ↓
 @cached decorator
   ↓
 Generate cache key
   ↓
-cache_manager.get(key) → None
+CacheManager.get(key) → None
   ↓
 Execute endpoint function
   ↓
-Serialize + Compress
+Get result
   ↓
-cache_manager.set(key, value)
+CacheManager.set(key, result)
+  ↓
+Serialize & Compress (if needed)
   ↓
 RedisClient.set(key, value, ex=ttl)
   ↓
-Return to client
+Return response to client
 ```
 
 ### Cache Busting Flow
 
-```plain text
+```plaintext
 Mutation Request (POST/PUT/DELETE)
-  ↓
-@cache_busting decorator
   ↓
 Execute endpoint function
   ↓
-Generate keys to bust
+@cache_busting decorator
   ↓
-cache_manager.delete(*keys)
+Generate keys to invalidate
+  ↓
+CacheManager.delete(*keys)
   ↓
 RedisClient.delete(*keys)
   ↓
-Return result to client
-```
-
-## Type Safety
-
-Full type hints throughout:
-
-```python
-from src.types import CacheValue, CacheKey, CacheCallback
-
-# Explicit types for clarity
-async def get(self, key: CacheKey) -> CacheValue:
-    ...
-
-async def set(self, key: CacheKey, value: CacheValue, ex: int | None = None) -> bool:
-    ...
-
-async def get_or_set(
-    self,
-    key: CacheKey,
-    callback: CacheCallback,
-) -> CacheValue:
-    ...
+Return response to client
 ```
 
 ## Error Handling Strategy
 
-Hierarchical exception structure:
+A hierarchy of custom exceptions (`app/errors/exceptions.py`) is used to handle cache-related failures gracefully.
 
-```plain text
+```plaintext
 Exception
   └─ CacheException (base)
       ├─ RedisConnectionError
       ├─ CacheKeyError
       ├─ CacheSerializationError
-      ├─ CacheDeserializationError
-      ├─ CacheCompressionError
-      ├─ CacheDecompressionError
-      └─ RateLimitError
+      └─ ...and others
 ```
 
-### Error Recovery
-
-- Connection failures → Graceful degradation
-- Serialization errors → Logged, not cached
-- Compression errors → Uncompressed fallback
-- Statistics recording → Regardless of success
-
-## Performance Optimization
-
-### Connection Pooling
-
-- Up to 50 concurrent connections
-- Automatic reuse
-- Health checks (30-second interval)
-- Graceful cleanup
-
-### Compression
-
-- Threshold-based (default 1KB)
-- GZIP algorithm
-- Base64 encoding
-- Transparent detection
-
-### Namespace Isolation
-
-- Prefix-based key organization
-- Efficient scoping
-- No cross-contamination
-
-### Statistics
-
-- Minimal overhead
-- Lock-free reads (by design)
-- Atomic operations
-- Thread-safe tracking
-
-## Security Features
-
-### Input Validation
-
-- Pydantic model validation
-- Type checking
-- Environment variable parsing
-
-### Connection Security
-
-- SSL/TLS support
-- Password authentication
-- Socket timeout configuration
-- Keepalive protection
-
-### Data Protection
-
-- Serialization validation
-- Compression integrity
-- Marker-based detection
-- Error isolation
-
-## Extension Points
-
-### Custom Key Builder
-
-```python
-def custom_key_builder(*args, **kwargs) -> str:
-    # Custom logic
-    return f"prefix:{args[0]}:{kwargs['id']}"
-
-@cached(cache_manager, key_builder=custom_key_builder)
-async def endpoint(id: int):
-    pass
-```
-
-### Custom Serializer
-
-```python
-class CustomSerializer:
-    @staticmethod
-    def serialize(value: Any) -> str:
-        # Custom serialization
-        pass
-
-    @staticmethod
-    def deserialize(value: str) -> Any:
-        # Custom deserialization
-        pass
-```
-
-### Middleware Extension
-
-```python
-class CustomCacheMiddleware(CacheMiddleware):
-    async def __call__(self, request):
-        # Pre-request logic
-        response = await self.app(request)
-        # Post-request logic
-        return response
-```
-
-## Testing Strategy
-
-### Unit Tests
-
-- Cache manager operations
-- Serialization/deserialization
-- Statistics tracking
-- Error handling
-
-### Integration Tests
-
-- API endpoints
-- Cache decorators
-- Rate limiting
-- Cache busting
-
-### Test Coverage
-
-- Core logic: 100%
-- Decorators: 95%+
-- Integration: 90%+
-
-## Deployment Considerations
-
-### Environment Setup
-
-```bash
-REDIS_HOST=redis-prod.example.com
-REDIS_PORT=6379
-REDIS_DB=0
-REDIS_PASSWORD=secure-password
-REDIS_SSL=true
-
-CACHE_DEFAULT_TTL=3600
-CACHE_MAX_TTL=86400
-CACHE_COMPRESSION_ENABLED=true
-
-ENVIRONMENT=production
-DEBUG=false
-```
-
-### Monitoring
-
-- Hit rate tracking
-- Error rate monitoring
-- Connection pool health
-- Memory usage tracking
-
-### Scaling
-
-- Horizontal scaling with shared Redis
-- Connection pool sizing per instance
-- TTL tuning for dataset size
-- Namespace isolation per service
-
-## Best Practices
-
-1. **Always use namespaces** for organizational clarity
-2. **Set appropriate TTLs** based on data freshness requirements
-3. **Monitor statistics** to optimize cache strategy
-4. **Implement cache busting** for all mutations
-5. **Handle cache failures** gracefully in application logic
-6. **Use compression** for large, infrequently-accessed data
-7. **Test cache scenarios** in development and staging
-8. **Review logs** for cache-related errors and warnings
+The system is designed to be resilient; a cache failure will be logged but will not crash the application. The endpoint will execute as if it were a cache miss.
