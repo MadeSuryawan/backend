@@ -8,6 +8,8 @@ __pycache__/
 .genkit/
 dump.rdb
 
+.qodo
+
 # Distribution / packaging
 .Python
 build/

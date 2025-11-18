@@ -4,6 +4,7 @@ This module contains application settings, constants, and configuration
 values for the BaliBlissed backend application.
 """
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -16,7 +17,8 @@ from typing import Any, Literal
 #     SafetySetting,
 #     Tool,
 # )
-from pydantic import EmailStr, SecretStr
+from fastapi import Request
+from pydantic import BaseModel, ConfigDict, EmailStr, SecretStr
 from pydantic_settings.main import BaseSettings, SettingsConfigDict
 
 ENV_FILE = Path(__file__).parent.parent.parent / ".env"
@@ -127,11 +129,14 @@ class Settings(BaseSettings):
     MAIL_SSL_TLS: bool = False
 
     # Redis Configuration (optional)
-    REDIS_ENABLED: bool = False
+    REDIS_ENABLED: bool = True
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     REDIS_PASSWORD: str | None = None
+    RATE_LIMIT_DEFAULT_LIMITS: str = f"{RATE_LIMIT_REQUESTS}/{RATE_LIMIT_WINDOW}s"
+    IN_MEMORY_FALLBACK_ENABLED: bool = True
+    HEADERS_ENABLED: bool = True
 
     # Performance Configuration
     MAX_CONCURRENT_AI_REQUESTS: int = 10
@@ -139,6 +144,12 @@ class Settings(BaseSettings):
     CACHE_TTL_ITINERARY: int = 86400  # 24 hours
     CACHE_TTL_QUERY: int = 3600  # 1 hour
     CACHE_TTL_CONTACT: int = 1800  # 30 minutes
+
+    @property
+    def redis_url(self) -> str:
+        """Get Redis connection URL."""
+        auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
+        return f"redis://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
 
 def no_api_key_error() -> None:
@@ -167,7 +178,7 @@ def no_email_config_error() -> None:
 settings = Settings()
 
 
-class RedisCacheConfig(BaseSettings):
+class RedisConfig(BaseSettings):
     """Redis cache configuration."""
 
     model_config = SettingsConfigDict(env_prefix="REDIS_", case_sensitive=False)
@@ -201,7 +212,7 @@ class CacheConfig(BaseSettings):
     cleanup_interval: int = 300  # 5 minutes
 
 
-redis_config = RedisCacheConfig()
+redis_config = RedisConfig()
 # Build redis connection pool kwargs dynamically to handle version compatibility
 pool_kwargs: dict[str, Any] = {
     "host": redis_config.host,
@@ -221,3 +232,14 @@ if redis_config.socket_keepalive:
 # Only pass ssl if True to avoid compatibility issues
 if redis_config.ssl:
     pool_kwargs["ssl"] = True
+
+
+class LimiterConfig(BaseModel):
+    """Configuration for rate limiting."""
+
+    default_limits: list[str] = [settings.RATE_LIMIT_DEFAULT_LIMITS]
+    storage_uri: str = settings.redis_url
+    in_memory_fallback_enabled: bool = settings.IN_MEMORY_FALLBACK_ENABLED
+    headers_enabled: bool = settings.HEADERS_ENABLED
+
+    model_config = ConfigDict(from_attributes=True)

@@ -3,13 +3,16 @@
 
 from logging import getLogger
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from app.decorators.caching import cache_busting, cached
 from app.managers.cache_manager import cache_manager
+from app.managers.rate_limiter import (
+    limiter,
+    rate_limit_exceeded_handler,
+)
 from app.middleware.middleware import (
     add_compression,
     add_request_logging,
@@ -41,8 +44,13 @@ add_compression(app)
 app.include_router(cache_router)
 
 # SlowAPI rate limiter
-limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
+
+# Register exception handlers
+app.add_exception_handler(
+    RateLimitExceeded,
+    rate_limit_exceeded_handler,
+)
 
 
 # Pydantic models
@@ -69,15 +77,16 @@ items_db: dict[int, Item] = {}
 
 # Routes
 @app.get("/", tags=["health"])
+@limiter.exempt
 async def root() -> dict[str, str]:
     """Root endpoint."""
     return {"message": "Welcome to FastAPI Redis Cache"}
 
 
 @app.post("/create-item", tags=["items"])
-@limiter.limit("50/minute")
+@limiter.limit("2/minute")
 @cache_busting(cache_manager, keys=["get_all_items"], namespace="items")
-async def create_item(item: Item, request: Request) -> Item:
+async def create_item(item: Item, request: Request, response: Response) -> Item:
     """Create new item with cache busting.
 
     Rate limited to 50 requests per minute.
@@ -89,14 +98,14 @@ async def create_item(item: Item, request: Request) -> Item:
 
 
 @app.get("/get-item/{item_id}", tags=["items"])
-@limiter.limit("200/minute")
+@limiter.limit("10/minute")
 @cached(
     cache_manager,
     ttl=300,
     namespace="items",
     key_builder=lambda item_id, **kw: f"item_{item_id}",
 )
-async def get_item(item_id: int, request: Request) -> Item:
+async def get_item(item_id: int, request: Request, response: Response) -> Item:
     """Get specific item with caching.
 
     Rate limited to 200 requests per minute.
@@ -109,9 +118,9 @@ async def get_item(item_id: int, request: Request) -> Item:
 
 
 @app.get("/all-items", tags=["items"])
-@limiter.limit("100/minute")
+@limiter.limit("10/minute")
 @cached(cache_manager, ttl=600, namespace="items")
-async def get_all_items(request: Request) -> dict[str, list[Item]]:
+async def get_all_items(request: Request, response: Response) -> dict[str, list[Item]]:
     """Get all items with caching.
 
     Rate limited to 100 requests per minute.
@@ -122,13 +131,18 @@ async def get_all_items(request: Request) -> dict[str, list[Item]]:
 
 
 @app.put("/update-item/{item_id}", tags=["items"])
-@limiter.limit("50/minute")
+@limiter.limit("10/minute")
 @cache_busting(
     cache_manager,
     key_builder=lambda item_id, **kw: [f"item_{item_id}", "get_all_items"],
     namespace="items",
 )
-async def update_item(item_id: int, item_update: ItemUpdate, request: Request) -> Item:
+async def update_item(
+    item_id: int,
+    item_update: ItemUpdate,
+    request: Request,
+    response: Response,
+) -> Item:
     """Update item with cache busting.
 
     Rate limited to 50 requests per minute.
@@ -146,13 +160,13 @@ async def update_item(item_id: int, item_update: ItemUpdate, request: Request) -
 
 
 @app.delete("/delete-item/{item_id}", tags=["items"])
-@limiter.limit("50/minute")
+@limiter.limit("10/minute")
 @cache_busting(
     cache_manager,
     key_builder=lambda item_id, **kw: [f"item_{item_id}", "get_all_items"],
     namespace="items",
 )
-async def delete_item(item_id: int, request: Request) -> dict[str, str]:
+async def delete_item(item_id: int, request: Request, response: Response) -> dict[str, str]:
     """Delete item with cache busting.
 
     Rate limited to 50 requests per minute.
@@ -168,6 +182,7 @@ async def delete_item(item_id: int, request: Request) -> dict[str, str]:
 
 # Health check
 @app.get("/health", tags=["health"])
+@limiter.exempt
 async def health_check() -> dict[str, str]:
     """Health check endpoint."""
     try:

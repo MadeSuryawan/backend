@@ -1,17 +1,15 @@
 """Main cache manager for Redis caching operations."""
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable, Coroutine
 from logging import getLogger
 from typing import Any
 
-# from app.errors.exceptions import RedisConnectionError
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.clients.memory_client import MemoryClient
 from app.clients.redis_client import RedisClient
 from app.configs.settings import CacheConfig
 from app.data.statistics import CacheStatistics
-from app.managers.cache_types import CacheCallback, CacheKey
 from app.utils import (
     compress,
     decompress,
@@ -22,6 +20,9 @@ from app.utils import (
 from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
+
+
+CacheCallback = Callable[..., Coroutine[Any, Any, Any]]
 
 
 class CacheManager:
@@ -59,7 +60,7 @@ class CacheManager:
             await self._client.close()
         logger.info("Cache manager shutdown successfully.")
 
-    def _build_key(self, key: str, namespace: str | None = None) -> CacheKey:
+    def _build_key(self, key: str, namespace: str | None = None) -> str:
         """Build full cache key with prefix and namespace."""
         prefix = self.cache_config.key_prefix
         return f"{prefix}:{namespace}:{key}" if namespace else f"{prefix}:{key}"

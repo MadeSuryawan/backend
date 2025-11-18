@@ -20,6 +20,7 @@ from rich.traceback import install
 
 from app.configs.settings import settings
 from app.managers.cache_manager import cache_manager
+from app.managers.rate_limiter import close_limiter, limiter
 from app.utils.helpers import file_logger
 
 if log_to_file := settings.LOG_TO_FILE:
@@ -51,6 +52,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
         await cache_manager.initialize()
 
+        if limiter.enabled:
+            logger.info("Rate limiter enabled.")
+
         # Initialize AI client
         # get_ai_client()
 
@@ -78,7 +82,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Cleanup services
     try:
         # await cache_service.close()
-        # await rate_limiter.close()
+        await close_limiter()
         await cache_manager.shutdown()
         logger.info("Cache manager stopped")
         logger.info("Services cleaned up successfully")
