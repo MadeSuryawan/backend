@@ -5,7 +5,7 @@ values for the BaliBlissed backend application.
 """
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 # from google.genai.types import (
 #     GenerateContentConfig,
@@ -199,3 +199,25 @@ class CacheConfig(BaseSettings):
     strategy: Literal["LRU", "FIFO"] = "LRU"
     enable_statistics: bool = True
     cleanup_interval: int = 300  # 5 minutes
+
+
+redis_config = RedisCacheConfig()
+# Build redis connection pool kwargs dynamically to handle version compatibility
+pool_kwargs: dict[str, Any] = {
+    "host": redis_config.host,
+    "port": redis_config.port,
+    "db": redis_config.db,
+    "password": redis_config.password,
+    "socket_timeout": redis_config.socket_timeout,
+    "socket_connect_timeout": redis_config.socket_connect_timeout,
+    "socket_keepalive": redis_config.socket_keepalive,
+    "max_connections": redis_config.max_connections,
+    "decode_responses": redis_config.decode_responses,
+    "encoding": redis_config.encoding,
+    "health_check_interval": redis_config.health_check_interval,
+}
+if redis_config.socket_keepalive:
+    pool_kwargs["socket_keepalive_options"] = {}
+# Only pass ssl if True to avoid compatibility issues
+if redis_config.ssl:
+    pool_kwargs["ssl"] = True

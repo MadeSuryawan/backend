@@ -1,11 +1,13 @@
 """Cache statistics and monitoring module."""
 
-import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from logging import getLogger
 from threading import Lock
 
-logger = logging.getLogger(__name__)
+from app.utils.helpers import file_logger
+
+logger = file_logger(getLogger(__name__))
 
 
 @dataclass

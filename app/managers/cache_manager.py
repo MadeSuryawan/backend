@@ -1,15 +1,16 @@
 """Main cache manager for Redis caching operations."""
 
 from collections.abc import Awaitable
-from hashlib import sha256
 from logging import getLogger
 from typing import Any
 
+# from app.errors.exceptions import RedisConnectionError
+from redis.exceptions import ConnectionError as RedisConnectionError
+
 from app.clients.memory_client import MemoryClient
 from app.clients.redis_client import RedisClient
-from app.configs.settings import CacheConfig, RedisCacheConfig, settings
+from app.configs.settings import CacheConfig
 from app.data.statistics import CacheStatistics
-from app.errors.exceptions import RedisConnectionError
 from app.managers.cache_types import CacheCallback, CacheKey
 from app.utils import (
     compress,
@@ -18,8 +19,9 @@ from app.utils import (
     do_compress,
     serialize,
 )
+from app.utils.helpers import file_logger
 
-logger = getLogger(__name__)
+logger = file_logger(getLogger(__name__))
 
 
 class CacheManager:
@@ -27,7 +29,7 @@ class CacheManager:
 
     def __init__(self) -> None:
         """Initialize cache manager."""
-        self.redis_client = RedisClient(RedisCacheConfig())
+        self.redis_client = RedisClient()
         self.memory_client = MemoryClient()
         self._client: RedisClient | MemoryClient = self.redis_client
         self.is_redis_available = False
@@ -43,7 +45,6 @@ class CacheManager:
             await self.redis_client.connect()
             self._client = self.redis_client
             self.is_redis_available = True
-            logger.info("Redis connection successful. Cache is using Redis.")
         except RedisConnectionError as e:
             logger.warning(f"Redis connection failed: {e}. Falling back to in-memory cache.")
             self._client = self.memory_client

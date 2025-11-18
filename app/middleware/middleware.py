@@ -16,6 +16,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from rich.logging import RichHandler
+from rich.traceback import install
 
 from app.configs.settings import settings
 from app.managers.cache_manager import cache_manager
@@ -33,6 +34,7 @@ basicConfig(
 )
 logger = getLogger("rich")
 file_logger(logger)
+install()
 
 
 @asynccontextmanager
@@ -45,10 +47,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Initialize services
     try:
         if log_to_file:
-            logger.info("Logging to file enabled")
+            logger.info("Logging to file enabled.")
 
         await cache_manager.initialize()
-        logger.info("Cache manager started")
 
         # Initialize AI client
         # get_ai_client()

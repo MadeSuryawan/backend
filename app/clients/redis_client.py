@@ -9,24 +9,24 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import RedisError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
-from app.configs.settings import RedisCacheConfig
+from app.configs.settings import pool_kwargs
+from app.utils.helpers import file_logger
 
-logger = getLogger(__name__)
+logger = file_logger(getLogger(__name__))
 
 
 class RedisClient:
     """Async Redis client wrapper with connection pooling."""
 
-    def __init__(self, config: RedisCacheConfig) -> None:
+    def __init__(self) -> None:
         """Initialize Redis client.
 
-        Args:
-            config: Redis configuration.
+        Defaults to RedisCacheConfig().
 
         Raises:
             ValueError: If configuration is invalid.
         """
-        self.config = config
+        self.config = pool_kwargs
         self._pool: ConnectionPool | None = None
         self._redis: Redis | None = None
 
@@ -37,27 +37,7 @@ class RedisClient:
             RedisConnectionError: If connection fails.
         """
         try:
-            # Build connection pool kwargs dynamically to handle version compatibility
-            pool_kwargs: dict[str, Any] = {
-                "host": self.config.host,
-                "port": self.config.port,
-                "db": self.config.db,
-                "password": self.config.password,
-                "socket_timeout": self.config.socket_timeout,
-                "socket_connect_timeout": self.config.socket_connect_timeout,
-                "socket_keepalive": self.config.socket_keepalive,
-                "max_connections": self.config.max_connections,
-                "decode_responses": self.config.decode_responses,
-                "encoding": self.config.encoding,
-                "health_check_interval": self.config.health_check_interval,
-            }
-            if self.config.socket_keepalive:
-                pool_kwargs["socket_keepalive_options"] = {}
-            # Only pass ssl if True to avoid compatibility issues
-            if self.config.ssl:
-                pool_kwargs["ssl"] = True
-
-            self._pool = ConnectionPool(**pool_kwargs)
+            self._pool = ConnectionPool(**self.config)
             self._redis = Redis(connection_pool=self._pool)
             # Test connection with ping
             ping_result = self._redis.ping()
@@ -68,10 +48,10 @@ class RedisClient:
             if not result:
                 mssg = "Redis ping returned False"
                 raise RedisConnectionError(mssg)
-            logger.info("Redis connection established successfully.")
+            logger.info("Redis connection successful. Cache is using Redis.")
         except (ConnectionError, RedisTimeoutError, RedisError) as e:
             logger.exception("Failed to connect to Redis")
-            mssg = f"Cannot connect to Redis at {self.config.host}:{self.config.port}"
+            mssg = f"Cannot connect to Redis at {self.config['host']}:{self.config['port']}"
             raise RedisConnectionError(mssg) from e
 
     async def disconnect(self) -> None:

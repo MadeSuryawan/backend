@@ -1,15 +1,20 @@
 """FastAPI decorators for caching with rate limiting integration."""
 
 from collections.abc import Callable
+from contextlib import suppress
 from functools import wraps
 from hashlib import sha256
 from json import dumps
 from logging import getLogger
 from typing import Any
 
-from app.managers.cache_manager import CacheManager
+from redis.exceptions import RedisError
 
-logger = getLogger(__name__)
+from app.errors.exceptions import CacheKeyError
+from app.managers.cache_manager import CacheManager
+from app.utils.helpers import file_logger
+
+logger = file_logger(getLogger(__name__))
 
 
 def cached(
@@ -52,7 +57,7 @@ def cached(
                 if cached_value is not None:
                     logger.debug(f"Cache hit for key: {cache_key}")
                     return cached_value
-            except RuntimeError as e:
+            except (RedisError, CacheKeyError, OSError) as e:
                 logger.warning(f"Cache retrieval failed: {e}")
 
             # Execute function and cache result
@@ -66,7 +71,7 @@ def cached(
                     namespace=namespace,
                 )
                 logger.debug(f"Cached result for key: {cache_key}")
-            except RuntimeError as e:
+            except (RedisError, CacheKeyError, OSError) as e:
                 logger.warning(f"Failed to cache result: {e}")
 
             return result
@@ -116,7 +121,7 @@ def cache_busting(
                 try:
                     deleted = await cache_manager.delete(*keys_to_bust, namespace=namespace)
                     logger.debug(f"Cache busted {deleted} keys: {keys_to_bust}")
-                except RuntimeError as e:
+                except (RedisError, CacheKeyError, OSError) as e:
                     logger.warning(f"Cache busting failed: {e}")
 
             return result
@@ -139,23 +144,17 @@ def _generate_cache_key(func_name: str, *args: list[Any], **kwargs: dict[str, An
     """
 
     # Filter out request objects and other non-serializable items
-    serializable_args = []
-    for arg in args:
-        try:
-            dumps(arg, default=str)
-            serializable_args.append(arg)
-        except (TypeError, ValueError):
-            # Skip non-serializable arguments
-            pass
+    with suppress(TypeError, ValueError):
+        # Skip non-serializable arguments
+        serializable_args = [dumps(arg, default=str, sort_keys=True) for arg in args]
 
-    serializable_kwargs = {}
-    for key, value in kwargs.items():
-        try:
-            dumps(value, default=str)
-            serializable_kwargs[key] = value
-        except (TypeError, ValueError):
-            # Skip non-serializable values
-            pass
+    with suppress(TypeError, ValueError):
+        # Skip non-serializable keyword arguments
+        serializable_kwargs = {
+            key: value
+            for key, value in kwargs.items()
+            if isinstance(value, (str, int, float, bool))
+        }
 
     key_parts = [func_name]
     if serializable_args:

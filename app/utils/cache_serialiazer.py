@@ -34,7 +34,7 @@ def serialize(value: dict[str, Any]) -> str:
         CacheSerializationError: If serialization fails.
     """
     try:
-        return json_dumps(value, default=str)
+        return json_dumps(value, default=str, sort_keys=True)
     except (TypeError, ValueError) as e:
         logger.exception("Serialization failed")
         mssg = f"Cannot serialize value: {e}"

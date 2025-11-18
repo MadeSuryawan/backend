@@ -9,8 +9,9 @@ from pydantic import BaseModel
 
 from app.errors.exceptions import CacheExceptionError
 from app.managers.cache_manager import cache_manager
+from app.utils.helpers import file_logger
 
-logger = getLogger(__name__)
+logger = file_logger(getLogger(__name__))
 
 router = APIRouter(prefix="/cache", tags=["cache"])
 
