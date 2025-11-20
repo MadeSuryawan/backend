@@ -4,17 +4,47 @@ from collections.abc import Callable
 from contextlib import suppress
 from functools import wraps
 from hashlib import sha256
-from json import dumps
+from json import JSONDecodeError, dumps
 from logging import getLogger
 from typing import Any
 
+from fastapi.exceptions import ResponseValidationError
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from redis.exceptions import RedisError
+from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 
-from app.errors.exceptions import CacheKeyError
+from app.errors.exceptions import BASE_EXCEPTION, CacheKeyError
 from app.managers.cache_manager import CacheManager
+from app.schemas.items import Item, ItemUpdate
 from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
+
+exceptions = (
+    RedisError,
+    CacheKeyError,
+    *BASE_EXCEPTION,
+    ValidationError,
+    ResponseValidationError,
+    TypeError,
+)
+
+
+def validate_response(value: object) -> object | None:
+    """Validate response against Pydantic models."""
+    logger.info("Validating Value")
+    try:
+        valid = Item.model_validate(value)
+    except exceptions as e:
+        # logger.info(type(e.errors(include_url=False)[0]))
+        # return JSONResponse(
+        #     status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+        #     # content={"detail": e.errors(include_url=False)},
+        #     content={"detail": e},
+        # )
+        raise ValidationError() from e
+    return valid
 
 
 def cached(
@@ -23,7 +53,8 @@ def cached(
     namespace: str | None = None,
     key_builder: Callable[..., str] | None = None,
 ) -> Callable:
-    """FastAPI endpoint result caching decorator.
+    """
+    FastAPI endpoint result caching decorator.
 
     Args:
         cache_manager: Cache manager instance.
@@ -53,26 +84,32 @@ def cached(
 
             # Try to get from cache
             try:
-                cached_value = await cache_manager.get(cache_key, namespace)
-                if cached_value is not None:
+                if cached_value := await cache_manager.get(cache_key, namespace):
                     logger.debug(f"Cache hit for key: {cache_key}")
+                    # return validate_response(cached_value)
                     return cached_value
-            except (RedisError, CacheKeyError, OSError) as e:
+            except exceptions as e:
                 logger.warning(f"Cache retrieval failed: {e}")
+                # return JSONResponse(
+                #     status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+                #     content={"detail": e.errors(include_url=False)},
+                # )
 
             # Execute function and cache result
-            result = await func(*args, **kwargs)
+            result: Item | dict = await func(*args, **kwargs)
+            logger.debug(f"{result=}, {type(result)=}")
 
             try:
-                await cache_manager.set(
+                if await cache_manager.set(
                     cache_key,
                     result,
                     ttl=ttl,
                     namespace=namespace,
-                )
-                logger.debug(f"Cached result for key: {cache_key}")
-            except (RedisError, CacheKeyError, OSError) as e:
-                logger.warning(f"Failed to cache result: {e}")
+                ):
+                    logger.debug(f"Cached result for key: {cache_key}")
+                    return result
+            except exceptions as e:
+                logger.warning(f"{e}")
 
             return result
 
@@ -87,7 +124,8 @@ def cache_busting(
     namespace: str | None = None,
     key_builder: Callable[..., list[str]] | None = None,
 ) -> Callable:
-    """Busting on mutations (POST, PUT, DELETE) cache decorator.
+    """
+    Busting on mutations (POST, PUT, DELETE) cache decorator.
 
     Args:
         cache_manager: Cache manager instance.
@@ -121,7 +159,7 @@ def cache_busting(
                 try:
                     deleted = await cache_manager.delete(*keys_to_bust, namespace=namespace)
                     logger.debug(f"Cache busted {deleted} keys: {keys_to_bust}")
-                except (RedisError, CacheKeyError, OSError) as e:
+                except exceptions as e:
                     logger.warning(f"Cache busting failed: {e}")
 
             return result
@@ -132,7 +170,8 @@ def cache_busting(
 
 
 def _generate_cache_key(func_name: str, *args: list[Any], **kwargs: dict[str, Any]) -> str:
-    """Generate cache key from function name and arguments.
+    """
+    Generate cache key from function name and arguments.
 
     Args:
         func_name: Name of the function.
@@ -144,7 +183,7 @@ def _generate_cache_key(func_name: str, *args: list[Any], **kwargs: dict[str, An
     """
 
     # Filter out request objects and other non-serializable items
-    with suppress(TypeError, ValueError):
+    with suppress(TypeError, ValueError, JSONDecodeError):
         # Skip non-serializable arguments
         serializable_args = [dumps(arg, default=str, sort_keys=True) for arg in args]
 

@@ -1,15 +1,19 @@
+# app/managers/cache_manager.py
 """Main cache manager for Redis caching operations."""
 
 from collections.abc import Awaitable, Callable, Coroutine
 from logging import getLogger
 from typing import Any
 
+from pydantic_core import ValidationError
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.clients.memory_client import MemoryClient
 from app.clients.redis_client import RedisClient
 from app.configs.settings import CacheConfig
 from app.data.statistics import CacheStatistics
+from app.errors.exceptions import BASE_EXCEPTION, CacheDeserializationError, CacheKeyError
+from app.schemas.items import Item
 from app.utils import (
     compress,
     decompress,
@@ -38,7 +42,8 @@ class CacheManager:
         self.statistics = CacheStatistics()
 
     async def initialize(self) -> None:
-        """Initialize cache manager by connecting to Redis.
+        """
+        Initialize cache manager by connecting to Redis.
 
         If the Redis connection fails, it falls back to an in-memory cache.
         """
@@ -73,7 +78,9 @@ class CacheManager:
         """Get value from cache."""
         try:
             full_key = self._build_key(key, namespace)
+            logger.debug(f"Getting from cache: {full_key}")
             cached_value = await self._client.get(full_key)
+            logger.debug(f"{cached_value=}, {type(cached_value)=}")
 
             if cached_value is None:
                 self.statistics.record_miss()
@@ -86,17 +93,21 @@ class CacheManager:
             # Decompress if needed
             if isinstance(cached_value, str):
                 cached_value = decompress(cached_value)
+                logger.debug(f"{decompress(cached_value)=}, {type(decompress(cached_value))=}")
 
+            # Deserialize
+            logger.debug(f"{deserialize(cached_value)=}, {type(deserialize(cached_value))=}")
             return deserialize(cached_value)
-        except Exception:
-            logger.exception(f"Cache get failed for key {key}")
+        except BASE_EXCEPTION + (ValidationError, CacheDeserializationError) as e:
+            logger.exception(f"Cache get failed for key: {key}")
             self.statistics.record_error()
-            raise
+            mssg = f"Cache get failed for key {key}, {e}"
+            raise CacheKeyError(mssg) from e
 
     async def set(
         self,
         key: str,
-        value: dict[str, Any],
+        value: Item | dict,
         ttl: int | None = None,
         namespace: str | None = None,
     ) -> bool:
@@ -116,13 +127,14 @@ class CacheManager:
             ex = ttl if ttl is not None else self.cache_config.default_ttl
             ex = min(ex, self.cache_config.max_ttl)
 
-            result = await self._client.set(full_key, serialized, ex=ex)
+            success = await self._client.set(full_key, serialized, ex=ex)
             self.statistics.record_set(len(serialized.encode("utf-8")))
-        except Exception:
+        except (RedisConnectionError,) + BASE_EXCEPTION as e:
             logger.exception(f"Cache set failed for key {key}")
             self.statistics.record_error()
-            raise
-        return result
+            mssg = f"Cache set failed for key {key}"
+            raise CacheKeyError(mssg) from e
+        return success
 
     async def delete(self, *keys: str, namespace: str | None = None) -> int:
         """Delete keys from cache."""
@@ -130,10 +142,11 @@ class CacheManager:
             full_keys = [self._build_key(key, namespace) for key in keys]
             deleted_count = await self._client.delete(*full_keys)
             self.statistics.record_delete()
-        except Exception:
+        except BASE_EXCEPTION as e:
             logger.exception("Cache delete failed")
             self.statistics.record_error()
-            raise
+            mssg = "Cache delete failed"
+            raise CacheKeyError(mssg) from e
         return deleted_count
 
     async def exists(self, *keys: str, namespace: str | None = None) -> int:
@@ -141,10 +154,11 @@ class CacheManager:
         try:
             full_keys = [self._build_key(key, namespace) for key in keys]
             return await self._client.exists(*full_keys)
-        except Exception:
+        except BASE_EXCEPTION as e:
             logger.exception("Cache exists check failed")
             self.statistics.record_error()
-            raise
+            mssg = "Cache exists check failed"
+            raise CacheKeyError(mssg) from e
 
     async def get_or_set(
         self,
@@ -161,7 +175,7 @@ class CacheManager:
                 cached = await self.get(key, namespace)
                 if cached is not None:
                     return cached
-            except RedisConnectionError as e:
+            except BASE_EXCEPTION as e:
                 logger.warning(f"Failed to retrieve from cache: {e}")
 
         # Call callback
@@ -197,14 +211,16 @@ class CacheManager:
                 self.statistics.reset()
                 logger.info("In-memory cache cleared (flushed all).")
                 return 0  # MemoryClient flush_all doesn't return count
-        except Exception:
+        except BASE_EXCEPTION as e:
             logger.exception("Cache clear failed")
             self.statistics.record_error()
-            raise
+            mssg = "Cache clear failed"
+            raise CacheKeyError(mssg) from e
         return 0
 
     async def expire(self, key: str, seconds: int, namespace: str | None = None) -> bool:
-        """Set expiration on key.
+        """
+        Set expiration on key.
 
         Args:
             key: Cache key.
@@ -217,13 +233,15 @@ class CacheManager:
         try:
             full_key = self._build_key(key, namespace)
             return await self._client.expire(full_key, seconds)
-        except Exception:
+        except BASE_EXCEPTION as e:
             logger.exception(f"Cache expire failed for key {key}")
             self.statistics.record_error()
-            raise
+            mssg = f"Cache expire failed for key {key}"
+            raise CacheKeyError(mssg) from e
 
     async def ttl(self, key: str, namespace: str | None = None) -> int:
-        """Get remaining time to live.
+        """
+        Get remaining time to live.
 
         Args:
             key: Cache key.
@@ -235,25 +253,28 @@ class CacheManager:
         try:
             full_key = self._build_key(key, namespace)
             return await self._client.ttl(full_key)
-        except Exception:
+        except BASE_EXCEPTION as e:
             logger.exception(f"Cache ttl check failed for key {key}")
             self.statistics.record_error()
-            raise
+            mssg = f"Cache ttl check failed for key {key}"
+            raise CacheKeyError(mssg) from e
 
     async def ping(self) -> bool | Awaitable[bool]:
-        """Ping the cache server.
+        """
+        Ping the cache server.
 
         Returns:
             True if the server is reachable.
         """
         try:
             return await self._client.ping()
-        except Exception:
+        except BASE_EXCEPTION:
             logger.exception("Cache ping failed")
             return False
 
     def get_statistics(self) -> dict[str, Any]:
-        """Get cache statistics.
+        """
+        Get cache statistics.
 
         Returns:
             Dictionary of cache statistics.

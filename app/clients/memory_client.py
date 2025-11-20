@@ -1,13 +1,17 @@
 """In-memory cache client for fallback when Redis is not available."""
 
-import time
+from logging import getLogger
+from time import time
 from typing import Any
 
-from app.utils.helpers import today_str
+from app.utils.helpers import file_logger, today_str
+
+logger = file_logger(getLogger(__name__))
 
 
 class MemoryClient:
-    """A simple asynchronous in-memory cache client that mimics RedisClient.
+    """
+    A simple asynchronous in-memory cache client that mimics RedisClient.
 
     This class provides a basic in-memory key-value store with support for
     time-to-live (TTL) expiration. It is designed to be a drop-in
@@ -21,7 +25,8 @@ class MemoryClient:
         self.is_connected: bool = True
 
     def _is_expired(self, key: str) -> bool:
-        """Check if a key has expired.
+        """
+        Check if a key has expired.
 
         Args:
             key: The key to check.
@@ -30,11 +35,12 @@ class MemoryClient:
             True if the key has expired, False otherwise.
         """
         if key in self._ttl:
-            return time.time() > self._ttl[key]
+            return time() > self._ttl[key]
         return False
 
     async def get(self, key: str) -> str | None:
-        """Get a value from the cache.
+        """
+        Get a value from the cache.
 
         Args:
             key: The key of the item to retrieve.
@@ -43,12 +49,14 @@ class MemoryClient:
             The value if it exists and has not expired, otherwise None.
         """
         if self._is_expired(key):
+            logger.debug(f"key {key} is expired")
             await self.delete(key)
             return None
         return self._cache.get(key)
 
     async def set(self, key: str, value: str, ex: int | None = None) -> bool:
-        """Set a value in the cache with an optional TTL.
+        """
+        Set a value in the cache with an optional TTL.
 
         Args:
             key: The key of the item to set.
@@ -60,11 +68,12 @@ class MemoryClient:
         """
         self._cache[key] = value
         if ex:
-            self._ttl[key] = time.time() + ex
+            self._ttl[key] = time() + ex
         return True
 
     async def delete(self, *keys: str) -> int:
-        """Delete one or more keys from the cache.
+        """
+        Delete one or more keys from the cache.
 
         Args:
             keys: The keys to delete.
@@ -72,6 +81,7 @@ class MemoryClient:
         Returns:
             The number of keys that were deleted.
         """
+        logger.debug(f"{keys=}")
         count = 0
         for key in keys:
             if key in self._cache:
@@ -82,7 +92,8 @@ class MemoryClient:
         return count
 
     async def exists(self, *keys: str) -> int:
-        """Check if one or more keys exist in the cache.
+        """
+        Check if one or more keys exist in the cache.
 
         Args:
             keys: The keys to check.
@@ -106,7 +117,7 @@ class MemoryClient:
         """Check if the cache is alive."""
         return True
 
-    async def info(self) -> dict[str, Any]:
+    async def info(self) -> dict[str, str]:
         """Get information about the in-memory cache."""
         return {
             "server": "In-Memory Cache",
@@ -118,7 +129,8 @@ class MemoryClient:
         }
 
     async def ttl(self, key: str) -> int:
-        """Get the remaining time to live of a key.
+        """
+        Get the remaining time to live of a key.
 
         Args:
             key: The key to check.
@@ -137,10 +149,11 @@ class MemoryClient:
         if key not in self._ttl:
             return -1
 
-        return int(self._ttl[key] - time.time())
+        return int(self._ttl[key] - time())
 
     async def expire(self, key: str, seconds: int) -> bool:
-        """Set an expiration time on a key.
+        """
+        Set an expiration time on a key.
 
         Args:
             key: The key to set the expiration on.
@@ -150,7 +163,7 @@ class MemoryClient:
             True if the expiration was set, False otherwise.
         """
         if key in self._cache:
-            self._ttl[key] = time.time() + seconds
+            self._ttl[key] = time() + seconds
             return True
         return False
 

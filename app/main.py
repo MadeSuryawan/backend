@@ -4,8 +4,9 @@
 from logging import getLogger
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from pydantic import BaseModel
+from fastapi.responses import ORJSONResponse
 from slowapi.errors import RateLimitExceeded
+from starlette.status import HTTP_404_NOT_FOUND
 
 from app.decorators.caching import cache_busting, cached
 from app.managers.cache_manager import cache_manager
@@ -21,12 +22,9 @@ from app.middleware.middleware import (
     lifespan,
 )
 from app.routes.cache import router as cache_router
+from app.schemas.items import Item, ItemUpdate
 from app.utils.helpers import file_logger
 
-# Configure logging
-logger = file_logger(getLogger(__name__))
-
-# FastAPI app
 app = FastAPI(
     title="FastAPI Redis Cache",
     description="Seamless caching integration with Redis for FastAPI",
@@ -34,42 +32,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add middleware
 add_security_headers(app)
 add_request_logging(app)
 configure_cors(app)
 add_compression(app)
 
-# Add cache management routes
 app.include_router(cache_router)
 
-# SlowAPI rate limiter
-app.state.limiter = limiter
-
-# Register exception handlers
 app.add_exception_handler(
     RateLimitExceeded,
     rate_limit_exceeded_handler,
 )
 
-
-# Pydantic models
-class Item(BaseModel):
-    """Item model."""
-
-    id: int
-    name: str
-    description: str | None = None
-    price: float
-
-
-class ItemUpdate(BaseModel):
-    """Item update model."""
-
-    name: str | None = None
-    description: str | None = None
-    price: float | None = None
-
+logger = file_logger(getLogger(__name__))
 
 # In-memory database (for demo purposes)
 items_db: dict[int, Item] = {}
@@ -87,7 +62,8 @@ async def root() -> dict[str, str]:
 @limiter.limit("2/minute")
 @cache_busting(cache_manager, keys=["get_all_items"], namespace="items")
 async def create_item(item: Item, request: Request, response: Response) -> Item:
-    """Create new item with cache busting.
+    """
+    Create new item with cache busting.
 
     Rate limited to 50 requests per minute.
     Invalidates the items list cache.
@@ -101,33 +77,41 @@ async def create_item(item: Item, request: Request, response: Response) -> Item:
 @limiter.limit("10/minute")
 @cached(
     cache_manager,
-    ttl=300,
+    ttl=5,
     namespace="items",
     key_builder=lambda item_id, **kw: f"item_{item_id}",
 )
 async def get_item(item_id: int, request: Request, response: Response) -> Item:
-    """Get specific item with caching.
+    """
+    Get specific item with caching.
 
     Rate limited to 200 requests per minute.
-    Results cached for 5 minutes.
+    Results cached for 1 hour.
     """
     logger.info(f"Fetching item {item_id}")
     if item_id not in items_db:
-        raise HTTPException(status_code=404, detail="Item not found")
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Item not found")
     return items_db[item_id]
 
 
-@app.get("/all-items", tags=["items"])
+@app.get(
+    "/all-items",
+    tags=["items"],
+    response_class=ORJSONResponse,
+    response_model=dict[str, list[Item]],
+)
 @limiter.limit("10/minute")
-@cached(cache_manager, ttl=600, namespace="items")
+@cached(cache_manager, ttl=3600, namespace="items", key_builder=lambda **kw: "get_all_items")
 async def get_all_items(request: Request, response: Response) -> dict[str, list[Item]]:
-    """Get all items with caching.
+    """
+    Get all items with caching.
 
     Rate limited to 100 requests per minute.
-    Results cached for 10 minutes.
+    Results cached for 1 hour.
     """
     logger.info("Fetching all items")
     return {"items": list(items_db.values())}
+    # return ORJSONResponse({"items": list(items_db.values())})
 
 
 @app.put("/update-item/{item_id}", tags=["items"])
@@ -143,7 +127,8 @@ async def update_item(
     request: Request,
     response: Response,
 ) -> Item:
-    """Update item with cache busting.
+    """
+    Update item with cache busting.
 
     Rate limited to 50 requests per minute.
     Invalidates specific item and items list cache.
@@ -167,7 +152,8 @@ async def update_item(
     namespace="items",
 )
 async def delete_item(item_id: int, request: Request, response: Response) -> dict[str, str]:
-    """Delete item with cache busting.
+    """
+    Delete item with cache busting.
 
     Rate limited to 50 requests per minute.
     Invalidates specific item and items list cache.
@@ -196,6 +182,14 @@ async def health_check() -> dict[str, str]:
 
 
 if __name__ == "__main__":
-    import uvicorn
+    from uvicorn import run
 
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info", reload=True)
+    run(
+        app,
+        host="127.0.0.1",
+        port=8000,
+        log_level="info",
+        reload=True,
+        loop="uvloop",
+        http="httptools",
+    )

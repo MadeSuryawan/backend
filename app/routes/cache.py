@@ -49,7 +49,8 @@ class CacheResetStatsResponse(BaseModel):
 
 @router.get("/stats", response_model=CacheStatsResponse, tags=["cache"])
 async def get_cache_stats() -> CacheStatsResponse:
-    """Get cache statistics.
+    """
+    Get cache statistics.
 
     Returns:
         Cache statistics.
@@ -64,7 +65,8 @@ async def get_cache_stats() -> CacheStatsResponse:
 
 @router.get("/ping", response_model=CachePingResponse, tags=["cache"])
 async def ping_cache() -> CachePingResponse:
-    """Ping cache server.
+    """
+    Ping cache server.
 
     Returns:
         Ping result.
@@ -85,7 +87,8 @@ async def ping_cache() -> CachePingResponse:
 
 @router.get("/reset-stats", tags=["cache"])
 async def reset_stats() -> CacheResetStatsResponse:
-    """Reset cache statistics.
+    """
+    Reset cache statistics.
 
     Returns:
         Reset operation result.
@@ -100,7 +103,8 @@ async def reset_stats() -> CacheResetStatsResponse:
 
 @router.delete("/clear", response_model=CacheClearResponse, tags=["cache"])
 async def clear_cache() -> CacheClearResponse:
-    """Clear all cache entries.
+    """
+    Clear all cache entries.
 
     Returns:
         Clear operation result.
@@ -114,7 +118,8 @@ async def clear_cache() -> CacheClearResponse:
 
 
 def create_cache_error_handler(app: FastAPI) -> None:
-    """Add cache exception error handlers to FastAPI application.
+    """
+    Add cache exception error handlers to FastAPI application.
 
     Args:
         app: FastAPI application.
@@ -122,7 +127,8 @@ def create_cache_error_handler(app: FastAPI) -> None:
 
     @app.exception_handler(CacheExceptionError)
     async def cache_exception_handler(request: Request, exc: CacheExceptionError) -> JSONResponse:
-        """Handle cache exceptions.
+        """
+        Handle cache exceptions.
 
         Args:
             request: Request object.

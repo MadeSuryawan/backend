@@ -1,4 +1,5 @@
-"""Middleware components for the FastAPI Redis Cache application.
+"""
+Middleware components for the FastAPI Redis Cache application.
 
 This module contains middleware functions for security headers,
 request logging, CORS handling, and compression. This module also
@@ -6,6 +7,7 @@ contains the lifespan event handler for service initialization and
 cleanup.
 """
 
+from asyncio import get_event_loop
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from logging import basicConfig, getLogger
@@ -17,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from rich.logging import RichHandler
 from rich.traceback import install
+from uvloop import Loop
 
 from app.configs.settings import settings
 from app.managers.cache_manager import cache_manager
@@ -51,9 +54,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             logger.info("Logging to file enabled.")
 
         await cache_manager.initialize()
+        app.state.cache_manager = cache_manager
 
         if limiter.enabled:
+            # SlowAPI rate limiter
+            app.state.limiter = limiter
             logger.info("Rate limiter enabled.")
+
+        logger.info(f"is uvloop: {type(get_event_loop()) is Loop}")
 
         # Initialize AI client
         # get_ai_client()

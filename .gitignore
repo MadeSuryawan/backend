@@ -9,6 +9,7 @@ __pycache__/
 dump.rdb
 
 .qodo
+.ruff_cache
 
 # Distribution / packaging
 .Python
@@ -98,6 +99,11 @@ celerybeat.pid
 
 # SageMath parsed files
 *.sage.py
+
+# Docker volumes and runtime data
+data/redis
+logs/
+
 
 # Environments
 .env

@@ -3,11 +3,12 @@
 from base64 import b64decode, b64encode
 from gzip import compress as gzip_compress
 from gzip import decompress as gzip_decompress
-from json import JSONDecodeError
-from json import dumps as json_dumps
-from json import loads as json_loads
+from json import JSONDecodeError, dumps, loads
 from logging import Logger, getLogger
 from typing import Any
+
+from pydantic_core import PydanticSerializationError, ValidationError
+from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 
 from app.errors.exceptions import (
     CacheCompressionError,
@@ -15,14 +16,16 @@ from app.errors.exceptions import (
     CacheDeserializationError,
     CacheSerializationError,
 )
+from app.schemas.items import Item
 
 logger: Logger = getLogger(__name__)
 
 COMPRESSION_MARKER = b"\x00GZIP\x00"
 
 
-def serialize(value: dict[str, Any]) -> str:
-    """Serialize value to JSON string.
+def serialize(value: Item | dict[str, Any]) -> str:
+    """
+    Serialize value to JSON string.
 
     Args:
         value: Value to serialize.
@@ -34,15 +37,18 @@ def serialize(value: dict[str, Any]) -> str:
         CacheSerializationError: If serialization fails.
     """
     try:
-        return json_dumps(value, default=str, sort_keys=True)
-    except (TypeError, ValueError) as e:
+        if isinstance(value, Item):
+            return value.model_dump_json()
+        return dumps(value, default=str, sort_keys=False)
+    except (PydanticSerializationError, JSONDecodeError) as e:
         logger.exception("Serialization failed")
         mssg = f"Cannot serialize value: {e}"
         raise CacheSerializationError(mssg) from e
 
 
-def deserialize(value: str) -> object:
-    """Deserialize JSON string to value.
+def deserialize(value: str) -> Item | dict:
+    """
+    Deserialize JSON string to value.
 
     Args:
         value: JSON string to deserialize.
@@ -54,15 +60,21 @@ def deserialize(value: str) -> object:
         CacheDeserializationError: If deserialization fails.
     """
     try:
-        return json_loads(value)
-    except (TypeError, JSONDecodeError) as e:
+        if "items" in (items_dict := loads(value)):  # and Item.model_validate(items_dict["items"])
+            logger.debug(f"{items_dict["items"]=}")
+            item_list: list[Item] = [Item.model_validate_json(item) for item in items_dict["items"]]
+            return {"items": item_list}
+
+        return Item.model_validate_json(value)
+    except ValidationError as e:
         logger.exception("Deserialization failed")
         mssg = f"Cannot deserialize value: {e}"
         raise CacheDeserializationError(mssg) from e
 
 
 def compress(data: str) -> str:
-    """Compress data using gzip.
+    """
+    Compress data using gzip.
 
     Args:
         data: Data to compress.
@@ -83,7 +95,8 @@ def compress(data: str) -> str:
 
 
 def decompress(data: str) -> str:
-    """Decompress gzip data.
+    """
+    Decompress gzip data.
 
     Args:
         data: Compressed base64-encoded data with marker.
@@ -108,7 +121,8 @@ def decompress(data: str) -> str:
 
 
 def do_compress(data: str, threshold: int) -> bool:
-    """Determine if data should be compressed.
+    """
+    Determine if data should be compressed.
 
     Args:
         data: Data to check.

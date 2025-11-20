@@ -1,3 +1,4 @@
+# app/clients/redis_client.py
 """Redis client module for cache operations."""
 
 from collections.abc import Awaitable
@@ -19,7 +20,8 @@ class RedisClient:
     """Async Redis client wrapper with connection pooling."""
 
     def __init__(self) -> None:
-        """Initialize Redis client.
+        """
+        Initialize Redis client.
 
         Defaults to RedisCacheConfig().
 
@@ -31,7 +33,8 @@ class RedisClient:
         self._redis: Redis | None = None
 
     async def connect(self) -> None:
-        """Establish Redis connection pool.
+        """
+        Establish Redis connection pool.
 
         Raises:
             RedisConnectionError: If connection fails.
@@ -62,7 +65,8 @@ class RedisClient:
 
     @property
     def client(self) -> Redis:
-        """Get Redis client.
+        """
+        Get Redis client.
 
         Returns:
             Redis client instance.
@@ -76,7 +80,8 @@ class RedisClient:
         return self._redis
 
     async def get(self, key: str) -> str | None:
-        """Get value from cache.
+        """
+        Get value from cache.
 
         Args:
             key: Cache key.
@@ -95,7 +100,8 @@ class RedisClient:
             raise RedisConnectionError(mssg) from e
 
     async def set(self, key: str, value: str, ex: int | None = None) -> bool:
-        """Set value in cache.
+        """
+        Set value in cache.
 
         Args:
             key: Cache key.
@@ -116,7 +122,8 @@ class RedisClient:
             raise RedisConnectionError(mssg) from e
 
     async def delete(self, *keys: str) -> int:
-        """Delete keys from cache.
+        """
+        Delete keys from cache.
 
         Args:
             *keys: Cache keys to delete.
@@ -135,7 +142,8 @@ class RedisClient:
             raise RedisConnectionError(mssg) from e
 
     async def exists(self, *keys: str) -> int:
-        """Check if keys exist in cache.
+        """
+        Check if keys exist in cache.
 
         Args:
             *keys: Cache keys to check.
@@ -154,7 +162,8 @@ class RedisClient:
             raise RedisConnectionError(mssg) from e
 
     async def expire(self, key: str, seconds: int) -> bool:
-        """Set expiration on key.
+        """
+        Set expiration on key.
 
         Args:
             key: Cache key.
@@ -174,7 +183,8 @@ class RedisClient:
             raise RedisConnectionError(mssg) from e
 
     async def ttl(self, key: str) -> int:
-        """Get remaining time to live.
+        """
+        Get remaining time to live.
 
         Args:
             key: Cache key.
@@ -193,7 +203,8 @@ class RedisClient:
             raise RedisConnectionError(mssg) from e
 
     async def flush_db(self) -> bool:
-        """Flush current database.
+        """
+        Flush current database.
 
         Returns:
             True if successful.
@@ -209,7 +220,8 @@ class RedisClient:
             raise RedisConnectionError(mssg) from e
 
     async def ping(self) -> bool:
-        """Ping Redis server.
+        """
+        Ping Redis server.
 
         Returns:
             True if server is reachable.
@@ -238,7 +250,8 @@ class RedisClient:
             raise RedisConnectionError(mssg) from e
 
     async def scan_keys(self, pattern: str, cursor: int = 0) -> tuple[int, list[str]]:
-        """Scan keys in the Redis database using the SCAN command.
+        """
+        Scan keys in the Redis database using the SCAN command.
 
         Args:
             pattern: Pattern to match keys against.

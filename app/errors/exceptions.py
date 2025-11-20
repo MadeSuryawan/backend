@@ -31,3 +31,13 @@ class CacheDecompressionError(CacheExceptionError):
 
 class RateLimitError(CacheExceptionError):
     """Raised when rate limit is exceeded."""
+
+
+BASE_EXCEPTION = (
+    OSError,
+    PermissionError,
+    MemoryError,
+    RuntimeError,
+    ConnectionError,
+    TimeoutError,
+)

@@ -1,0 +1,38 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379" # Optional: expose Redis for external access
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - baliblissed-network
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    restart: unless-stopped
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081" # Web UI will be available at http://localhost:8081
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - baliblissed-network
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  baliblissed-network:
+    driver: bridge

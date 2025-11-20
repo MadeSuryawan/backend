@@ -1,10 +1,10 @@
-"""Application settings and configuration constants.
+"""
+Application settings and configuration constants.
 
 This module contains application settings, constants, and configuration
 values for the BaliBlissed backend application.
 """
 
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 

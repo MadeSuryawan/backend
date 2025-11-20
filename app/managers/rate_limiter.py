@@ -1,4 +1,4 @@
-# app/core/rate_limiter.py
+# app/managers/rate_limiter.py
 
 """Rate limiter configuration using slowapi."""
 
@@ -19,7 +19,8 @@ logger = file_logger(getLogger(__name__))
 
 
 def get_identifier(request: Request) -> str:
-    """Get unique identifier for rate limiting.
+    """
+    Get unique identifier for rate limiting.
 
     Uses API key from header if available, otherwise falls back to IP address.
 
@@ -41,7 +42,8 @@ limiter = Limiter(**LimiterConfig().model_dump(), key_func=get_identifier)
 
 
 async def verify_redis_connection() -> bool:
-    """Verify Redis connection is available.
+    """
+    Verify Redis connection is available.
 
     Returns:
         True if Redis is connected, False otherwise.
@@ -62,7 +64,8 @@ async def verify_redis_connection() -> bool:
 
 
 async def close_limiter() -> None:
-    """Close and cleanup limiter resources.
+    """
+    Close and cleanup limiter resources.
 
     This should be called during application shutdown.
     """
@@ -78,7 +81,8 @@ async def rate_limit_exceeded_handler(
     request: Request,
     exc: Exception,
 ) -> JSONResponse:
-    """Handle rate limit exceeded exceptions.
+    """
+    Handle rate limit exceeded exceptions.
 
     Args:
         request: FastAPI request object.
