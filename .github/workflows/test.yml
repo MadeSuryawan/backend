@@ -1,0 +1,57 @@
+name: CI Pipeline (FastAPI Test)
+
+# CURRENT STATUS: MANUAL ONLY
+# The 'workflow_dispatch' event allows you to run this manually from the Actions tab
+# It will NOT run on push until you uncomment the section below.
+on:
+    workflow_dispatch:
+
+    # -----------------------------------------------------------------
+    # WHEN READY, UNCOMMENT THE LINES BELOW TO ENABLE AUTO-RUN ON PUSH:
+    # -----------------------------------------------------------------
+    # push:
+    #   branches: [ "main" ]
+    # pull_request:
+    #   branches: [ "main" ]
+
+jobs:
+    build-and-test:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            # 1. Install uv (The Magic Step)
+            # This official action installs uv and handles the cache automatically
+            - name: Install uv
+              uses: astral-sh/setup-uv@v4
+              with:
+                  enable-cache: true
+                  cache-dependency-glob: "uv.lock"
+
+            # 2. Install Python via uv
+            # uv manages Python versions internally, which is faster
+            - name: Set up Python 3.13
+              run: uv python install 3.13
+
+            # 3. Install dependencies
+            # This reads your pyproject.toml and uv.lock
+            - name: Install project
+              run: uv sync --all-extras --dev
+
+            # 4. Run Tests
+            # 'uv run' executes the command inside the uv virtual environment
+            - name: Run Tests with Pytest
+              env:
+                  DATABASE_URL: "sqlite:///./test.db"
+                  ZUPLO_SECRET_KEY: "test-secret-key"
+              run: |
+                  # logic: Find any file named "test_*.py" or "*_test.py"
+                  # grep -q . checks if 'find' returned at least one result
+                  if find . -name "test_*.py" -o -name "*_test.py" | grep -q .; then
+                    echo "Test files detected. Running pytest..."
+                    uv run pytest
+                  else
+                    echo "No test files found - skipping"
+                  fi
