@@ -1,32 +1,29 @@
 # app/main.py
-"""FastAPI Redis Cache - Seamless caching integration with Redis for FastAPI."""
+"""BaliBlissed Backend - Seamless caching integration with Redis for FastAPI."""
 
 from logging import getLogger
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import JSONResponse, ORJSONResponse
 from slowapi.errors import RateLimitExceeded
 from starlette.status import HTTP_404_NOT_FOUND
 
 from app.decorators.caching import cache_busting, cached
-from app.managers.cache_manager import cache_manager
-from app.managers.rate_limiter import (
-    limiter,
-    rate_limit_exceeded_handler,
-)
-from app.middleware.middleware import (
+from app.errors import ConfigurationError, EmailServiceError
+from app.managers import cache_manager, limiter, rate_limit_exceeded_handler
+from app.middleware import (
     add_compression,
     add_request_logging,
     add_security_headers,
     configure_cors,
     lifespan,
 )
-from app.routes.cache import router as cache_router
-from app.schemas.items import Item, ItemUpdate
-from app.utils.helpers import file_logger
+from app.routes import cache_router, email_router
+from app.schemas import Item, ItemUpdate
+from app.utils import file_logger
 
 app = FastAPI(
-    title="FastAPI Redis Cache",
+    title="BaliBlissed Backend",
     description="Seamless caching integration with Redis for FastAPI",
     version="1.0.0",
     lifespan=lifespan,
@@ -38,11 +35,31 @@ configure_cors(app)
 add_compression(app)
 
 app.include_router(cache_router)
+app.include_router(email_router)
 
 app.add_exception_handler(
     RateLimitExceeded,
     rate_limit_exceeded_handler,
 )
+
+
+@app.exception_handler(EmailServiceError)
+async def email_service_exception_handler(request: Request, exc: EmailServiceError) -> JSONResponse:
+    """Catch-all for our custom email exceptions."""
+    return JSONResponse(
+        status_code=500,
+        content={"status": "error", "detail": str(exc)},
+    )
+
+
+@app.exception_handler(ConfigurationError)
+async def config_exception_handler(request: Request, exc: ConfigurationError) -> JSONResponse:
+    """Specific handler for missing config/tokens."""
+    return JSONResponse(
+        status_code=503,  # Service Unavailable
+        content={"status": "error", "detail": "Email service not configured correctly."},
+    )
+
 
 logger = file_logger(getLogger(__name__))
 

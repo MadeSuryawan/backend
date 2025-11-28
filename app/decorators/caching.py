@@ -9,15 +9,13 @@ from logging import getLogger
 from typing import Any
 
 from fastapi.exceptions import ResponseValidationError
-from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from redis.exceptions import RedisError
-from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 
-from app.errors.exceptions import BASE_EXCEPTION, CacheKeyError
+from app.errors import BASE_EXCEPTION, CacheKeyError
 from app.managers.cache_manager import CacheManager
-from app.schemas.items import Item, ItemUpdate
-from app.utils.helpers import file_logger
+from app.schemas import Item
+from app.utils import file_logger
 
 logger = file_logger(getLogger(__name__))
 
@@ -37,12 +35,6 @@ def validate_response(value: object) -> object | None:
     try:
         valid = Item.model_validate(value)
     except exceptions as e:
-        # logger.info(type(e.errors(include_url=False)[0]))
-        # return JSONResponse(
-        #     status_code=HTTP_500_INTERNAL_SERVER_ERROR,
-        #     # content={"detail": e.errors(include_url=False)},
-        #     content={"detail": e},
-        # )
         raise ValidationError() from e
     return valid
 

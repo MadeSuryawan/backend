@@ -18,7 +18,7 @@ from typing import Any, Literal
 #     Tool,
 # )
 from fastapi import Request
-from pydantic import BaseModel, ConfigDict, EmailStr, SecretStr
+from pydantic import BaseModel, ConfigDict
 from pydantic_settings.main import BaseSettings, SettingsConfigDict
 
 ENV_FILE = Path(__file__).parent.parent.parent / ".env"
@@ -120,13 +120,15 @@ class Settings(BaseSettings):
     PRODUCTION_FRONTEND_URL: str | None = None
 
     # Email Configuration
-    MAIL_USERNAME: str = ""
-    MAIL_PASSWORD: SecretStr = SecretStr("")
-    MAIL_FROM: EmailStr | str = ""
-    MAIL_PORT: int = 587
-    MAIL_SERVER: str = "smtp.gmail.com"
-    MAIL_STARTTLS: bool = True
-    MAIL_SSL_TLS: bool = False
+    # Path to the file downloaded from Google Cloud
+    GMAIL_CLIENT_SECRET_FILE: Path = Path("secrets/client_secret.json")
+    # Path where we will store the authorized user token (generated once)
+    GMAIL_TOKEN_FILE: Path = Path("secrets/token.json")
+    # The email address to send TO (your company email)
+    # CHANGE THIS TO YOUR REAL EMAIL
+    COMPANY_TARGET_EMAIL: str = "example@gmail.com"
+    # Scopes required for the application
+    GMAIL_SCOPES: list[str] = ["https://www.googleapis.com/auth/gmail.send"]
 
     # Redis Configuration (optional)
     REDIS_ENABLED: bool = True

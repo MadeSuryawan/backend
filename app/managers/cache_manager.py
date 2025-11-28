@@ -8,20 +8,19 @@ from typing import Any
 from pydantic_core import ValidationError
 from redis.exceptions import ConnectionError as RedisConnectionError
 
-from app.clients.memory_client import MemoryClient
-from app.clients.redis_client import RedisClient
-from app.configs.settings import CacheConfig
-from app.data.statistics import CacheStatistics
-from app.errors.exceptions import BASE_EXCEPTION, CacheDeserializationError, CacheKeyError
-from app.schemas.items import Item
+from app.clients import MemoryClient, RedisClient
+from app.configs import CacheConfig
+from app.data import CacheStatistics
+from app.errors import BASE_EXCEPTION, CacheDeserializationError, CacheKeyError
+from app.schemas import Item
 from app.utils import (
     compress,
     decompress,
     deserialize,
     do_compress,
+    file_logger,
     serialize,
 )
-from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 

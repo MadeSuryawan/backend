@@ -10,8 +10,8 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import RedisError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
-from app.configs.settings import pool_kwargs
-from app.utils.helpers import file_logger
+from app.configs import pool_kwargs
+from app.utils import file_logger
 
 logger = file_logger(getLogger(__name__))
 

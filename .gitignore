@@ -1,3 +1,13 @@
+__pycache__/
+*.pyc
+.env
+.venv
+env/
+venv/
+.pytest_cache/
+client_secret.json
+token.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -7,6 +17,8 @@ __pycache__/
 *.so
 .genkit/
 dump.rdb
+
+secrets/
 
 .qodo
 .ruff_cache
@@ -84,8 +96,6 @@ target/
 profile_default/
 ipython_config.py
 
-# pyenv
-.python-version
 
 # pipenv
 Pipfile.lock

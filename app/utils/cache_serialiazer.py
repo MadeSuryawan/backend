@@ -10,13 +10,13 @@ from typing import Any
 from pydantic_core import PydanticSerializationError, ValidationError
 from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 
-from app.errors.exceptions import (
+from app.errors import (
     CacheCompressionError,
     CacheDecompressionError,
     CacheDeserializationError,
     CacheSerializationError,
 )
-from app.schemas.items import Item
+from app.schemas import Item
 
 logger: Logger = getLogger(__name__)
 

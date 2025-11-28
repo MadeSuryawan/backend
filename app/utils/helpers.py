@@ -1,6 +1,7 @@
 from collections.abc import MutableMapping
 from datetime import datetime
 from logging import INFO, FileHandler, Formatter, Logger, NullHandler
+from pathlib import Path
 from time import perf_counter
 from typing import Any
 
@@ -8,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.routing import APIRoute
 from starlette.routing import BaseRoute, Match, Route
 
-from app.configs.settings import settings
+from app.configs import settings
 
 # from app.models.blog import BlogDB
 # from app.models.user import UserDB
@@ -24,7 +25,9 @@ def today_str() -> str:
 
 def file_logger(logger: Logger) -> Logger:
     """Log to file."""
-    file_handler = FileHandler("logs/app.log") if settings.LOG_TO_FILE else NullHandler()
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    file_handler = FileHandler(log_dir / "app.log") if settings.LOG_TO_FILE else NullHandler()
     file_handler.setLevel(INFO)
     formatter = Formatter("%(asctime)s - %(filename)s - %(levelname)s - %(message)s")
     file_handler.setFormatter(formatter)
