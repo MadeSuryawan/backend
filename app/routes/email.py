@@ -23,6 +23,9 @@ def get_email_client() -> EmailClient:
     return email_client_instance
 
 
+EmailDep = Annotated[EmailClient, Depends(get_email_client)]
+
+
 # --- Routes ---
 @router.post("/contact-support/", response_model=EmailResponse)
 @limiter.limit("5/hour")
@@ -30,7 +33,7 @@ async def contact_support(
     request: Request,
     response: Response,
     email_req: EmailRequest,
-    client: Annotated[EmailClient, Depends(get_email_client)],
+    client: EmailDep,
 ) -> ORJSONResponse:
     """
     Send a support email.
@@ -54,7 +57,7 @@ async def contact_background(
     response: Response,
     email_req: EmailRequest,
     background_tasks: BackgroundTasks,
-    client: Annotated[EmailClient, Depends(get_email_client)],
+    client: EmailDep,
 ) -> ORJSONResponse:
     """
     Queue an email in the background.
