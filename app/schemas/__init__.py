@@ -4,7 +4,7 @@ from app.schemas.cache import (
     CacheResetStatsResponse,
     CacheStatsResponse,
 )
-from app.schemas.email import EmailRequest
+from app.schemas.email import EmailRequest, EmailResponse
 from app.schemas.items import Item, ItemUpdate
 
 __all__ = [
@@ -13,6 +13,7 @@ __all__ = [
     "CacheResetStatsResponse",
     "CacheStatsResponse",
     "EmailRequest",
+    "EmailResponse",
     "Item",
     "ItemUpdate",
 ]

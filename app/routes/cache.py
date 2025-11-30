@@ -3,6 +3,7 @@
 from logging import getLogger
 
 from fastapi import APIRouter
+from fastapi.responses import ORJSONResponse
 
 from app.configs import file_logger
 from app.managers import cache_manager
@@ -18,8 +19,8 @@ logger = file_logger(getLogger(__name__))
 router = APIRouter(prefix="/cache", tags=["cache"])
 
 
-@router.get("/stats", response_model=CacheStatsResponse, tags=["cache"])
-async def get_cache_stats() -> CacheStatsResponse:
+@router.get("/stats", response_model=CacheStatsResponse)
+async def get_cache_stats() -> ORJSONResponse:
     """
     Get cache statistics.
 
@@ -27,11 +28,12 @@ async def get_cache_stats() -> CacheStatsResponse:
         Cache statistics.
     """
     stats = cache_manager.get_statistics()
-    return CacheStatsResponse(status="success", data=stats)
+    response = CacheStatsResponse(status="success", data=stats)
+    return ORJSONResponse(content=response.model_dump())
 
 
-@router.get("/ping", response_model=CachePingResponse, tags=["cache"])
-async def ping_cache() -> CachePingResponse:
+@router.get("/ping", response_model=CachePingResponse)
+async def ping_cache() -> ORJSONResponse:
     """
     Ping cache server.
 
@@ -40,16 +42,18 @@ async def ping_cache() -> CachePingResponse:
     """
     is_alive = await cache_manager.ping()
     if is_alive:
-        return CachePingResponse(status="success", message="Cache server is reachable")
-    return CachePingResponse(
+        response = CachePingResponse(status="success", message="Cache server is reachable")
+        return ORJSONResponse(content=response.model_dump())
+    response = CachePingResponse(
         status="error",
         message="Cache server is not reachable",
         error_code=503,
     )
+    return ORJSONResponse(content=response.model_dump(), status_code=503)
 
 
-@router.get("/reset-stats", tags=["cache"])
-async def reset_stats() -> CacheResetStatsResponse:
+@router.get("/reset-stats", response_model=CacheResetStatsResponse)
+async def reset_stats() -> ORJSONResponse:
     """
     Reset cache statistics.
 
@@ -57,11 +61,12 @@ async def reset_stats() -> CacheResetStatsResponse:
         Reset operation result.
     """
     cache_manager.reset_statistics()
-    return CacheResetStatsResponse(status="success", message="Cache statistics reset")
+    response = CacheResetStatsResponse(status="success", message="Cache statistics reset")
+    return ORJSONResponse(content=response.model_dump())
 
 
-@router.delete("/clear", response_model=CacheClearResponse, tags=["cache"])
-async def clear_cache() -> CacheClearResponse:
+@router.delete("/clear", response_model=CacheClearResponse)
+async def clear_cache() -> ORJSONResponse:
     """
     Clear all cache entries.
 
@@ -69,4 +74,5 @@ async def clear_cache() -> CacheClearResponse:
         Clear operation result.
     """
     await cache_manager.clear()
-    return CacheClearResponse(status="success", message="Cache cleared successfully")
+    response = CacheClearResponse(status="success", message="Cache cleared successfully")
+    return ORJSONResponse(content=response.model_dump())

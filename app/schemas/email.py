@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 # Define a list of common disposable/temporary email domains
 DISPOSABLE_DOMAINS: list[str] = [
@@ -58,3 +58,12 @@ class EmailRequest(BaseModel):
             raise ValueError(message)
 
         return value
+
+
+class EmailResponse(BaseModel):
+    """Schema for email response."""
+
+    model_config = ConfigDict(ser_json_timedelta="iso8601", ser_json_bytes="utf8")
+
+    status: str = Field(default="success", description="Status of the email")
+    message: str = Field(default="Email sent successfully", description="Message of the email")

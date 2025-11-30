@@ -2,10 +2,11 @@ from logging import getLogger
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi.responses import ORJSONResponse
 
 from app.clients import EmailClient
 from app.configs import file_logger
-from app.schemas import EmailRequest
+from app.schemas import EmailRequest, EmailResponse
 
 logger = file_logger(getLogger(__name__))
 
@@ -21,11 +22,11 @@ def get_email_client() -> EmailClient:
 
 
 # --- Routes ---
-@router.post("/contact-support/")
+@router.post("/contact-support/", response_model=EmailResponse)
 async def contact_support(
     email_req: EmailRequest,
     client: Annotated[EmailClient, Depends(get_email_client)],
-) -> dict[str, str]:
+) -> ORJSONResponse:
     # No try/except block needed here!
     # If send_email fails, the @app.exception_handler above catches it automatically.
     await client.send_email(
@@ -33,15 +34,15 @@ async def contact_support(
         body=email_req.message,
         reply_to=email_req.email,
     )
-    return {"status": "success", "message": "Email sent."}
+    return ORJSONResponse(content=EmailResponse().model_dump())
 
 
-@router.post("/contact-background/")
+@router.post("/contact-background/", response_model=EmailResponse)
 async def contact_background(
     email_req: EmailRequest,
     background_tasks: BackgroundTasks,
     client: Annotated[EmailClient, Depends(get_email_client)],
-) -> dict[str, str]:
+) -> ORJSONResponse:
     # Background tasks handle their own exceptions internally (logging them),
     # but we can't catch them here once the response is returned.
     background_tasks.add_task(
@@ -50,4 +51,5 @@ async def contact_background(
         body=email_req.message,
         reply_to=email_req.email,
     )
-    return {"status": "success", "message": "Email queued for sending."}
+    response = EmailResponse(message="Email queued for sending.")
+    return ORJSONResponse(content=response.model_dump())
