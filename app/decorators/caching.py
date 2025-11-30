@@ -1,3 +1,4 @@
+# app/decorators/caching.py
 """FastAPI decorators for caching with rate limiting integration."""
 
 from collections.abc import Callable
@@ -8,13 +9,12 @@ from logging import getLogger
 from typing import Any
 
 from fastapi.exceptions import ResponseValidationError
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from redis.exceptions import RedisError
 
 from app.configs import file_logger
 from app.errors import BASE_EXCEPTION, CacheKeyError
 from app.managers.cache_manager import CacheManager
-from app.schemas.items import Item
 
 logger = file_logger(getLogger(__name__))
 
@@ -28,13 +28,20 @@ exceptions = (
 )
 
 
-def validate_response(value: object) -> object | None:
-    """Validate response against Pydantic models."""
-    logger.info("Validating Value")
+def validate_response(value: object, response_type: Any) -> object | None:  # noqa: ANN401
+    """
+    Validate response against Pydantic models or types.
+
+    Uses TypeAdapter to handle Pydantic Models, lists, dicts, etc.
+    """
+    logger.info(f"Validating Value against {response_type}")
     try:
-        valid = Item.model_validate(value)
+        adapter = TypeAdapter(response_type)
+        valid = adapter.validate_python(value)
     except exceptions as e:
-        raise ValidationError() from e
+        logger.warning(f"Validation failed: {e}")
+        mssg = f"Could not validate cache against {response_type}"
+        raise ValidationError(mssg) from e
     return valid
 
 
@@ -43,6 +50,7 @@ def cached(
     ttl: int | None = None,
     namespace: str | None = None,
     key_builder: Callable[..., str] | None = None,
+    response_model: Any = None,  # noqa: ANN401
 ) -> Callable:
     """
     FastAPI endpoint result caching decorator.
@@ -52,15 +60,17 @@ def cached(
         ttl: Time to live in seconds.
         namespace: Cache namespace.
         key_builder: Custom function to build cache key from args/kwargs.
+        response_model: Pydantic model or type to validate cached data against.
+                        If None, returns the raw cached value (usually a dict).
 
     Returns:
         Decorated function.
 
     Example:
         @app.get("/items/{item_id}")
-        @cached(cache_manager, ttl=3600, namespace="items")
-        async def get_item(item_id: int) -> dict:
-            return {"id": item_id, "name": "Item"}
+        @cached(cache_manager, ttl=3600, namespace="items", response_model=Item)
+        async def get_item(item_id: int) -> Item:
+            return Item(id=item_id, name="Item")
     """
 
     def decorator(func: Callable) -> Callable:
@@ -77,13 +87,19 @@ def cached(
             try:
                 if cached_value := await cache_manager.get(cache_key, namespace):
                     logger.debug(f"Cache hit for key: {cache_key}")
-                    return validate_response(cached_value)
+
+                    # Validate and convert if a model is provided
+                    if response_model:
+                        return validate_response(cached_value, response_model)
+
+                    # Otherwise return raw data (dict/json)
+                    return cached_value
             except exceptions as e:
                 logger.warning(f"Cache retrieval failed: {e}")
 
             # Execute function and cache result
-            result: Item | dict = await func(*args, **kwargs)
-            logger.debug(f"{result=}, {type(result)=}")
+            result = await func(*args, **kwargs)
+            # logger.debug(f"{result=}, {type(result)=}")
 
             try:
                 if await cache_manager.set(
@@ -121,12 +137,6 @@ def cache_busting(
 
     Returns:
         Decorated function.
-
-    Example:
-        @app.post("/items")
-        @cache_busting(cache_manager, keys=["items_list"], namespace="items")
-        async def create_item(item: Item) -> dict:
-            return {"id": 1, "name": item.name}
     """
 
     def decorator(func: Callable) -> Callable:

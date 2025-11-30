@@ -95,6 +95,7 @@ async def create_item(item: Item, request: Request, response: Response) -> Item:
     ttl=5,
     namespace="items",
     key_builder=lambda item_id, **kw: f"item_{item_id}",
+    response_model=Item,
 )
 async def get_item(item_id: int, request: Request, response: Response) -> Item:
     """
