@@ -7,12 +7,6 @@ import pytest
 from app.clients import MemoryClient
 
 
-@pytest.fixture
-def memory_client() -> MemoryClient:
-    """Fixture for MemoryClient."""
-    return MemoryClient()
-
-
 @pytest.mark.asyncio
 async def test_set_and_get(memory_client: MemoryClient) -> None:
     """Test setting and getting a value."""

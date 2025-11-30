@@ -1,28 +1,12 @@
 """Tests for cache manager."""
 
-from collections.abc import AsyncGenerator
 from unittest.mock import Mock, patch
 
 import pytest
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.clients.memory_client import MemoryClient
-
-# from app.errors.exceptions import RedisConnectionError
 from app.managers.cache_manager import CacheManager
-
-
-@pytest.fixture
-async def cache_manager() -> AsyncGenerator[CacheManager]:
-    """Create cache manager for testing."""
-    manager = CacheManager()
-    try:
-        await manager.initialize()
-        await manager.clear()  # Clear cache before each test
-        manager.reset_statistics()  # Reset statistics before each test
-        yield manager
-    finally:
-        await manager.shutdown()
 
 
 @pytest.mark.asyncio
