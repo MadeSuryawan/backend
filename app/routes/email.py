@@ -4,8 +4,8 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Depends
 
 from app.clients import EmailClient
+from app.configs import file_logger
 from app.schemas import EmailRequest
-from app.utils import file_logger
 
 logger = file_logger(getLogger(__name__))
 

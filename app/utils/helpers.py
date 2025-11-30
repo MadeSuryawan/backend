@@ -1,15 +1,11 @@
 from collections.abc import MutableMapping
 from datetime import datetime
-from logging import INFO, FileHandler, Formatter, Logger, NullHandler
-from pathlib import Path
 from time import perf_counter
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.routing import APIRoute
 from starlette.routing import BaseRoute, Match, Route
-
-from app.configs import settings
 
 # from app.models.blog import BlogDB
 # from app.models.user import UserDB
@@ -21,18 +17,6 @@ def today_str() -> str:
     return datetime.now(datetime.now().astimezone().tzinfo).strftime(
         "%Y-%m-%d %H:%M:%S",
     )
-
-
-def file_logger(logger: Logger) -> Logger:
-    """Log to file."""
-    log_file = Path(settings.LOG_FILE)
-    log_file.parent.mkdir(exist_ok=True)
-    file_handler = FileHandler(log_file) if settings.LOG_TO_FILE else NullHandler()
-    file_handler.setLevel(INFO)
-    formatter = Formatter("%(asctime)s - %(filename)s - %(levelname)s - %(message)s")
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-    return logger
 
 
 def time_taken(start_time: float) -> str:
@@ -66,7 +50,8 @@ def get_summary(request: Request) -> str | None:
 
 
 # def response_datetime(db: UserDB | BlogDB) -> dict[str, Any]:
-#     """Format datetime for response.
+#     """
+#     Format datetime for response.
 
 #     Args:
 #         db: Database model

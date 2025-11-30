@@ -4,12 +4,18 @@
 from logging import getLogger
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse, ORJSONResponse
+from fastapi.responses import ORJSONResponse
 from slowapi.errors import RateLimitExceeded
 from starlette.status import HTTP_404_NOT_FOUND
 
-from app.decorators.caching import cache_busting, cached
-from app.errors import ConfigurationError, EmailServiceError
+from app.configs import file_logger
+from app.decorators import cache_busting, cached
+from app.errors import (
+    CacheExceptionError,
+    EmailServiceError,
+    cache_exception_handler,
+    email_service_exception_handler,
+)
 from app.managers import cache_manager, limiter, rate_limit_exceeded_handler
 from app.middleware import (
     add_compression,
@@ -18,9 +24,8 @@ from app.middleware import (
     configure_cors,
     lifespan,
 )
-from app.routes import cache_error_handler, cache_router, email_router
+from app.routes import cache_router, email_router
 from app.schemas import Item, ItemUpdate
-from app.utils import file_logger
 
 app = FastAPI(
     title="BaliBlissed Backend",
@@ -37,30 +42,21 @@ add_compression(app)
 app.include_router(cache_router)
 app.include_router(email_router)
 
-cache_error_handler(app)
+app.add_exception_handler(
+    CacheExceptionError,
+    cache_exception_handler,
+)
+
 
 app.add_exception_handler(
     RateLimitExceeded,
     rate_limit_exceeded_handler,
 )
 
-
-@app.exception_handler(EmailServiceError)
-async def email_service_exception_handler(request: Request, exc: EmailServiceError) -> JSONResponse:
-    """Catch-all for our custom email exceptions."""
-    return JSONResponse(
-        status_code=500,
-        content={"status": "error", "detail": str(exc)},
-    )
-
-
-@app.exception_handler(ConfigurationError)
-async def config_exception_handler(request: Request, exc: ConfigurationError) -> JSONResponse:
-    """Specific handler for missing config/tokens."""
-    return JSONResponse(
-        status_code=503,  # Service Unavailable
-        content={"status": "error", "detail": "Email service not configured correctly."},
-    )
+app.add_exception_handler(
+    EmailServiceError,
+    email_service_exception_handler,
+)
 
 
 logger = file_logger(getLogger(__name__))
@@ -130,7 +126,6 @@ async def get_all_items(request: Request, response: Response) -> dict[str, list[
     """
     logger.info("Fetching all items")
     return {"items": list(items_db.values())}
-    # return ORJSONResponse({"items": list(items_db.values())})
 
 
 @app.put("/update-item/{item_id}", tags=["items"])

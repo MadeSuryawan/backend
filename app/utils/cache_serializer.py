@@ -4,12 +4,12 @@ from base64 import b64decode, b64encode
 from gzip import compress as gzip_compress
 from gzip import decompress as gzip_decompress
 from json import JSONDecodeError, dumps, loads
-from logging import Logger, getLogger
+from logging import getLogger
 from typing import Any
 
-from pydantic_core import PydanticSerializationError, ValidationError
-from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
+from pydantic_core import PydanticSerializationError
 
+from app.configs import file_logger
 from app.errors import (
     CacheCompressionError,
     CacheDecompressionError,
@@ -18,7 +18,7 @@ from app.errors import (
 )
 from app.schemas.items import Item
 
-logger: Logger = getLogger(__name__)
+logger = file_logger(getLogger(__name__))
 
 COMPRESSION_MARKER = b"\x00GZIP\x00"
 
@@ -42,8 +42,7 @@ def serialize(value: Item | dict[str, Any]) -> str:
         return dumps(value, default=str, sort_keys=False)
     except (PydanticSerializationError, JSONDecodeError) as e:
         logger.exception("Serialization failed")
-        mssg = f"Cannot serialize value: {e}"
-        raise CacheSerializationError(mssg) from e
+        raise CacheSerializationError from e
 
 
 def deserialize(value: str) -> Item | dict:
@@ -63,8 +62,7 @@ def deserialize(value: str) -> Item | dict:
         return loads(value)
     except JSONDecodeError as e:
         logger.exception("Deserialization failed")
-        mssg = f"Cannot deserialize value: {e}"
-        raise CacheDeserializationError(mssg) from e
+        raise CacheDeserializationError from e
 
 
 def compress(data: str) -> str:
@@ -85,8 +83,7 @@ def compress(data: str) -> str:
         return COMPRESSION_MARKER.decode("utf-8") + b64encode(compressed).decode("utf-8")
     except Exception as e:
         logger.exception("Compression failed")
-        mssg = f"Cannot compress data: {e}"
-        raise CacheCompressionError(mssg) from e
+        raise CacheCompressionError from e
 
 
 def decompress(data: str) -> str:
@@ -111,8 +108,7 @@ def decompress(data: str) -> str:
         return gzip_decompress(compressed).decode("utf-8")
     except Exception as e:
         logger.exception("Decompression failed")
-        mssg = f"Cannot decompress data: {e}"
-        raise CacheDecompressionError(mssg) from e
+        raise CacheDecompressionError from e
 
 
 def do_compress(data: str, threshold: int) -> bool:

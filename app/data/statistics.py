@@ -4,7 +4,8 @@ from dataclasses import dataclass, field
 from logging import getLogger
 from threading import Lock
 
-from app.utils import file_logger, today_str
+from app.configs import file_logger
+from app.utils import today_str
 
 logger = file_logger(getLogger(__name__))
 

@@ -1,15 +1,17 @@
 """FastAPI integration for caching with SlowAPI support."""
 
+from ctypes import cast
 from logging import getLogger
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse
+from oauthlib.uri_validate import host
 from pydantic import BaseModel
 
+from app.configs import file_logger
 from app.errors import CacheExceptionError
 from app.managers import cache_manager
-from app.utils import file_logger
 
 logger = file_logger(getLogger(__name__))
 
@@ -101,31 +103,31 @@ async def clear_cache() -> CacheClearResponse:
     return CacheClearResponse(status="success", message="Cache cleared successfully")
 
 
-def cache_error_handler(app: FastAPI) -> None:
-    """
-    Add cache exception error handlers to FastAPI application.
+# def cache_error_handler(app: FastAPI) -> None:
+#     """
+#     Add cache exception error handlers to FastAPI application.
 
-    Args:
-        app: FastAPI application.
-    """
+#     Args:
+#         app: FastAPI application.
+#     """
 
-    @app.exception_handler(CacheExceptionError)
-    async def cache_exception_handler(request: Request, exc: CacheExceptionError) -> JSONResponse:
-        """
-        Handle cache exceptions.
+#     @app.exception_handler(CacheExceptionError)
+#     async def cache_exception_handler(request: Request, exc: CacheExceptionError) -> JSONResponse:
+#         """
+#         Handle cache exceptions.
 
-        Args:
-            request: Request object.
-            exc: Cache exception.
+#         Args:
+#             request: Request object.
+#             exc: Cache exception.
 
-        Returns:
-            Error response.
-        """
-        logger.exception(f"Cache exception occurred: {exc}")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "detail": "Cache operation failed",
-                "error": str(exc),
-            },
-        )
+#         Returns:
+#             Error response.
+#         """
+#         logger.exception(f"Cache exception occurred: {exc}")
+#         return JSONResponse(
+#             status_code=500,
+#             content={
+#                 "detail": "Cache operation failed",
+#                 "error": str(exc),
+#             },
+#         )

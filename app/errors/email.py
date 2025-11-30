@@ -1,34 +1,49 @@
-from fastapi import Request
-from fastapi.responses import JSONResponse
+from logging import getLogger
+
+from starlette import status
+
+from app.configs import file_logger
+from app.errors import BaseAppError, create_exception_handler
+
+logger = file_logger(getLogger(__name__))
 
 
-class EmailServiceError(Exception):
+class EmailServiceError(BaseAppError):
     """Base class for all email service related errors."""
+
+    def __init__(self, msg: str = "Email service error") -> None:
+        super().__init__(
+            msg=msg,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 class ConfigurationError(EmailServiceError):
     """Raised when files (secrets/tokens) are missing."""
 
+    def __init__(self, msg: str = "Email service configuration error") -> None:
+        super().__init__(msg)
+        self.msg = msg
+        self.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
 
 class AuthenticationError(EmailServiceError):
     """Raised when OAuth2 token refresh fails."""
+
+    def __init__(self, msg: str = "Email service authentication error") -> None:
+        super().__init__(msg)
+        self.msg = msg
+        self.status_code = status.HTTP_401_UNAUTHORIZED
 
 
 class SendingError(EmailServiceError):
     """Raised when the Google API fails to send the message."""
 
-
-async def email_service_exception_handler(request: Request, exc: EmailServiceError) -> JSONResponse:
-    """Catch-all for our custom email exceptions."""
-    return JSONResponse(
-        status_code=500,
-        content={"status": "error", "detail": str(exc)},
-    )
+    def __init__(self, msg: str = "Email service sending error") -> None:
+        super().__init__(msg)
+        self.msg = msg
+        self.status_code = status.HTTP_502_BAD_GATEWAY
 
 
-async def config_exception_handler(request: Request, exc: ConfigurationError) -> JSONResponse:
-    """Specific handler for missing config/tokens."""
-    return JSONResponse(
-        status_code=503,  # Service Unavailable
-        content={"status": "error", "detail": "Email service not configured correctly."},
-    )
+# Create the exception handler using the helper
+email_service_exception_handler = create_exception_handler(logger)

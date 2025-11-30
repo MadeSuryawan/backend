@@ -21,9 +21,8 @@ from rich.logging import RichHandler
 from rich.traceback import install
 from uvloop import Loop
 
-from app.configs import settings
+from app.configs import file_logger, settings
 from app.managers import cache_manager, close_limiter, limiter
-from app.utils import file_logger
 
 if log_to_file := settings.LOG_TO_FILE:
     Path("logs").mkdir(parents=True, exist_ok=True)

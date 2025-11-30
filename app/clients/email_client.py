@@ -9,9 +9,8 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import Resource, build
 from googleapiclient.errors import HttpError
 
-from app.configs import settings
+from app.configs import file_logger, settings
 from app.errors import AuthenticationError, ConfigurationError, SendingError
-from app.utils import file_logger
 
 logger = file_logger(getLogger(__name__))
 

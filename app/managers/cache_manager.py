@@ -9,7 +9,7 @@ from pydantic_core import ValidationError
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.clients import MemoryClient, RedisClient
-from app.configs import CacheConfig
+from app.configs import CacheConfig, file_logger
 from app.data import CacheStatistics
 from app.errors import BASE_EXCEPTION, CacheDeserializationError, CacheKeyError
 from app.schemas import Item
@@ -18,7 +18,6 @@ from app.utils import (
     decompress,
     deserialize,
     do_compress,
-    file_logger,
     serialize,
 )
 

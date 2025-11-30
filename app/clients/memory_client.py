@@ -4,7 +4,8 @@ from logging import getLogger
 from time import time
 from typing import Any
 
-from app.utils import file_logger, today_str
+from app.configs import file_logger
+from app.utils import today_str
 
 logger = file_logger(getLogger(__name__))
 

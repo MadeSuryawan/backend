@@ -11,10 +11,10 @@ from fastapi.exceptions import ResponseValidationError
 from pydantic import ValidationError
 from redis.exceptions import RedisError
 
+from app.configs import file_logger
 from app.errors import BASE_EXCEPTION, CacheKeyError
 from app.managers.cache_manager import CacheManager
 from app.schemas.items import Item
-from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 

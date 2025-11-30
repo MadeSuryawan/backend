@@ -5,6 +5,7 @@ This module contains application settings, constants, and configuration
 values for the BaliBlissed backend application.
 """
 
+from logging import INFO, FileHandler, Formatter, Logger, NullHandler
 from pathlib import Path
 from typing import Any, Literal
 
@@ -246,3 +247,15 @@ class LimiterConfig(BaseModel):
     headers_enabled: bool = settings.HEADERS_ENABLED
 
     model_config = ConfigDict(from_attributes=True)
+
+
+def file_logger(logger: Logger) -> Logger:
+    """Log to file."""
+    log_file = Path(settings.LOG_FILE)
+    log_file.parent.mkdir(exist_ok=True)
+    file_handler = FileHandler(log_file) if settings.LOG_TO_FILE else NullHandler()
+    file_handler.setLevel(INFO)
+    formatter = Formatter("%(asctime)s - %(filename)s - %(levelname)s - %(message)s")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    return logger
