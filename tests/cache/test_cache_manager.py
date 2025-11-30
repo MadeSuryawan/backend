@@ -181,7 +181,9 @@ async def test_cache_clear_with_statistics_reset(cache_manager: CacheManager) ->
     "app.clients.redis_client.RedisClient.connect",
     side_effect=RedisConnectionError("Test error"),
 )
-async def test_cache_manager_fallback_to_memory(mock_connect: Mock) -> None:
+async def test_cache_manager_fallback_to_memory(
+    mock_connect: Mock,  # noqa: ARG001
+) -> None:
     """Test that CacheManager falls back to in-memory cache when Redis connection fails."""
     manager = CacheManager()
     await manager.initialize()
@@ -195,3 +197,66 @@ async def test_cache_manager_fallback_to_memory(mock_connect: Mock) -> None:
     assert result == {"value": "test"}
 
     await manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_cache_health_check(cache_manager: CacheManager) -> None:
+    """Test cache health check."""
+    health = await cache_manager.health_check()
+
+    assert "backend" in health
+    assert "statistics" in health
+    assert health["status"] == "healthy"
+
+
+@pytest.mark.asyncio
+async def test_get_or_set(cache_manager: CacheManager) -> None:
+    """Test get_or_set with callback."""
+    call_count = 0
+
+    async def expensive_callback() -> dict[str, str]:
+        nonlocal call_count
+        call_count += 1
+        return {"computed": "value"}
+
+    # First call should execute callback
+    result1 = await cache_manager.get_or_set(
+        "computed_key",
+        expensive_callback,
+        ttl=600,
+    )
+    assert result1 == {"computed": "value"}
+    assert call_count == 1
+
+    # Second call should use cache
+    result2 = await cache_manager.get_or_set(
+        "computed_key",
+        expensive_callback,
+        ttl=600,
+    )
+    assert result2 == {"computed": "value"}
+    assert call_count == 1  # Callback not called again
+
+
+@pytest.mark.asyncio
+async def test_get_or_set_force_refresh(cache_manager: CacheManager) -> None:
+    """Test get_or_set with force_refresh."""
+    call_count = 0
+
+    async def callback() -> dict[str, int]:
+        nonlocal call_count
+        call_count += 1
+        return {"count": call_count}
+
+    # First call
+    result1 = await cache_manager.get_or_set("refresh_key", callback, ttl=600)
+    assert result1 == {"count": 1}
+
+    # Force refresh should call callback again
+    result2 = await cache_manager.get_or_set(
+        "refresh_key",
+        callback,
+        ttl=600,
+        force_refresh=True,
+    )
+    assert result2 == {"count": 2}

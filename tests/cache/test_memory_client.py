@@ -83,4 +83,59 @@ async def test_info(memory_client: MemoryClient) -> None:
     """Test getting info from the cache."""
     info = await memory_client.info()
     assert info["server"] == "In-Memory Cache"
-    assert "keys" in info["used_memory_human"]
+    assert "used_memory_human" in info
+    assert "total_keys" in info
+    assert "max_entries" in info
+
+
+@pytest.mark.asyncio
+async def test_scan_iter(memory_client: MemoryClient) -> None:
+    """Test scanning keys with pattern matching."""
+    await memory_client.set("prefix:key1", "value1")
+    await memory_client.set("prefix:key2", "value2")
+    await memory_client.set("other:key3", "value3")
+
+    keys = [key async for key in memory_client.scan_iter("prefix:*")]
+    assert len(keys) == 2
+    assert "prefix:key1" in keys
+    assert "prefix:key2" in keys
+
+
+@pytest.mark.asyncio
+async def test_memory_limits() -> None:
+    """Test that memory limits trigger LRU eviction."""
+    # Create a client with very low limits
+    limited_client = MemoryClient(max_entries=3)
+
+    await limited_client.set("key1", "value1")
+    await limited_client.set("key2", "value2")
+    await limited_client.set("key3", "value3")
+
+    # This should trigger eviction of key1 (oldest)
+    await limited_client.set("key4", "value4")
+
+    # key1 should be evicted
+    assert await limited_client.get("key1") is None
+    # key4 should exist
+    assert await limited_client.get("key4") == "value4"
+
+
+@pytest.mark.asyncio
+async def test_lru_ordering() -> None:
+    """Test that LRU ordering is maintained on access."""
+    limited_client = MemoryClient(max_entries=3)
+
+    await limited_client.set("key1", "value1")
+    await limited_client.set("key2", "value2")
+    await limited_client.set("key3", "value3")
+
+    # Access key1 to make it recently used
+    await limited_client.get("key1")
+
+    # Add key4 - should evict key2 (now oldest)
+    await limited_client.set("key4", "value4")
+
+    # key1 should still exist (was accessed)
+    assert await limited_client.get("key1") == "value1"
+    # key2 should be evicted
+    assert await limited_client.get("key2") is None
