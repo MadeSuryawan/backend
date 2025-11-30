@@ -1,11 +1,13 @@
+# app/routes/email.py
 from logging import getLogger
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
 from fastapi.responses import ORJSONResponse
 
 from app.clients import EmailClient
 from app.configs import file_logger
+from app.managers import limiter
 from app.schemas import EmailRequest, EmailResponse
 
 logger = file_logger(getLogger(__name__))
@@ -23,10 +25,18 @@ def get_email_client() -> EmailClient:
 
 # --- Routes ---
 @router.post("/contact-support/", response_model=EmailResponse)
+@limiter.limit("5/hour")
 async def contact_support(
+    request: Request,
+    response: Response,
     email_req: EmailRequest,
     client: Annotated[EmailClient, Depends(get_email_client)],
 ) -> ORJSONResponse:
+    """
+    Send a support email.
+
+    Rate Limited: 5 requests per hour to prevent spam.
+    """
     # No try/except block needed here!
     # If send_email fails, the @app.exception_handler above catches it automatically.
     await client.send_email(
@@ -38,11 +48,19 @@ async def contact_support(
 
 
 @router.post("/contact-background/", response_model=EmailResponse)
+@limiter.limit("20/minute")
 async def contact_background(
+    request: Request,
+    response: Response,
     email_req: EmailRequest,
     background_tasks: BackgroundTasks,
     client: Annotated[EmailClient, Depends(get_email_client)],
 ) -> ORJSONResponse:
+    """
+    Queue an email in the background.
+
+    Rate Limited: 20 requests per minute.
+    """
     # Background tasks handle their own exceptions internally (logging them),
     # but we can't catch them here once the response is returned.
     background_tasks.add_task(
@@ -51,5 +69,5 @@ async def contact_background(
         body=email_req.message,
         reply_to=email_req.email,
     )
-    response = EmailResponse(message="Email queued for sending.")
-    return ORJSONResponse(content=response.model_dump())
+    response_data = EmailResponse(message="Email queued for sending.")
+    return ORJSONResponse(content=response_data.model_dump())
