@@ -139,3 +139,103 @@ async def test_lru_ordering() -> None:
     assert await limited_client.get("key1") == "value1"
     # key2 should be evicted
     assert await limited_client.get("key2") is None
+
+
+@pytest.mark.asyncio
+async def test_ping(memory_client: MemoryClient) -> None:
+    """Test ping returns True when connected."""
+    assert await memory_client.ping() is True
+
+
+@pytest.mark.asyncio
+async def test_ttl_non_existent_key(memory_client: MemoryClient) -> None:
+    """Test TTL returns -2 for non-existent key."""
+    ttl = await memory_client.ttl("non_existent")
+    assert ttl == -2
+
+
+@pytest.mark.asyncio
+async def test_ttl_no_expiration(memory_client: MemoryClient) -> None:
+    """Test TTL returns -1 for key without expiration."""
+    await memory_client.set("permanent_key", "value")
+    ttl = await memory_client.ttl("permanent_key")
+    assert ttl == -1
+
+
+@pytest.mark.asyncio
+async def test_expire_non_existent_key(memory_client: MemoryClient) -> None:
+    """Test expire returns False for non-existent key."""
+    result = await memory_client.expire("non_existent", 60)
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_delete_multiple_keys(memory_client: MemoryClient) -> None:
+    """Test deleting multiple keys at once."""
+    await memory_client.set("key1", "value1")
+    await memory_client.set("key2", "value2")
+    await memory_client.set("key3", "value3")
+
+    count = await memory_client.delete("key1", "key2", "key_not_exist")
+    assert count == 2
+    assert await memory_client.get("key3") == "value3"
+
+
+@pytest.mark.asyncio
+async def test_exists_multiple_keys(memory_client: MemoryClient) -> None:
+    """Test exists with multiple keys."""
+    await memory_client.set("key1", "value1")
+    await memory_client.set("key2", "value2")
+
+    count = await memory_client.exists("key1", "key2", "key3")
+    assert count == 2
+
+
+@pytest.mark.asyncio
+async def test_set_updates_existing_key(memory_client: MemoryClient) -> None:
+    """Test that set updates existing key value."""
+    await memory_client.set("key", "value1")
+    await memory_client.set("key", "value2")
+    result = await memory_client.get("key")
+    assert result == "value2"
+
+
+@pytest.mark.asyncio
+async def test_set_removes_ttl_on_update(memory_client: MemoryClient) -> None:
+    """Test that set without TTL removes existing TTL."""
+    await memory_client.set("key", "value1", ex=60)
+    await memory_client.set("key", "value2")  # No TTL
+    ttl = await memory_client.ttl("key")
+    assert ttl == -1
+
+
+@pytest.mark.asyncio
+async def test_close_stops_cleanup_task(memory_client: MemoryClient) -> None:
+    """Test that close properly stops the cleanup task."""
+    await memory_client.close()
+    assert memory_client.is_connected is False
+    assert memory_client._cleanup_task is None
+
+
+@pytest.mark.asyncio
+async def test_scan_iter_no_matches(memory_client: MemoryClient) -> None:
+    """Test scan_iter returns empty when no matches."""
+    await memory_client.set("key1", "value1")
+    keys = [key async for key in memory_client.scan_iter("nonexistent:*")]
+    assert len(keys) == 0
+
+
+@pytest.mark.asyncio
+async def test_is_expired_false_for_no_ttl() -> None:
+    """Test _is_expired returns False for keys without TTL."""
+    client = MemoryClient()
+    client._cache["key"] = "value"
+    assert client._is_expired("key") is False
+
+
+@pytest.mark.asyncio
+async def test_estimate_entry_size() -> None:
+    """Test _estimate_entry_size calculates size."""
+    client = MemoryClient()
+    size = client._estimate_entry_size("key", "value")
+    assert size > 0

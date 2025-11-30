@@ -1,0 +1,251 @@
+# tests/decorators/test_caching.py
+"""Tests for app/decorators/caching.py module."""
+
+from collections.abc import AsyncGenerator
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from pydantic import BaseModel
+
+from app.clients import MemoryClient
+from app.decorators.caching import (
+    _generate_cache_key,
+    cache_busting,
+    cached,
+    validate_response,
+)
+from app.managers.cache_manager import CacheManager
+
+
+class SampleModel(BaseModel):
+    """Sample Pydantic model for testing."""
+
+    id: int
+    name: str
+
+
+@pytest.fixture
+async def test_cache_manager() -> AsyncGenerator[CacheManager, None]:
+    """Create a test cache manager with memory client."""
+    manager = CacheManager()
+    await manager.initialize()
+    await manager.clear()
+    yield manager
+    await manager.shutdown()
+
+
+class TestGenerateCacheKey:
+    """Tests for _generate_cache_key function."""
+
+    def test_generates_key_from_function_name(self) -> None:
+        """Test key generation with just function name."""
+        key = _generate_cache_key("my_function")
+        assert isinstance(key, str)
+        assert len(key) == 16
+
+    def test_generates_different_keys_for_different_args(self) -> None:
+        """Test that different args produce different keys."""
+        key1 = _generate_cache_key("func", 1, 2)
+        key2 = _generate_cache_key("func", 3, 4)
+        assert key1 != key2
+
+    def test_generates_different_keys_for_different_kwargs(self) -> None:
+        """Test that different kwargs produce different keys."""
+        key1 = _generate_cache_key("func", name="alice")
+        key2 = _generate_cache_key("func", name="bob")
+        assert key1 != key2
+
+    def test_handles_complex_args(self) -> None:
+        """Test with complex argument types."""
+        key = _generate_cache_key("func", {"nested": "dict"}, [1, 2, 3])
+        assert isinstance(key, str)
+
+    def test_handles_non_serializable_args(self) -> None:
+        """Test handling of non-serializable arguments."""
+
+        class NonSerializable:
+            pass
+
+        # Should not raise, just skip the argument
+        key = _generate_cache_key("func", NonSerializable())
+        assert isinstance(key, str)
+
+    def test_consistent_keys_for_same_input(self) -> None:
+        """Test that same inputs produce same key."""
+        key1 = _generate_cache_key("func", 1, name="test")
+        key2 = _generate_cache_key("func", 1, name="test")
+        assert key1 == key2
+
+
+class TestValidateResponse:
+    """Tests for validate_response function."""
+
+    def test_validate_dict_response(self) -> None:
+        """Test validating dict against dict type."""
+        data = {"id": 1, "name": "test"}
+        result = validate_response(data, dict[str, Any])
+        assert result == data
+
+    def test_validate_pydantic_model(self) -> None:
+        """Test validating dict against Pydantic model."""
+        data = {"id": 1, "name": "test"}
+        result = validate_response(data, SampleModel)
+        assert isinstance(result, SampleModel)
+        assert result.id == 1
+
+    def test_validate_list_of_models(self) -> None:
+        """Test validating list of dicts against list of models."""
+        data = [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}]
+        result = validate_response(data, list[SampleModel])
+        assert len(result) == 2
+        assert all(isinstance(item, SampleModel) for item in result)
+
+
+class TestCachedDecorator:
+    """Tests for cached decorator."""
+
+    @pytest.mark.asyncio
+    async def test_caches_function_result(
+        self,
+        test_cache_manager: CacheManager,
+    ) -> None:
+        """Test that function result is cached."""
+        call_count = 0
+
+        @cached(test_cache_manager, ttl=300)
+        async def get_data() -> dict[str, str]:
+            nonlocal call_count
+            call_count += 1
+            return {"data": "value"}
+
+        result1 = await get_data()
+        result2 = await get_data()
+
+        assert result1 == {"data": "value"}
+        assert result2 == {"data": "value"}
+        assert call_count == 1  # Should only be called once
+
+    @pytest.mark.asyncio
+    async def test_custom_key_builder(
+        self,
+        test_cache_manager: CacheManager,
+    ) -> None:
+        """Test custom key builder function."""
+
+        def my_key_builder(*args: Any, **kwargs: Any) -> str:
+            return f"custom_key_{kwargs.get('item_id', 'default')}"
+
+        @cached(test_cache_manager, key_builder=my_key_builder)
+        async def get_item(item_id: int) -> dict[str, int]:
+            return {"id": item_id}
+
+        result = await get_item(item_id=42)
+        assert result == {"id": 42}
+
+    @pytest.mark.asyncio
+    async def test_with_namespace(
+        self,
+        test_cache_manager: CacheManager,
+    ) -> None:
+        """Test caching with namespace."""
+
+        @cached(test_cache_manager, namespace="items")
+        async def get_item() -> dict[str, str]:
+            return {"name": "item"}
+
+        result = await get_item()
+        assert result == {"name": "item"}
+
+    @pytest.mark.asyncio
+    async def test_with_response_model(
+        self,
+        test_cache_manager: CacheManager,
+    ) -> None:
+        """Test caching with response model validation."""
+
+        @cached(test_cache_manager, response_model=SampleModel)
+        async def get_sample() -> dict[str, Any]:
+            return {"id": 1, "name": "test"}
+
+        # First call - caches result
+        result1 = await get_sample()
+
+        # Second call - retrieves from cache and validates
+        result2 = await get_sample()
+        assert isinstance(result2, SampleModel)
+
+
+class TestCacheBustingDecorator:
+    """Tests for cache_busting decorator."""
+
+    @pytest.mark.asyncio
+    async def test_busts_specified_keys(
+        self,
+        test_cache_manager: CacheManager,
+    ) -> None:
+        """Test that specified keys are busted after function execution."""
+        # Pre-populate cache
+        await test_cache_manager.set("item_1", {"data": "old"})
+
+        @cache_busting(test_cache_manager, keys=["item_1"])
+        async def update_item() -> dict[str, str]:
+            return {"status": "updated"}
+
+        result = await update_item()
+        assert result == {"status": "updated"}
+
+        # Verify cache was busted
+        cached = await test_cache_manager.get("item_1")
+        assert cached is None
+
+    @pytest.mark.asyncio
+    async def test_with_custom_key_builder(
+        self,
+        test_cache_manager: CacheManager,
+    ) -> None:
+        """Test cache busting with custom key builder."""
+        # Pre-populate cache
+        await test_cache_manager.set("user_42", {"name": "old"})
+
+        def bust_key_builder(*args: Any, **kwargs: Any) -> list[str]:
+            return [f"user_{kwargs.get('user_id')}"]
+
+        @cache_busting(test_cache_manager, key_builder=bust_key_builder)
+        async def delete_user(user_id: int) -> dict[str, str]:
+            return {"deleted": str(user_id)}
+
+        result = await delete_user(user_id=42)
+        assert result == {"deleted": "42"}
+
+    @pytest.mark.asyncio
+    async def test_with_namespace(
+        self,
+        test_cache_manager: CacheManager,
+    ) -> None:
+        """Test cache busting with namespace."""
+        namespace = "users"
+        await test_cache_manager.set("user_1", {"name": "test"}, namespace=namespace)
+
+        @cache_busting(test_cache_manager, keys=["user_1"], namespace=namespace)
+        async def remove_user() -> dict[str, str]:
+            return {"removed": "true"}
+
+        await remove_user()
+
+        cached = await test_cache_manager.get("user_1", namespace=namespace)
+        assert cached is None
+
+    @pytest.mark.asyncio
+    async def test_no_keys_specified(
+        self,
+        test_cache_manager: CacheManager,
+    ) -> None:
+        """Test cache busting when no keys are specified."""
+
+        @cache_busting(test_cache_manager)
+        async def do_nothing() -> dict[str, str]:
+            return {"done": "true"}
+
+        result = await do_nothing()
+        assert result == {"done": "true"}

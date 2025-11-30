@@ -260,3 +260,114 @@ async def test_get_or_set_force_refresh(cache_manager: CacheManager) -> None:
         force_refresh=True,
     )
     assert result2 == {"count": 2}
+
+
+@pytest.mark.asyncio
+async def test_build_key_without_namespace(cache_manager: CacheManager) -> None:
+    """Test _build_key without namespace."""
+    key = cache_manager._build_key("mykey")
+    assert "mykey" in key
+    assert cache_manager.cache_config.key_prefix in key
+
+
+@pytest.mark.asyncio
+async def test_build_key_with_namespace(cache_manager: CacheManager) -> None:
+    """Test _build_key with namespace."""
+    key = cache_manager._build_key("mykey", namespace="myns")
+    assert "mykey" in key
+    assert "myns" in key
+    assert cache_manager.cache_config.key_prefix in key
+
+
+@pytest.mark.asyncio
+async def test_expire_key(cache_manager: CacheManager) -> None:
+    """Test expire sets expiration on a key."""
+    await cache_manager.set("expire_key", {"data": "test"}, ttl=3600)
+    result = await cache_manager.expire("expire_key", 60)
+    assert result is True
+    ttl = await cache_manager.ttl("expire_key")
+    assert ttl <= 60
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_lock_lru_eviction(cache_manager: CacheManager) -> None:
+    """Test that locks are evicted when MAX_LOCKS is exceeded."""
+    original_max = CacheManager.MAX_LOCKS
+    CacheManager.MAX_LOCKS = 3
+
+    try:
+        # Create 4 locks to trigger eviction
+        cache_manager._get_or_create_lock("lock1")
+        cache_manager._get_or_create_lock("lock2")
+        cache_manager._get_or_create_lock("lock3")
+        cache_manager._get_or_create_lock("lock4")
+
+        # Should only have 3 locks due to LRU eviction
+        assert len(cache_manager._locks) == 3
+        assert "lock1" not in cache_manager._locks
+    finally:
+        CacheManager.MAX_LOCKS = original_max
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_lock_moves_to_end(cache_manager: CacheManager) -> None:
+    """Test that accessing existing lock moves it to end for LRU."""
+    cache_manager._get_or_create_lock("lockA")
+    cache_manager._get_or_create_lock("lockB")
+
+    # Access lockA again - should move to end
+    cache_manager._get_or_create_lock("lockA")
+
+    keys = list(cache_manager._locks.keys())
+    assert keys[-1] == "lockA"
+
+
+@pytest.mark.asyncio
+async def test_try_reconnect_redis_already_available(cache_manager: CacheManager) -> None:
+    """Test _try_reconnect_redis when already connected."""
+    cache_manager.is_redis_available = True
+    result = await cache_manager._try_reconnect_redis()
+    assert result is True
+
+
+@pytest.mark.asyncio
+@patch("app.clients.redis_client.RedisClient.connect")
+async def test_try_reconnect_redis_success(
+    mock_connect: Mock,
+) -> None:
+    """Test _try_reconnect_redis successful reconnection."""
+    manager = CacheManager()
+    manager.is_redis_available = False
+
+    mock_connect.return_value = None  # Simulate successful connection
+
+    result = await manager._try_reconnect_redis()
+    assert result is True
+    assert manager.is_redis_available is True
+
+
+@pytest.mark.asyncio
+@patch(
+    "app.clients.redis_client.RedisClient.connect",
+    side_effect=RedisConnectionError("Connection refused"),
+)
+async def test_try_reconnect_redis_failure(
+    mock_connect: Mock,  # noqa: ARG001
+) -> None:
+    """Test _try_reconnect_redis failed reconnection."""
+    manager = CacheManager()
+    manager.is_redis_available = False
+
+    result = await manager._try_reconnect_redis()
+    assert result is False
+    assert manager.is_redis_available is False
+
+
+@pytest.mark.asyncio
+async def test_fallback_to_memory(cache_manager: CacheManager) -> None:
+    """Test _fallback_to_memory switches to memory client."""
+    cache_manager.is_redis_available = True
+    await cache_manager._fallback_to_memory()
+
+    assert cache_manager.is_redis_available is False
+    assert isinstance(cache_manager._client, MemoryClient)
