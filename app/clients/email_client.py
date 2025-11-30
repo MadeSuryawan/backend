@@ -2,6 +2,7 @@ from asyncio import get_running_loop
 from base64 import urlsafe_b64encode
 from email.message import EmailMessage
 from logging import getLogger
+from threading import Lock
 from typing import Any, cast
 
 from google.auth.transport.requests import Request
@@ -19,12 +20,14 @@ class EmailClient:
     """
     A client to handle sending emails via the Gmail API.
 
-    Optimized for FastAPI with async support.
+    Optimized for FastAPI with async support and thread safety.
     """
 
     def __init__(self) -> None:
         self._credentials: Credentials | None = None
         self._service: Resource | None = None
+        # Lock ensures thread-safety during service lazy-loading
+        self._service_lock: Lock = Lock()
 
     def _get_credentials(self) -> Credentials | None:
         """
@@ -41,6 +44,7 @@ class EmailClient:
                     settings.GMAIL_SCOPES,
                 )
             except ValueError as e:
+                # Specific error for corrupt token file
                 mssg = "Token file is corrupt."
                 logger.exception(mssg)
                 raise AuthenticationError(mssg) from e
@@ -58,23 +62,27 @@ class EmailClient:
             else:
                 # Specific error for missing file
                 logger.exception("Token file not found or invalid.")
-                mssg = f"Valid token not found at {settings.GMAIL_TOKEN_FILE}. Run 'setup_token.py' locally first."
+                mssg = (
+                    f"Valid token not found at {settings.GMAIL_TOKEN_FILE}. Run 'setup_token.py'."
+                )
                 raise ConfigurationError(mssg)
 
         return creds
 
     @property
-    def service(self) -> Resource:
-        """Lazy-loads the Gmail API service to improve startup time."""
+    def service(self) -> Resource | None:
+        """Lazy-loads the Gmail API service safely across threads."""
         if self._service is None:
-            self._credentials = self._get_credentials()
-            self._service = build(
-                "gmail",
-                "v1",
-                credentials=self._credentials,
-                cache_discovery=False,
-            )
-        return self._service
+            with self._service_lock:  # Critical Section
+                if self._service is None:  # Double-check locking
+                    self._credentials = self._get_credentials()
+                    self._service = build(
+                        "gmail",
+                        "v1",
+                        credentials=self._credentials,
+                        cache_discovery=False,
+                    )
+        return self._service if self._service else None
 
     def _create_message(
         self,
@@ -111,7 +119,7 @@ class EmailClient:
                 reply_to=reply_to,
             )
 
-            # FIX: Cast to Any so static analysis ignores the dynamic .users() method
+            # Cast to Any so static analysis ignores the dynamic .users() method
             service = cast(Any, self.service)
             result = service.users().messages().send(userId="me", body=message_body).execute()
 

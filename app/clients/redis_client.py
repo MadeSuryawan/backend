@@ -1,7 +1,7 @@
 # app/clients/redis_client.py
 """Redis client module for cache operations."""
 
-from collections.abc import Awaitable
+from collections.abc import AsyncGenerator, Awaitable
 from logging import getLogger
 from typing import Any
 
@@ -19,25 +19,13 @@ class RedisClient:
     """Async Redis client wrapper with connection pooling."""
 
     def __init__(self) -> None:
-        """
-        Initialize Redis client.
-
-        Defaults to RedisCacheConfig().
-
-        Raises:
-            ValueError: If configuration is invalid.
-        """
+        """Initialize Redis client."""
         self.config = pool_kwargs
         self._pool: ConnectionPool | None = None
         self._redis: Redis | None = None
 
     async def connect(self) -> None:
-        """
-        Establish Redis connection pool.
-
-        Raises:
-            RedisConnectionError: If connection fails.
-        """
+        """Establish Redis connection pool."""
         try:
             self._pool = ConnectionPool(**self.config)
             self._redis = Redis(connection_pool=self._pool)
@@ -53,7 +41,7 @@ class RedisClient:
             logger.info("Redis connection successful. Cache is using Redis.")
         except (ConnectionError, RedisTimeoutError, RedisError) as e:
             logger.exception("Failed to connect to Redis")
-            mssg = f"Cannot connect to Redis at {self.config['host']}:{self.config['port']}"
+            mssg = f"Cannot connect to Redis at {self.config.get('host')}:{self.config.get('port')}"
             raise RedisConnectionError(mssg) from e
 
     async def disconnect(self) -> None:
@@ -64,33 +52,14 @@ class RedisClient:
 
     @property
     def client(self) -> Redis:
-        """
-        Get Redis client.
-
-        Returns:
-            Redis client instance.
-
-        Raises:
-            RuntimeError: If client is not initialized.
-        """
+        """Get Redis client instance."""
         if self._redis is None:
             mssg = "Redis client not initialized. Call connect() first."
             raise RuntimeError(mssg)
         return self._redis
 
     async def get(self, key: str) -> str | None:
-        """
-        Get value from cache.
-
-        Args:
-            key: Cache key.
-
-        Returns:
-            Cached value or None.
-
-        Raises:
-            RedisConnectionError: If operation fails.
-        """
+        """Get value from cache."""
         try:
             return await self.client.get(key)
         except RedisError as e:
@@ -99,20 +68,7 @@ class RedisClient:
             raise RedisConnectionError(mssg) from e
 
     async def set(self, key: str, value: str, ex: int | None = None) -> bool:
-        """
-        Set value in cache.
-
-        Args:
-            key: Cache key.
-            value: Value to cache.
-            ex: Expiration time in seconds.
-
-        Returns:
-            True if successful.
-
-        Raises:
-            RedisConnectionError: If operation fails.
-        """
+        """Set value in cache."""
         try:
             return bool(await self.client.set(key, value, ex=ex))
         except RedisError as e:
@@ -121,18 +77,9 @@ class RedisClient:
             raise RedisConnectionError(mssg) from e
 
     async def delete(self, *keys: str) -> int:
-        """
-        Delete keys from cache.
-
-        Args:
-            *keys: Cache keys to delete.
-
-        Returns:
-            Number of keys deleted.
-
-        Raises:
-            RedisConnectionError: If operation fails.
-        """
+        """Delete keys from cache."""
+        if not keys:
+            return 0
         try:
             return await self.client.delete(*keys)
         except RedisError as e:
@@ -141,18 +88,7 @@ class RedisClient:
             raise RedisConnectionError(mssg) from e
 
     async def exists(self, *keys: str) -> int:
-        """
-        Check if keys exist in cache.
-
-        Args:
-            *keys: Cache keys to check.
-
-        Returns:
-            Number of keys that exist.
-
-        Raises:
-            RedisConnectionError: If operation fails.
-        """
+        """Check if keys exist in cache."""
         try:
             return await self.client.exists(*keys)
         except RedisError as e:
@@ -161,19 +97,7 @@ class RedisClient:
             raise RedisConnectionError(mssg) from e
 
     async def expire(self, key: str, seconds: int) -> bool:
-        """
-        Set expiration on key.
-
-        Args:
-            key: Cache key.
-            seconds: Expiration time in seconds.
-
-        Returns:
-            True if timeout was set.
-
-        Raises:
-            RedisConnectionError: If operation fails.
-        """
+        """Set expiration on key."""
         try:
             return await self.client.expire(key, seconds)
         except RedisError as e:
@@ -182,18 +106,7 @@ class RedisClient:
             raise RedisConnectionError(mssg) from e
 
     async def ttl(self, key: str) -> int:
-        """
-        Get remaining time to live.
-
-        Args:
-            key: Cache key.
-
-        Returns:
-            TTL in seconds, -1 if no expiration, -2 if key doesn't exist.
-
-        Raises:
-            RedisConnectionError: If operation fails.
-        """
+        """Get remaining time to live."""
         try:
             return await self.client.ttl(key)
         except RedisError as e:
@@ -202,15 +115,7 @@ class RedisClient:
             raise RedisConnectionError(mssg) from e
 
     async def flush_db(self) -> bool:
-        """
-        Flush current database.
-
-        Returns:
-            True if successful.
-
-        Raises:
-            RedisConnectionError: If operation fails.
-        """
+        """Flush current database."""
         try:
             return await self.client.flushdb()
         except RedisError as e:
@@ -219,15 +124,7 @@ class RedisClient:
             raise RedisConnectionError(mssg) from e
 
     async def ping(self) -> bool:
-        """
-        Ping Redis server.
-
-        Returns:
-            True if server is reachable.
-
-        Raises:
-            RedisConnectionError: If operation fails.
-        """
+        """Ping Redis server."""
         try:
             ping_result = self.client.ping()
             if isinstance(ping_result, Awaitable):
@@ -248,26 +145,27 @@ class RedisClient:
             mssg = f"Cache info operation failed: {e}"
             raise RedisConnectionError(mssg) from e
 
-    async def scan_keys(self, pattern: str, cursor: int = 0) -> tuple[int, list[str]]:
+    async def scan_iter(self, pattern: str, count: int = 100) -> AsyncGenerator[str]:
         """
-        Scan keys in the Redis database using the SCAN command.
+        Yield keys matching the pattern memory-efficiently.
 
-        Args:
-            pattern: Pattern to match keys against.
-            cursor: The cursor position to start scanning from.
-
-        Returns:
-            A tuple containing the new cursor and a list of keys found in this iteration.
-
-        Raises:
-            RedisConnectionError: If operation fails.
+        Replaces the old scan_keys which loaded all keys into memory.
         """
-        try:
-            new_cursor, keys = await self.client.scan(cursor, match=pattern)
-            return int(new_cursor), [
-                key.decode("utf-8") if isinstance(key, bytes) else key for key in keys
-            ]
-        except RedisError as e:
-            logger.exception(f"Failed to scan keys with pattern {pattern}")
-            mssg = f"Cache scan_keys operation failed for pattern {pattern}: {e}"
-            raise RedisConnectionError(mssg) from e
+        # Fix: Start cursor as integer 0
+        cursor = 0
+        while True:
+            try:
+                # The scan command accepts and returns an integer cursor
+                cursor, keys = await self.client.scan(cursor, match=pattern, count=count)
+
+                for key in keys:
+                    yield key.decode("utf-8") if isinstance(key, bytes) else key
+
+                # If cursor is 0, iteration is complete
+                if cursor == 0:
+                    break
+
+            except RedisError as e:
+                logger.exception(f"Failed to scan keys with pattern {pattern}")
+                mssg = f"Cache scan_iter operation failed for pattern {pattern}: {e}"
+                raise RedisConnectionError(mssg) from e

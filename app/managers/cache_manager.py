@@ -1,7 +1,8 @@
 # app/managers/cache_manager.py
 """Main cache manager for Redis caching operations."""
 
-from collections.abc import Awaitable, Callable, Coroutine
+from asyncio import Lock
+from collections.abc import Callable, Coroutine
 from logging import getLogger
 from typing import Any
 
@@ -12,7 +13,6 @@ from app.clients import MemoryClient, RedisClient
 from app.configs import CacheConfig, file_logger
 from app.data import CacheStatistics
 from app.errors import BASE_EXCEPTION, CacheDeserializationError, CacheKeyError
-from app.schemas import Item
 from app.utils import (
     compress,
     decompress,
@@ -38,6 +38,8 @@ class CacheManager:
         self.is_redis_available = False
         self.cache_config = CacheConfig()
         self.statistics = CacheStatistics()
+        # Locks for request coalescing (Thundering Herd protection)
+        self._locks: dict[str, Lock] = {}
 
     async def initialize(self) -> None:
         """
@@ -49,18 +51,21 @@ class CacheManager:
             await self.redis_client.connect()
             self._client = self.redis_client
             self.is_redis_available = True
+            # Also start memory client in case we need to fallback later
+            await self.memory_client.start_lifecycle()
         except RedisConnectionError as e:
             logger.warning(f"Redis connection failed: {e}. Falling back to in-memory cache.")
             self._client = self.memory_client
             self.is_redis_available = False
+            await self.memory_client.start_lifecycle()
         logger.info("Cache manager initialized successfully.")
 
     async def shutdown(self) -> None:
         """Shutdown cache manager by closing the client connection."""
         if isinstance(self._client, RedisClient):
             await self._client.disconnect()
-        elif isinstance(self._client, MemoryClient):
-            await self._client.close()
+        # Ensure memory client is also closed properly
+        await self.memory_client.close()
         logger.info("Cache manager shutdown successfully.")
 
     def _build_key(self, key: str, namespace: str | None = None) -> str:
@@ -78,7 +83,6 @@ class CacheManager:
             full_key = self._build_key(key, namespace)
             logger.debug(f"Getting from cache: {full_key}")
             cached_value = await self._client.get(full_key)
-            logger.debug(f"{cached_value=}, {type(cached_value)=}")
 
             if cached_value is None:
                 self.statistics.record_miss()
@@ -91,10 +95,8 @@ class CacheManager:
             # Decompress if needed
             if isinstance(cached_value, str):
                 cached_value = decompress(cached_value)
-                logger.debug(f"{decompress(cached_value)=}, {type(decompress(cached_value))=}")
 
             # Deserialize
-            logger.debug(f"{deserialize(cached_value)=}, {type(deserialize(cached_value))=}")
             return deserialize(cached_value)
         except BASE_EXCEPTION + (ValidationError, CacheDeserializationError) as e:
             logger.exception(f"Cache get failed for key: {key}")
@@ -105,7 +107,7 @@ class CacheManager:
     async def set(
         self,
         key: str,
-        value: Item | dict,
+        value: dict,
         ttl: int | None = None,
         namespace: str | None = None,
     ) -> bool:
@@ -167,7 +169,14 @@ class CacheManager:
         *,
         force_refresh: bool = False,
     ) -> object:
-        """Get from cache or set using callback if not found."""
+        """
+        Get from cache or set using callback if not found.
+
+        Implements Request Coalescing (SingleFlight) to prevent Thundering Herd.
+        """
+        full_key = self._build_key(key, namespace)
+
+        # 1. Optimistic Check (Fast Path)
         if not force_refresh:
             try:
                 cached = await self.get(key, namespace)
@@ -176,39 +185,66 @@ class CacheManager:
             except BASE_EXCEPTION as e:
                 logger.warning(f"Failed to retrieve from cache: {e}")
 
-        # Call callback
-        value = await callback()
-        await self.set(key, value, ttl, namespace)
-        return value
+        # 2. Acquire Lock for this key
+        if full_key not in self._locks:
+            self._locks[full_key] = Lock()
+
+        async with self._locks[full_key]:
+            # 3. Double Check after acquiring lock (in case another req filled it)
+            if not force_refresh:
+                cached = await self.get(key, namespace)
+                if cached is not None:
+                    return cached
+
+            # 4. Execute Callback (Heavy Operation)
+            value = await callback()
+            await self.set(key, value, ttl, namespace)
+
+            # Optional: Cleanup lock to prevent memory growth?
+            # We leave it for now as Python's dict is efficient enough for moderate key counts.
+            return value
 
     async def clear(self, namespace: str | None = None) -> int:
-        """Clear all cache entries, optionally for a namespace."""
+        """
+        Clear all cache entries, optionally for a namespace.
+
+        Uses batched deletion to ensure memory safety.
+        """
         try:
             if self.is_redis_available and isinstance(self._client, RedisClient):
                 prefix = self.cache_config.key_prefix
                 pattern = f"{prefix}:{namespace}:*" if namespace else f"{prefix}:*"
-                # Use scan_keys to get all matching keys
-                all_keys = []
-                cursor = 0
-                while True:
-                    cursor, keys = await self._client.scan_keys(pattern, cursor=cursor)
-                    all_keys.extend(keys)
-                    if cursor == 0:
-                        break
 
-                if all_keys:
-                    deleted_count = await self._client.delete(*all_keys)
+                deleted_total = 0
+                keys_batch = []
+
+                # Use the new async iterator
+                async for key in self._client.scan_iter(pattern):
+                    keys_batch.append(key)
+
+                    if len(keys_batch) >= 1000:
+                        await self._client.delete(*keys_batch)
+                        deleted_total += len(keys_batch)
+                        keys_batch = []
+
+                # Delete remaining
+                if keys_batch:
+                    await self._client.delete(*keys_batch)
+                    deleted_total += len(keys_batch)
+
+                if deleted_total > 0:
                     self.statistics.record_delete()
-                    logger.info(f"Cleared {deleted_count} keys for pattern '{pattern}'.")
-                self.statistics.reset()  # Reset statistics after clearing Redis cache
-                return len(all_keys) if all_keys else 0
+                    logger.info(f"Cleared {deleted_total} keys for pattern '{pattern}'.")
 
-            # Fallback for in-memory or if Redis is unavailable
+                self.statistics.reset()
+                return deleted_total
+
+            # Fallback for in-memory
             if isinstance(self._client, MemoryClient):
                 await self._client.flush_all()
                 self.statistics.reset()
                 logger.info("In-memory cache cleared (flushed all).")
-                return 0  # MemoryClient flush_all doesn't return count
+                return 0
         except BASE_EXCEPTION as e:
             logger.exception("Cache clear failed")
             self.statistics.record_error()
@@ -217,17 +253,7 @@ class CacheManager:
         return 0
 
     async def expire(self, key: str, seconds: int, namespace: str | None = None) -> bool:
-        """
-        Set expiration on key.
-
-        Args:
-            key: Cache key.
-            seconds: Expiration time in seconds.
-            namespace: Optional namespace.
-
-        Returns:
-            True if timeout was set.
-        """
+        """Set expiration on key."""
         try:
             full_key = self._build_key(key, namespace)
             return await self._client.expire(full_key, seconds)
@@ -238,16 +264,7 @@ class CacheManager:
             raise CacheKeyError(mssg) from e
 
     async def ttl(self, key: str, namespace: str | None = None) -> int:
-        """
-        Get remaining time to live.
-
-        Args:
-            key: Cache key.
-            namespace: Optional namespace.
-
-        Returns:
-            TTL in seconds, -1 if no expiration, -2 if key doesn't exist.
-        """
+        """Get remaining time to live."""
         try:
             full_key = self._build_key(key, namespace)
             return await self._client.ttl(full_key)
@@ -257,13 +274,8 @@ class CacheManager:
             mssg = f"Cache ttl check failed for key {key}"
             raise CacheKeyError(mssg) from e
 
-    async def ping(self) -> bool | Awaitable[bool]:
-        """
-        Ping the cache server.
-
-        Returns:
-            True if the server is reachable.
-        """
+    async def ping(self) -> bool:
+        """Ping the cache server."""
         try:
             return await self._client.ping()
         except BASE_EXCEPTION:
@@ -271,12 +283,7 @@ class CacheManager:
             return False
 
     def get_statistics(self) -> dict[str, Any]:
-        """
-        Get cache statistics.
-
-        Returns:
-            Dictionary of cache statistics.
-        """
+        """Get cache statistics."""
         return self.statistics.to_dict()
 
     def reset_statistics(self) -> None:

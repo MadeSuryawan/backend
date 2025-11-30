@@ -9,17 +9,7 @@ from logging import INFO, FileHandler, Formatter, Logger, NullHandler
 from pathlib import Path
 from typing import Any, Literal
 
-# from google.genai.types import (
-#     GenerateContentConfig,
-#     GoogleMaps,
-#     GoogleSearch,
-#     HarmBlockThreshold,
-#     HarmCategory,
-#     SafetySetting,
-#     Tool,
-# )
-from fastapi import Request
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
 from pydantic_settings.main import BaseSettings, SettingsConfigDict
 
 ENV_FILE = Path(__file__).parent.parent.parent / ".env"
@@ -132,7 +122,7 @@ class Settings(BaseSettings):
     # Scopes required for the application
     GMAIL_SCOPES: list[str] = ["https://www.googleapis.com/auth/gmail.send"]
 
-    # Redis Configuration (optional)
+    # Redis Configuration
     REDIS_ENABLED: bool = True
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
@@ -154,6 +144,17 @@ class Settings(BaseSettings):
         """Get Redis connection URL."""
         auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
         return f"redis://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+
+    @field_validator("REDIS_PASSWORD")
+    @classmethod
+    def validate_security_in_prod(cls, v: str | None, info: ValidationInfo) -> str | None:
+        """Ensure password is set in production environment."""
+        # Access values from the validation context
+        env = info.data.get("ENVIRONMENT", "development")
+        if env == "production" and not v:
+            mssg = "REDIS_PASSWORD is required in production environment!"
+            raise ValueError(mssg)
+        return v
 
 
 def no_api_key_error() -> None:
@@ -217,7 +218,7 @@ class CacheConfig(BaseSettings):
 
 
 redis_config = RedisConfig()
-# Build redis connection pool kwargs dynamically to handle version compatibility
+# Build redis connection pool kwargs dynamically
 pool_kwargs: dict[str, Any] = {
     "host": redis_config.host,
     "port": redis_config.port,
