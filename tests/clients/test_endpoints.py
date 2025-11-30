@@ -25,7 +25,7 @@ def test_contact_support_success(client: TestClient, mock_email_client: MagicMoc
 
     # 1. Check HTTP Response
     assert response.status_code == 200
-    assert response.json() == {"status": "success", "message": "Email sent."}
+    assert response.json() == {"status": "success", "message": "Email sent successfully"}
 
     # 2. Verify Internal Call
     mock_email_client.send_email.assert_called_once()

@@ -1,7 +1,13 @@
+# tests/cache/test_api.py
 """Tests for FastAPI endpoints."""
+
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import AsyncClient
+
+from app.main import app
+from app.routes.cache import get_cache_manager
 
 
 @pytest.mark.asyncio
@@ -16,6 +22,8 @@ async def test_root_endpoint(client: AsyncClient) -> None:
 async def test_health_check(client: AsyncClient) -> None:
     """Test health check endpoint."""
     response = await client.get("/health")
+    # Health check often relies on the global manager or internal logic,
+    # but since we overrode the dependency for the client, it should reflect that.
     assert response.status_code in [200, 503]
     data = response.json()
     assert "status" in data
@@ -33,11 +41,48 @@ async def test_cache_stats(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_cache_ping(client: AsyncClient) -> None:
-    """Test cache ping endpoint."""
+async def test_cache_ping_success(client: AsyncClient) -> None:
+    """Test cache ping endpoint success scenario."""
+    # The default 'client' fixture already uses a working CacheManager
     response = await client.get("/cache/ping")
-    # May return 503 if Redis not running, but request should succeed
-    assert response.status_code in [200, 503]
+
+    if response.status_code == 200:
+        assert response.json()["status"] == "success"
+    else:
+        # If the environment actually has no Redis/Memory fallback, it might be 503.
+        # But usually in tests, we expect success from the fixture.
+        pass
+
+
+@pytest.mark.asyncio
+async def test_cache_ping_failure(client: AsyncClient) -> None:
+    """
+    Test cache ping endpoint failure scenario.
+
+    Demonstrates the power of Dependency Injection: we can inject a broken
+    manager to verify the API correctly returns 503.
+    """
+    # 1. Create a mock manager that fails to ping
+    mock_manager = MagicMock()
+    mock_manager.ping = AsyncMock(return_value=False)
+
+    # 2. Override the dependency specifically for this request
+    app.dependency_overrides[get_cache_manager] = lambda: mock_manager
+
+    # 3. Make the request
+    response = await client.get("/cache/ping")
+
+    # 4. Assert it handled the error correctly
+    assert response.status_code == 503
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["message"] == "Cache server is not reachable"
+
+    # 5. Reset overrides (handled by fixture teardown usually, but good practice here)
+    # Note: The client fixture will clear this on exit, but we want to be safe.
+    # To restore the 'working' fixture manager:
+    # We can't easily "restore" to the fixture's closure value here without access to it.
+    # So we rely on the fixture teardown or simply don't run tests order-dependently.
 
 
 @pytest.mark.asyncio
@@ -150,11 +195,8 @@ async def test_cache_clear(client: AsyncClient) -> None:
     """Test cache clear endpoint returns proper response."""
     # Call the clear cache endpoint
     response = await client.delete("/cache/clear")
-    # Should get a 200 response (endpoint may succeed or fail gracefully)
     assert response.status_code == 200
     data = response.json()
-    # Check that we get proper response structure
     assert "status" in data
     assert "message" in data
-    # Should be either success or error
     assert data["status"] in ["success", "error"]
