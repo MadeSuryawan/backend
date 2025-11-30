@@ -5,17 +5,22 @@ from collections.abc import AsyncGenerator
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app import app
+from app.main import app
+from app.managers.cache_manager import cache_manager
+from app.managers.rate_limiter import limiter
 
 
 @pytest.fixture
 async def client() -> AsyncGenerator[AsyncClient]:
     """Create async HTTP client for testing."""
+    limiter.enabled = False
+    await cache_manager.initialize()
     async with AsyncClient(
         base_url="http://test",
         transport=ASGITransport(app=app),
     ) as ac:
         yield ac
+    await cache_manager.shutdown()
 
 
 @pytest.mark.asyncio

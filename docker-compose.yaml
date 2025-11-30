@@ -29,6 +29,25 @@ services:
     networks:
       - baliblissed-network
 
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount the token and secret from the host to the container
+      # :ro ensures the container only reads them, increasing security
+      - ./secrets/token.json:/app/secrets/token.json:ro
+      - ./secrets/client_secret.json:/app/secrets/client_secret.json:ro
+    environment:
+      - COMPANY_TARGET_EMAIL=${COMPANY_TARGET_EMAIL}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - baliblissed-network
+    env_file:
+      - .env
+
 volumes:
   redis_data:
     driver: local

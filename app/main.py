@@ -18,7 +18,7 @@ from app.middleware import (
     configure_cors,
     lifespan,
 )
-from app.routes import cache_router, email_router
+from app.routes import cache_error_handler, cache_router, email_router
 from app.schemas import Item, ItemUpdate
 from app.utils import file_logger
 
@@ -36,6 +36,8 @@ add_compression(app)
 
 app.include_router(cache_router)
 app.include_router(email_router)
+
+cache_error_handler(app)
 
 app.add_exception_handler(
     RateLimitExceeded,

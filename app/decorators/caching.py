@@ -1,10 +1,9 @@
 """FastAPI decorators for caching with rate limiting integration."""
 
 from collections.abc import Callable
-from contextlib import suppress
 from functools import wraps
 from hashlib import sha256
-from json import JSONDecodeError, dumps
+from json import dumps
 from logging import getLogger
 from typing import Any
 
@@ -14,8 +13,8 @@ from redis.exceptions import RedisError
 
 from app.errors import BASE_EXCEPTION, CacheKeyError
 from app.managers.cache_manager import CacheManager
-from app.schemas import Item
-from app.utils import file_logger
+from app.schemas.items import Item
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 
@@ -78,14 +77,9 @@ def cached(
             try:
                 if cached_value := await cache_manager.get(cache_key, namespace):
                     logger.debug(f"Cache hit for key: {cache_key}")
-                    # return validate_response(cached_value)
-                    return cached_value
+                    return validate_response(cached_value)
             except exceptions as e:
                 logger.warning(f"Cache retrieval failed: {e}")
-                # return JSONResponse(
-                #     status_code=HTTP_500_INTERNAL_SERVER_ERROR,
-                #     content={"detail": e.errors(include_url=False)},
-                # )
 
             # Execute function and cache result
             result: Item | dict = await func(*args, **kwargs)
@@ -173,25 +167,29 @@ def _generate_cache_key(func_name: str, *args: list[Any], **kwargs: dict[str, An
     Returns:
         Generated cache key.
     """
-
-    # Filter out request objects and other non-serializable items
-    with suppress(TypeError, ValueError, JSONDecodeError):
-        # Skip non-serializable arguments
-        serializable_args = [dumps(arg, default=str, sort_keys=True) for arg in args]
-
-    with suppress(TypeError, ValueError):
-        # Skip non-serializable keyword arguments
-        serializable_kwargs = {
-            key: value
-            for key, value in kwargs.items()
-            if isinstance(value, (str, int, float, bool))
-        }
-
     key_parts = [func_name]
-    if serializable_args:
-        key_parts.append(dumps(serializable_args, default=str, sort_keys=True))
-    if serializable_kwargs:
-        key_parts.append(dumps(serializable_kwargs, default=str, sort_keys=True))
+
+    # Process args
+    for arg in args:
+        try:
+            key_parts.append(dumps(arg, default=str, sort_keys=True))
+        except (TypeError, ValueError):
+            logger.warning(f"Argument {arg} is not serializable, skipping for cache key.")
+
+    # Process kwargs
+    if kwargs:
+        try:
+            key_parts.append(dumps(kwargs, default=str, sort_keys=True))
+        except (TypeError, ValueError):
+            # Fallback for kwargs if full dict fails
+            safe_kwargs = {}
+            for k, v in kwargs.items():
+                try:
+                    dumps(v, default=str, sort_keys=True)
+                    safe_kwargs[k] = v
+                except (TypeError, ValueError):
+                    logger.warning(f"Keyword argument {k}={v} is not serializable, skipping.")
+            key_parts.append(dumps(safe_kwargs, default=str, sort_keys=True))
 
     key_string = ":".join(key_parts)
     return sha256(key_string.encode()).hexdigest()[:16]

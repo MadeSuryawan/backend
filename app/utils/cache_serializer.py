@@ -16,7 +16,7 @@ from app.errors import (
     CacheDeserializationError,
     CacheSerializationError,
 )
-from app.schemas import Item
+from app.schemas.items import Item
 
 logger: Logger = getLogger(__name__)
 
@@ -60,13 +60,8 @@ def deserialize(value: str) -> Item | dict:
         CacheDeserializationError: If deserialization fails.
     """
     try:
-        if "items" in (items_dict := loads(value)):  # and Item.model_validate(items_dict["items"])
-            logger.debug(f"{items_dict["items"]=}")
-            item_list: list[Item] = [Item.model_validate_json(item) for item in items_dict["items"]]
-            return {"items": item_list}
-
-        return Item.model_validate_json(value)
-    except ValidationError as e:
+        return loads(value)
+    except JSONDecodeError as e:
         logger.exception("Deserialization failed")
         mssg = f"Cannot deserialize value: {e}"
         raise CacheDeserializationError(mssg) from e

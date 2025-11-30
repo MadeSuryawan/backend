@@ -1,6 +1,6 @@
 """Utility helper functions."""
 
-from app.utils.cache_serialiazer import (
+from app.utils.cache_serializer import (
     compress,
     decompress,
     deserialize,

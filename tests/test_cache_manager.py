@@ -4,9 +4,11 @@ from collections.abc import AsyncGenerator
 from unittest.mock import Mock, patch
 
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 
-from app.clients import MemoryClient
-from app.errors import RedisConnectionError
+from app.clients.memory_client import MemoryClient
+
+# from app.errors.exceptions import RedisConnectionError
 from app.managers.cache_manager import CacheManager
 
 

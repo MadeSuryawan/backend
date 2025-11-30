@@ -117,6 +117,7 @@ class Settings(BaseSettings):
     # Environment
     ENVIRONMENT: str = "development"
     LOG_TO_FILE: bool = True
+    LOG_FILE: str = "logs/app.log"
     PRODUCTION_FRONTEND_URL: str | None = None
 
     # Email Configuration

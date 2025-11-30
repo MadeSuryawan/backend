@@ -55,12 +55,8 @@ async def get_cache_stats() -> CacheStatsResponse:
     Returns:
         Cache statistics.
     """
-    try:
-        stats = cache_manager.get_statistics()
-        return CacheStatsResponse(status="success", data=stats)
-    except Exception as e:
-        logger.exception("Failed to get cache stats")
-        return CacheStatsResponse(status="error", data={"message": str(e)})
+    stats = cache_manager.get_statistics()
+    return CacheStatsResponse(status="success", data=stats)
 
 
 @router.get("/ping", response_model=CachePingResponse, tags=["cache"])
@@ -71,18 +67,14 @@ async def ping_cache() -> CachePingResponse:
     Returns:
         Ping result.
     """
-    try:
-        is_alive = await cache_manager.ping()
-        if is_alive:
-            return CachePingResponse(status="success", message="Cache server is reachable")
-        return CachePingResponse(
-            status="error",
-            message="Cache server is not reachable",
-            error_code=503,
-        )
-    except Exception as e:
-        logger.exception("Cache ping failed")
-        return CachePingResponse(status="error", message=str(e), error_code=503)
+    is_alive = await cache_manager.ping()
+    if is_alive:
+        return CachePingResponse(status="success", message="Cache server is reachable")
+    return CachePingResponse(
+        status="error",
+        message="Cache server is not reachable",
+        error_code=503,
+    )
 
 
 @router.get("/reset-stats", tags=["cache"])
@@ -93,11 +85,7 @@ async def reset_stats() -> CacheResetStatsResponse:
     Returns:
         Reset operation result.
     """
-    try:
-        cache_manager.reset_statistics()
-    except Exception as e:
-        logger.exception("Failed to reset cache stats")
-        return CacheResetStatsResponse(status="error", message=str(e), error_code=500)
+    cache_manager.reset_statistics()
     return CacheResetStatsResponse(status="success", message="Cache statistics reset")
 
 
@@ -109,15 +97,11 @@ async def clear_cache() -> CacheClearResponse:
     Returns:
         Clear operation result.
     """
-    try:
-        await cache_manager.clear()
-        return CacheClearResponse(status="success", message="Cache cleared successfully")
-    except Exception as e:
-        logger.exception("Failed to clear cache")
-        return CacheClearResponse(status="error", message=str(e), error_code=500)
+    await cache_manager.clear()
+    return CacheClearResponse(status="success", message="Cache cleared successfully")
 
 
-def create_cache_error_handler(app: FastAPI) -> None:
+def cache_error_handler(app: FastAPI) -> None:
     """
     Add cache exception error handlers to FastAPI application.
 
