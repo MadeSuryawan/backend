@@ -8,15 +8,14 @@ cleanup.
 """
 
 from asyncio import get_event_loop
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from logging import basicConfig, getLogger
 from pathlib import Path
-from time import perf_counter, time
+from time import perf_counter
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
 from rich.logging import RichHandler
 from rich.traceback import install
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint

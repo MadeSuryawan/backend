@@ -3,12 +3,10 @@
 
 from collections.abc import AsyncGenerator
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import BaseModel
 
-from app.clients import MemoryClient
 from app.decorators.caching import (
     _generate_cache_key,
     cache_busting,

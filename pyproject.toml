@@ -158,7 +158,7 @@ ignore = [
   "TD006",  # Flake8-todos - checks for TODO comments
   "G004",  # Flake8-logging-format - logging format string issues
   "F403",  # Pyflakes - Checks for the use of wildcard imports.
-  "F401",  # Pyflakes - imported but unused
+  # "F401",  # Pyflakes - imported but unused
   "PLR2004",  # Pylint - Checks for the use of unnamed numerical constants ("magic") values in comparisons.
   "D400",  # Pydocstyle - Missing docstring in public module
   "TRY300",  # Tryceratops - try/except usage suggestions
@@ -197,6 +197,7 @@ fixable = [
   "TID252",
   "F541",
   "D200",
+  "F401",
 ]  # List the rules you want to be fixable
 
 # 4. Ignore `E402` (import violations) in all `__init__.py` files, and in selected subdirectories.

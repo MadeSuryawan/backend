@@ -3,11 +3,9 @@
 
 import re
 from time import perf_counter, sleep
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 from fastapi import FastAPI
-from fastapi.routing import APIRoute
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
