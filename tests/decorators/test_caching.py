@@ -26,7 +26,7 @@ class SampleModel(BaseModel):
 
 
 @pytest.fixture
-async def test_cache_manager() -> AsyncGenerator[CacheManager, None]:
+async def test_cache_manager() -> AsyncGenerator[CacheManager]:
     """Create a test cache manager with memory client."""
     manager = CacheManager()
     await manager.initialize()
@@ -46,19 +46,19 @@ class TestGenerateCacheKey:
 
     def test_generates_different_keys_for_different_args(self) -> None:
         """Test that different args produce different keys."""
-        key1 = _generate_cache_key("func", 1, 2)
-        key2 = _generate_cache_key("func", 3, 4)
+        key1 = _generate_cache_key("func", [1])
+        key2 = _generate_cache_key("func", [3])
         assert key1 != key2
 
     def test_generates_different_keys_for_different_kwargs(self) -> None:
         """Test that different kwargs produce different keys."""
-        key1 = _generate_cache_key("func", name="alice")
-        key2 = _generate_cache_key("func", name="bob")
+        key1 = _generate_cache_key("func", name={"a": "alice"})
+        key2 = _generate_cache_key("func", name={"b": "bob"})
         assert key1 != key2
 
     def test_handles_complex_args(self) -> None:
         """Test with complex argument types."""
-        key = _generate_cache_key("func", {"nested": "dict"}, [1, 2, 3])
+        key = _generate_cache_key("func", [1, 2, 3], name={"nested": "dict"})
         assert isinstance(key, str)
 
     def test_handles_non_serializable_args(self) -> None:
@@ -68,13 +68,13 @@ class TestGenerateCacheKey:
             pass
 
         # Should not raise, just skip the argument
-        key = _generate_cache_key("func", NonSerializable())
+        key = _generate_cache_key("func", [NonSerializable()])
         assert isinstance(key, str)
 
     def test_consistent_keys_for_same_input(self) -> None:
         """Test that same inputs produce same key."""
-        key1 = _generate_cache_key("func", 1, name="test")
-        key2 = _generate_cache_key("func", 1, name="test")
+        key1 = _generate_cache_key("func", [1], name={"test": "value"})
+        key2 = _generate_cache_key("func", [1], name={"test": "value"})
         assert key1 == key2
 
 
@@ -98,6 +98,7 @@ class TestValidateResponse:
         """Test validating list of dicts against list of models."""
         data = [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}]
         result = validate_response(data, list[SampleModel])
+        assert isinstance(result, list)
         assert len(result) == 2
         assert all(isinstance(item, SampleModel) for item in result)
 
@@ -133,7 +134,7 @@ class TestCachedDecorator:
     ) -> None:
         """Test custom key builder function."""
 
-        def my_key_builder(*args: Any, **kwargs: Any) -> str:
+        def my_key_builder(*args: list[Any], **kwargs: dict[str, Any]) -> str:
             return f"custom_key_{kwargs.get('item_id', 'default')}"
 
         @cached(test_cache_manager, key_builder=my_key_builder)
@@ -169,7 +170,7 @@ class TestCachedDecorator:
             return {"id": 1, "name": "test"}
 
         # First call - caches result
-        result1 = await get_sample()
+        _ = await get_sample()
 
         # Second call - retrieves from cache and validates
         result2 = await get_sample()
@@ -208,7 +209,7 @@ class TestCacheBustingDecorator:
         # Pre-populate cache
         await test_cache_manager.set("user_42", {"name": "old"})
 
-        def bust_key_builder(*args: Any, **kwargs: Any) -> list[str]:
+        def bust_key_builder(*args: list[Any], **kwargs: dict[str, Any]) -> list[str]:
             return [f"user_{kwargs.get('user_id')}"]
 
         @cache_busting(test_cache_manager, key_builder=bust_key_builder)

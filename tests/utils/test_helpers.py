@@ -2,12 +2,14 @@
 """Tests for app/utils/helpers.py module."""
 
 import re
-from time import sleep
+from time import perf_counter, sleep
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
@@ -53,7 +55,6 @@ class TestTimeTaken:
 
     def test_returns_formatted_string(self) -> None:
         """Test that time_taken returns a formatted string."""
-        from time import perf_counter
 
         start = perf_counter()
         result = time_taken(start)
@@ -63,7 +64,6 @@ class TestTimeTaken:
 
     def test_format_pattern(self) -> None:
         """Test the format is Xm Ys."""
-        from time import perf_counter
 
         start = perf_counter()
         result = time_taken(start)
@@ -72,7 +72,6 @@ class TestTimeTaken:
 
     def test_elapsed_time_calculation(self) -> None:
         """Test that elapsed time is calculated correctly."""
-        from time import perf_counter
 
         start = perf_counter()
         sleep(0.1)  # Sleep for 100ms
@@ -81,7 +80,6 @@ class TestTimeTaken:
 
     def test_with_longer_duration(self) -> None:
         """Test with a mock start time that results in longer duration."""
-        from time import perf_counter
 
         # Mock a start time that was 65 seconds ago
         start = perf_counter() - 65
@@ -90,7 +88,6 @@ class TestTimeTaken:
 
     def test_with_hours_worth_of_time(self) -> None:
         """Test with duration exceeding 60 minutes."""
-        from time import perf_counter
 
         # 3665 seconds = 61 minutes and 5 seconds
         start = perf_counter() - 3665
@@ -105,7 +102,7 @@ class TestGetSummary:
     def test_returns_none_for_no_matching_route(self) -> None:
         """Test that None is returned when no route matches."""
         app = FastAPI()
-        client = TestClient(app)
+        # test_client = TestClient(app)
 
         # Create a mock request for a non-existent route
         request = MagicMock()
@@ -135,8 +132,6 @@ class TestGetSummary:
 
     def test_returns_name_for_starlette_route(self) -> None:
         """Test that route name is returned for Starlette Route."""
-        from starlette.applications import Starlette
-        from starlette.responses import JSONResponse
 
         async def homepage(request: MagicMock) -> JSONResponse:
             return JSONResponse({"hello": "world"})
@@ -145,4 +140,3 @@ class TestGetSummary:
 
         # Verify route exists
         assert len(app.routes) > 0
-

@@ -73,7 +73,7 @@ def serialize(value: Item | dict[str, Any]) -> str:
         raise CacheSerializationError from e
 
 
-def deserialize(value: str) -> Item | dict[str, Any]:
+def deserialize(value: str) -> Any:  # noqa: ANN401
     """
     Deserialize JSON string to value.
 

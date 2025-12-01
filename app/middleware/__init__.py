@@ -1,15 +1,15 @@
 from app.middleware.middleware import (
-    add_compression,
-    add_request_logging,
-    add_security_headers,
+    LoggingMiddleware,
+    SecurityHeadersMiddleware,
     configure_cors,
     lifespan,
 )
 
 __all__ = [
-    "add_compression",
-    "add_request_logging",
-    "add_security_headers",
+    "LoggingMiddleware",
+    "SecurityHeadersMiddleware",
     "configure_cors",
+    "LoggingMiddleware",
+    "SecurityHeadersMiddleware",
     "lifespan",
 ]

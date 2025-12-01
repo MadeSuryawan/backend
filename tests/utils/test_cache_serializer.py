@@ -1,6 +1,7 @@
 # tests/utils/test_cache_serializer.py
 """Tests for app/utils/cache_serializer.py module."""
 
+from datetime import datetime
 from unittest.mock import patch
 
 import pytest
@@ -56,7 +57,6 @@ class TestSerialize:
 
     def test_serialize_with_special_types(self) -> None:
         """Test serializing with types that need default=str."""
-        from datetime import datetime
 
         data = {"timestamp": datetime.now()}
         result = serialize(data)
@@ -67,15 +67,19 @@ class TestSerialize:
 
         class NonSerializable:
             def __repr__(self) -> str:
-                raise RuntimeError("Cannot repr")
+                mssg = "Cannot repr"
+                raise RuntimeError(mssg)
 
         # Create an object that will fail serialization
-        with patch(
-            "app.utils.cache_serializer.orjson_dumps",
-            side_effect=TypeError("Cannot serialize"),
+        mssg = "Cannot serialize"
+        with (
+            patch(
+                "app.utils.cache_serializer.orjson_dumps",
+                side_effect=TypeError(mssg),
+            ),
+            pytest.raises(CacheSerializationError),
         ):
-            with pytest.raises(CacheSerializationError):
-                serialize({"bad": "data"})
+            serialize({"bad": "data"})
 
 
 class TestDeserialize:
@@ -89,7 +93,7 @@ class TestDeserialize:
 
     def test_deserialize_list(self) -> None:
         """Test deserializing a JSON array."""
-        json_str = '[1, 2, 3]'
+        json_str = "[1, 2, 3]"
         result = deserialize(json_str)
         assert result == [1, 2, 3]
 
@@ -123,12 +127,14 @@ class TestCompress:
 
     def test_compress_error_handling(self) -> None:
         """Test that compression errors raise CacheCompressionError."""
-        with patch(
-            "app.utils.cache_serializer.gzip_compress",
-            side_effect=OSError("Compression failed"),
+        with (
+            patch(
+                "app.utils.cache_serializer.gzip_compress",
+                side_effect=OSError("Compression failed"),
+            ),
+            pytest.raises(CacheCompressionError),
         ):
-            with pytest.raises(CacheCompressionError):
-                compress("test data")
+            compress("test data")
 
 
 class TestDecompress:
@@ -158,7 +164,13 @@ class TestDecompress:
         """Test that decompression errors raise CacheDecompressionError."""
         # Create invalid compressed data with marker
         invalid_data = COMPRESSION_MARKER.decode("utf-8") + "invalid_base64!!!"
-        with pytest.raises(CacheDecompressionError):
+        with (
+            patch(
+                "app.utils.cache_serializer.gzip_decompress",
+                side_effect=OSError("Decompression failed"),
+            ),
+            pytest.raises(CacheDecompressionError),
+        ):
             decompress(invalid_data)
 
 
@@ -185,4 +197,3 @@ class TestDoCompress:
         # Each emoji is 4 bytes
         data = "🎉" * 25  # 100 bytes
         assert do_compress(data, threshold=50) is True
-

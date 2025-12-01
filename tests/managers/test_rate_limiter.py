@@ -1,6 +1,7 @@
 # tests/managers/test_rate_limiter.py
 """Tests for app/managers/rate_limiter.py module."""
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -132,7 +133,6 @@ class TestRateLimitExceededHandler:
 
             assert response.status_code == 429
             # Verify content structure
-            import json
 
             body = response.body
             if isinstance(body, (bytes, memoryview)):

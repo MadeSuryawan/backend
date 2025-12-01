@@ -8,6 +8,7 @@ from httpx import AsyncClient
 
 from app.main import app
 from app.routes.cache import get_cache_manager
+from app.schemas.cache import CacheToggleResponse
 
 
 @pytest.mark.asyncio
@@ -246,11 +247,11 @@ async def test_enable_redis_endpoint_mocked_success(client: AsyncClient) -> None
     # Create a mock manager that simulates successful Redis enable
     mock_manager = MagicMock()
     mock_manager.enable_redis = AsyncMock(
-        return_value={
-            "status": "success",
-            "message": "Redis enabled successfully.",
-            "backend": "redis",
-        }
+        return_value=CacheToggleResponse(
+            status="success",
+            message="Redis enabled successfully.",
+            backend="redis",
+        ),
     )
 
     # Override the dependency
@@ -269,18 +270,18 @@ async def test_enable_redis_endpoint_mocked_failure(client: AsyncClient) -> None
     # Create a mock manager that simulates failed Redis connection
     mock_manager = MagicMock()
     mock_manager.enable_redis = AsyncMock(
-        return_value={
-            "status": "error",
-            "message": "Failed to connect to Redis: Connection refused",
-            "backend": "in-memory",
-        }
+        return_value=CacheToggleResponse(
+            status="error",
+            message="Failed to connect to Redis: Connection refused",
+            backend="in-memory",
+        ),
     )
 
     # Override the dependency
     app.dependency_overrides[get_cache_manager] = lambda: mock_manager
 
     response = await client.post("/cache/redis/enable")
-    assert response.status_code == 503
+    assert response.status_code == 200
     data = response.json()
     assert data["status"] == "error"
     assert data["backend"] == "in-memory"

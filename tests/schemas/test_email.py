@@ -83,7 +83,7 @@ class TestEmailRequest:
 
     def test_non_string_email_raises_type_error(self) -> None:
         """Test that non-string email raises TypeError or ValidationError."""
-        with pytest.raises((TypeError, ValidationError)):
+        with pytest.raises(TypeError):
             EmailRequest(
                 subject="Test",
                 message="Message",

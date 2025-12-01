@@ -381,9 +381,9 @@ async def test_disable_redis_when_already_disabled(cache_manager: CacheManager) 
 
     result = await cache_manager.disable_redis()
 
-    assert result["status"] == "unchanged"
-    assert result["backend"] == "in-memory"
-    assert "already disabled" in result["message"]
+    assert result.status == "unchanged"
+    assert result.backend == "in-memory"
+    assert "already disabled" in result.message
 
 
 @pytest.mark.asyncio
@@ -395,8 +395,8 @@ async def test_disable_redis_success(cache_manager: CacheManager) -> None:
 
     result = await cache_manager.disable_redis()
 
-    assert result["status"] == "success"
-    assert result["backend"] == "in-memory"
+    assert result.status == "success"
+    assert result.backend == "in-memory"
     assert cache_manager.is_redis_available is False
     assert isinstance(cache_manager._client, MemoryClient)
 
@@ -408,9 +408,9 @@ async def test_enable_redis_when_already_enabled(cache_manager: CacheManager) ->
 
     result = await cache_manager.enable_redis()
 
-    assert result["status"] == "unchanged"
-    assert result["backend"] == "redis"
-    assert "already enabled" in result["message"]
+    assert result.status == "unchanged"
+    assert result.backend == "redis"
+    assert "already enabled" in result.message
 
 
 @pytest.mark.asyncio
@@ -425,8 +425,8 @@ async def test_enable_redis_success(mock_connect: Mock) -> None:
 
     result = await manager.enable_redis()
 
-    assert result["status"] == "success"
-    assert result["backend"] == "redis"
+    assert result.status == "success"
+    assert result.backend == "redis"
     assert manager.is_redis_available is True
     mock_connect.assert_called_once()
 
@@ -444,9 +444,9 @@ async def test_enable_redis_failure(mock_connect: Mock) -> None:  # noqa: ARG001
 
     result = await manager.enable_redis()
 
-    assert result["status"] == "error"
-    assert result["backend"] == "in-memory"
-    assert "Failed to connect" in result["message"]
+    assert result.status == "error"
+    assert result.backend == "in-memory"
+    assert "Failed to connect" in result.message
     assert manager.is_redis_available is False
 
 
@@ -458,7 +458,7 @@ async def test_disable_and_enable_redis_round_trip(cache_manager: CacheManager) 
 
     # Disable Redis
     disable_result = await cache_manager.disable_redis()
-    assert disable_result["backend"] == "in-memory"
+    assert disable_result.backend == "in-memory"
     assert cache_manager.is_redis_available is False
 
     # Cache operations should still work with in-memory backend

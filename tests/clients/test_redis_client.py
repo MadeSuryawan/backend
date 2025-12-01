@@ -205,7 +205,7 @@ class TestRedisHealthCheck:
                 "used_memory_human": "1M",
                 "uptime_in_seconds": 3600,
                 "redis_version": "7.0.0",
-            }
+            },
         )
         client._redis = mock_redis
 

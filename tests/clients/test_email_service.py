@@ -159,7 +159,7 @@ class TestSendSync:
         # Create a mock service that raises HttpError
         mock_service = MagicMock()
         mock_execute = MagicMock(
-            side_effect=HttpError(resp=MagicMock(status=400), content=b"Bad Request")
+            side_effect=HttpError(resp=MagicMock(status=400), content=b"Bad Request"),
         )
         mock_service.users.return_value.messages.return_value.send.return_value.execute = (
             mock_execute
