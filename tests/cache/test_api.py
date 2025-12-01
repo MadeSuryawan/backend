@@ -97,7 +97,7 @@ async def test_cache_ping_failure(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_get_all_items(client: AsyncClient) -> None:
     """Test get all items endpoint."""
-    response = await client.get("/all-items")
+    response = await client.get("/items/all-items")
     assert response.status_code == 200
     data = response.json()
     assert "items" in data
@@ -112,7 +112,7 @@ async def test_create_item(client: AsyncClient) -> None:
         "description": "A test item",
         "price": 9.99,
     }
-    response = await client.post("/create-item", json=item_data)
+    response = await client.post("/items/", json=item_data)
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == 1
@@ -128,10 +128,10 @@ async def test_get_item(client: AsyncClient) -> None:
         "name": "Test Item 2",
         "price": 19.99,
     }
-    await client.post("/create-item", json=item_data)
+    await client.post("/items/", json=item_data)
 
     # Get item
-    response = await client.get("/get-item/2")
+    response = await client.get("/items/get-item/2")
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == 2
@@ -141,7 +141,7 @@ async def test_get_item(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_get_nonexistent_item(client: AsyncClient) -> None:
     """Test get nonexistent item returns 404."""
-    response = await client.get("/get-item/9999")
+    response = await client.get("/items/get-item/9999")
     assert response.status_code == 404
 
 
@@ -154,14 +154,14 @@ async def test_update_item(client: AsyncClient) -> None:
         "name": "Test Item 3",
         "price": 29.99,
     }
-    await client.post("/create-item", json=item_data)
+    await client.post("/items/", json=item_data)
 
     # Update item
     update_data = {
         "name": "Updated Item 3",
         "price": 39.99,
     }
-    response = await client.put("/update-item/3", json=update_data)
+    response = await client.put("/items/update-item/3", json=update_data)
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "Updated Item 3"
@@ -177,16 +177,16 @@ async def test_delete_item(client: AsyncClient) -> None:
         "name": "Test Item 4",
         "price": 49.99,
     }
-    await client.post("/create-item", json=item_data)
+    await client.post("/items/", json=item_data)
 
     # Delete item
-    response = await client.delete("/delete-item/4")
+    response = await client.delete("/items/delete-item/4")
     assert response.status_code == 200
     data = response.json()
     assert "message" in data
 
     # Verify deletion
-    response = await client.get("/get-item/4")
+    response = await client.get("/items/get-item/4")
     assert response.status_code == 404
 
 

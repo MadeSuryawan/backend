@@ -2,6 +2,7 @@
 """BaliBlissed Backend - Seamless caching integration with Redis for FastAPI."""
 
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
@@ -14,7 +15,13 @@ from app.errors import (
     cache_exception_handler,
     email_service_exception_handler,
 )
-from app.managers import cache_manager, limiter, rate_limit_exceeded_handler
+from app.managers import (
+    cache_manager,
+    get_system_metrics,
+    limiter,
+    metrics_manager,
+    rate_limit_exceeded_handler,
+)
 from app.middleware import (
     LoggingMiddleware,
     SecurityHeadersMiddleware,
@@ -23,6 +30,7 @@ from app.middleware import (
 )
 from app.routes import cache_router, email_router, items_router
 from app.schemas import HealthCheckResponse
+from app.utils.helpers import today_str
 
 app = FastAPI(
     title="BaliBlissed Backend",
@@ -80,6 +88,32 @@ async def get_favicon() -> FileResponse:
 
     parent_dir = Path(__file__).parent
     return FileResponse(parent_dir / "favicon.ico")
+
+
+@app.get(
+    "/metrics",
+    tags=["metrics"],
+    response_model=dict[str, Any],
+    summary="Get metrics",
+    description="Get API performance metrics.",
+)
+async def get_metrics() -> dict[str, Any]:
+    """
+    Get API performance metrics.
+
+    Returns:
+        Dictionary containing performance metrics
+
+    """
+
+    api_metrics = metrics_manager.get_metrics()
+    system_metrics = await get_system_metrics()
+
+    return {
+        "timestamp": today_str(),
+        "api_metrics": api_metrics,
+        "system_metrics": system_metrics,
+    }
 
 
 if __name__ == "__main__":

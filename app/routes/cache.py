@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import ORJSONResponse
 
 from app.configs import file_logger
-from app.managers import cache_manager
+from app.managers import cache_manager, timed
 from app.managers.cache_manager import CacheManager
 from app.schemas import (
     CacheClearResponse,
@@ -35,6 +35,7 @@ CacheDep = Annotated[CacheManager, Depends(get_cache_manager)]
 
 # --- Routes ---
 @router.get("/stats", response_model=CacheStatsResponse, summary="Get cache statistics")
+@timed("/cache/stats")
 async def get_cache_stats(manager: CacheDep) -> ORJSONResponse:
     """
     Get cache statistics.
@@ -48,6 +49,7 @@ async def get_cache_stats(manager: CacheDep) -> ORJSONResponse:
 
 
 @router.get("/ping", response_model=CachePingResponse, summary="Ping cache server")
+@timed("/cache/ping")
 async def ping_cache(manager: CacheDep) -> ORJSONResponse:
     """
     Ping cache server.
@@ -73,6 +75,7 @@ async def ping_cache(manager: CacheDep) -> ORJSONResponse:
     response_model=CacheResetStatsResponse,
     summary="Reset cache statistics",
 )
+@timed("/cache/reset-stats")
 async def reset_stats(manager: CacheDep) -> ORJSONResponse:
     """
     Reset cache statistics.
@@ -86,6 +89,7 @@ async def reset_stats(manager: CacheDep) -> ORJSONResponse:
 
 
 @router.delete("/clear", response_model=CacheClearResponse, summary="Clear all cache entries")
+@timed("/cache/clear")
 async def clear_cache(manager: CacheDep) -> ORJSONResponse:
     """
     Clear all cache entries.
@@ -103,6 +107,7 @@ async def clear_cache(manager: CacheDep) -> ORJSONResponse:
     response_model=CacheToggleResponse,
     summary="Disable Redis and switch to in-memory cache",
 )
+@timed("/cache/redis/disable")
 async def disable_redis(manager: CacheDep) -> ORJSONResponse:
     """
     Disable Redis and switch to in-memory cache.
@@ -119,6 +124,7 @@ async def disable_redis(manager: CacheDep) -> ORJSONResponse:
     response_model=CacheToggleResponse,
     summary="Enable Redis and switch from in-memory cache",
 )
+@timed("/cache/redis/enable")
 async def enable_redis(manager: CacheDep) -> ORJSONResponse:
     """
     Enable Redis and switch from in-memory cache.

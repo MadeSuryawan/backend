@@ -7,7 +7,7 @@ from starlette.status import HTTP_404_NOT_FOUND
 from app.configs import file_logger
 from app.decorators import cache_busting
 from app.decorators.caching import cached
-from app.managers import cache_manager, limiter
+from app.managers import cache_manager, limiter, timed
 from app.schemas import Item, ItemUpdate
 
 logger = file_logger(getLogger(__name__))
@@ -21,6 +21,7 @@ items_db: dict[int, Item] = {}
 
 # --- Routes ---
 @router.post("/", response_model=Item, summary="Create new item")
+@timed("/items/create")
 @limiter.limit("2/minute")
 @cache_busting(cache_manager, keys=["get_all_items"], namespace="items")
 async def create_item(item: Item, request: Request, response: Response) -> Item:
@@ -36,6 +37,7 @@ async def create_item(item: Item, request: Request, response: Response) -> Item:
 
 
 @router.get("/get-item/{item_id}", summary="Get specific item")
+@timed("/items/get")
 @limiter.limit("10/minute")
 @cached(
     cache_manager,
@@ -63,6 +65,7 @@ async def get_item(item_id: int, request: Request, response: Response) -> Item:
     response_class=ORJSONResponse,
     response_model=dict[str, list[Item]],
 )
+@timed("/items/all")
 @limiter.limit("10/minute")
 @cached(cache_manager, ttl=3600, namespace="items", key_builder=lambda **kw: "get_all_items")
 async def get_all_items(request: Request, response: Response) -> dict[str, list[Item]]:
@@ -77,6 +80,7 @@ async def get_all_items(request: Request, response: Response) -> dict[str, list[
 
 
 @router.put("/update-item/{item_id}", summary="Update specific item")
+@timed("/items/update")
 @limiter.limit("10/minute")
 @cache_busting(
     cache_manager,
@@ -107,6 +111,7 @@ async def update_item(
 
 
 @router.delete("/delete-item/{item_id}", summary="Delete specific item")
+@timed("/items/delete")
 @limiter.limit("10/minute")
 @cache_busting(
     cache_manager,

@@ -102,7 +102,7 @@ class RedisClient:
         """Initialize Redis client."""
         self.config = pool_kwargs
         self._pool: ConnectionPool | None = None
-        self._redis: Redis | None = None  # type: ignore[type-arg]
+        self._redis: Redis | None = None
 
     async def connect(self) -> None:
         """Establish Redis connection pool."""

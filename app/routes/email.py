@@ -7,7 +7,7 @@ from fastapi.responses import ORJSONResponse
 
 from app.clients import EmailClient
 from app.configs import file_logger
-from app.managers import limiter
+from app.managers import limiter, timed
 from app.schemas import EmailRequest, EmailResponse
 
 logger = file_logger(getLogger(__name__))
@@ -28,6 +28,7 @@ EmailDep = Annotated[EmailClient, Depends(get_email_client)]
 
 # --- Routes ---
 @router.post("/contact-support/", response_model=EmailResponse, summary="Send a support email")
+@timed("/email/contact-support")
 @limiter.limit("5/hour")
 async def contact_support(
     request: Request,
@@ -51,8 +52,11 @@ async def contact_support(
 
 
 @router.post(
-    "/contact-background/", response_model=EmailResponse, summary="Queue an email in the background",
+    "/contact-background/",
+    response_model=EmailResponse,
+    summary="Queue an email in the background",
 )
+@timed("/email/contact-background")
 @limiter.limit("20/minute")
 async def contact_background(
     request: Request,

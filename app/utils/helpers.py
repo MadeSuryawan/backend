@@ -38,11 +38,9 @@ def get_summary(request: Request) -> str | None:
         is_api_route = type(route) is APIRoute
         is_route = type(route) is Route
         if is_api_route and route.matches(scope)[0] == Match.FULL:
-            # pyrefly: ignore [missing-attribute]
             summary = route.summary
             break
         if is_route and route.matches(scope)[0] == Match.FULL:
-            # pyrefly: ignore [missing-attribute]
             summary = route.name
             break
 
