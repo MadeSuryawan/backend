@@ -158,4 +158,3 @@ class TestCacheExceptionHandler:
         response = await cache_exception_handler(request, exc)
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-

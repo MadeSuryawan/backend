@@ -9,22 +9,21 @@ from redis.exceptions import RedisError
 from app.clients.redis_client import (
     RETRIABLE_EXCEPTIONS,
     RedisClient,
-    _create_before_sleep_callback,
-    with_retry,
 )
+from app.decorators import _log_before_sleep, with_retry
 
 
 class TestBeforeSleepCallback:
-    """Tests for _create_before_sleep_callback function."""
+    """Tests for _log_before_sleep function."""
 
     def test_callback_creation(self) -> None:
         """Test that callback is created successfully."""
-        callback = _create_before_sleep_callback(3)
+        callback = _log_before_sleep(3)
         assert callable(callback)
 
     def test_callback_logs_retry_info(self) -> None:
         """Test that callback logs retry information."""
-        callback = _create_before_sleep_callback(3)
+        callback = _log_before_sleep(3)
 
         # Create mock retry state
         retry_state = MagicMock()
@@ -41,7 +40,7 @@ class TestBeforeSleepCallback:
 
     def test_callback_handles_no_next_action(self) -> None:
         """Test callback handles missing next_action."""
-        callback = _create_before_sleep_callback(3)
+        callback = _log_before_sleep(3)
 
         retry_state = MagicMock()
         retry_state.attempt_number = 1
@@ -227,4 +226,3 @@ class TestRedisHealthCheck:
 
         assert result["status"] == "unhealthy"
         assert "error" in result
-

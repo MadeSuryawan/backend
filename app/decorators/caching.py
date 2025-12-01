@@ -6,7 +6,7 @@ from functools import wraps
 from hashlib import sha256
 from json import dumps
 from logging import getLogger
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi.exceptions import ResponseValidationError
 from pydantic import TypeAdapter, ValidationError
@@ -14,7 +14,9 @@ from redis.exceptions import RedisError
 
 from app.configs import file_logger
 from app.errors import BASE_EXCEPTION, CacheKeyError
-from app.managers.cache_manager import CacheManager
+
+if TYPE_CHECKING:
+    from app.managers.cache_manager import CacheManager
 
 logger = file_logger(getLogger(__name__))
 
@@ -46,7 +48,7 @@ def validate_response(value: object, response_type: Any) -> object | None:  # no
 
 
 def cached(
-    cache_manager: CacheManager,
+    cache_manager: "CacheManager",
     ttl: int | None = None,
     namespace: str | None = None,
     key_builder: Callable[..., str] | None = None,
@@ -121,7 +123,7 @@ def cached(
 
 
 def cache_busting(
-    cache_manager: CacheManager,
+    cache_manager: "CacheManager",
     keys: list[str] | None = None,
     namespace: str | None = None,
     key_builder: Callable[..., list[str]] | None = None,

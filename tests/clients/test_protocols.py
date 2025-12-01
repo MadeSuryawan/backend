@@ -161,4 +161,3 @@ class TestCacheClientProtocol:
         result = await client.flush_all()
         assert result is True
         assert await client.exists("key1") == 0
-
