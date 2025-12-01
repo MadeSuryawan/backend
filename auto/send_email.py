@@ -3,6 +3,8 @@ from logging import INFO, basicConfig
 from pathlib import Path
 from sys import path
 
+from rich import print as rprint
+
 # Add the project root to sys.path to allow importing 'app'
 path.append(f"{Path(__file__).parent.parent}")
 
@@ -14,10 +16,10 @@ basicConfig(level=INFO)
 
 
 async def send_real_email() -> None:
-    print("--- Initializing Client ---")
+    rprint("[b i blue]--- Initializing Client ---[/b i blue]")
     client = EmailClient()
 
-    print("--- Sending Email ---")
+    rprint("[b i blue]--- Sending Email ---[/b i blue]")
     try:
         # We use the async method, just like the real app
         response = await client.send_email(
@@ -25,11 +27,11 @@ async def send_real_email() -> None:
             body="If you read this, the Python integration works! Try hitting Reply.",
             reply_to="jhondoe@gmail.com",  # <--- Added this required argument
         )
-        print("✅ Success! Gmail API Response:")
-        print(response)
+        rprint("✅ [b i green]Success![/b i green] Gmail API Response:")
+        rprint(response)
     except SendingError as e:
-        print("❌ Failed!")
-        print(e)
+        rprint("❌ [b i red]Failed![/b i red]")
+        rprint(e)
 
 
 if __name__ == "__main__":

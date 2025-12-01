@@ -12,7 +12,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
 from pydantic_settings.main import BaseSettings, SettingsConfigDict
 
-ENV_FILE = Path(__file__).parent.parent.parent / ".env"
+ENV_FILE = Path(__file__).parent.parent.parent / "secrets" / ".env"
 
 # --- Constants ---
 MAX_QUERY_LENGTH = 1000
