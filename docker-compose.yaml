@@ -38,15 +38,13 @@ services:
       # :ro ensures the container only reads them, increasing security
       - ./secrets/token.json:/app/secrets/token.json:ro
       - ./secrets/client_secret.json:/app/secrets/client_secret.json:ro
-    environment:
-      - COMPANY_TARGET_EMAIL=${COMPANY_TARGET_EMAIL}
+    env_file:
+      - ./secrets/.env
     depends_on:
       redis:
         condition: service_healthy
     networks:
       - baliblissed-network
-    env_file:
-      - ./secrets/.env
 
 volumes:
   redis_data:
