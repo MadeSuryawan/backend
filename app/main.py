@@ -4,9 +4,9 @@
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, ORJSONResponse
+from fastapi.responses import FileResponse, ORJSONResponse, Response
 from slowapi.errors import RateLimitExceeded
 
 from app.errors import (
@@ -97,23 +97,25 @@ async def get_favicon() -> FileResponse:
     summary="Get metrics",
     description="Get API performance metrics.",
 )
-async def get_metrics() -> dict[str, Any]:
+@limiter.limit("5/minute")
+async def get_metrics(request: Request, response: Response) -> ORJSONResponse:
     """
     Get API performance metrics.
 
     Returns:
         Dictionary containing performance metrics
-
     """
 
     api_metrics = metrics_manager.get_metrics()
     system_metrics = await get_system_metrics()
 
-    return {
-        "timestamp": today_str(),
-        "api_metrics": api_metrics,
-        "system_metrics": system_metrics,
-    }
+    return ORJSONResponse(
+        {
+            "timestamp": today_str(),
+            "api_metrics": api_metrics,
+            "system_metrics": system_metrics,
+        },
+    )
 
 
 if __name__ == "__main__":
