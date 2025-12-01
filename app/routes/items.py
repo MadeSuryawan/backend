@@ -5,9 +5,9 @@ from fastapi.responses import ORJSONResponse
 from starlette.status import HTTP_404_NOT_FOUND
 
 from app.configs import file_logger
-from app.decorators import cache_busting
+from app.decorators import cache_busting, timed
 from app.decorators.caching import cached
-from app.managers import cache_manager, limiter, timed
+from app.managers import cache_manager, limiter
 from app.schemas import Item, ItemUpdate
 
 logger = file_logger(getLogger(__name__))

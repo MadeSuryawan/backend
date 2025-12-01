@@ -7,7 +7,8 @@ from fastapi.responses import ORJSONResponse
 
 from app.clients import EmailClient
 from app.configs import file_logger
-from app.managers import limiter, timed
+from app.decorators import timed
+from app.managers import limiter
 from app.schemas import EmailRequest, EmailResponse
 
 logger = file_logger(getLogger(__name__))

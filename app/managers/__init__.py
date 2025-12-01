@@ -1,5 +1,5 @@
 from app.managers.cache_manager import cache_manager
-from app.managers.metrics import RequestTimer, get_system_metrics, metrics_manager, timed
+from app.managers.metrics import RequestTimer, get_system_metrics, metrics_manager
 from app.managers.rate_limiter import close_limiter, limiter, rate_limit_exceeded_handler
 
 __all__ = [
@@ -10,5 +10,4 @@ __all__ = [
     "limiter",
     "metrics_manager",
     "rate_limit_exceeded_handler",
-    "timed",
 ]

@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
+from app.decorators import timed
 from app.managers.metrics import (
     _MAX_RESPONSE_TIMES,
     MetricsManager,
@@ -17,7 +18,6 @@ from app.managers.metrics import (
     SystemMetrics,
     get_system_metrics,
     metrics_manager,
-    timed,
 )
 
 

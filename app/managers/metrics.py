@@ -13,14 +13,12 @@ Features:
 
 from asyncio import to_thread
 from collections import defaultdict, deque
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from functools import wraps
 from logging import getLogger
 from threading import Lock
 from time import perf_counter
 from types import TracebackType
-from typing import Any, ParamSpec, Self, TypeVar, cast
+from typing import Any, Self, cast
 
 from psutil import cpu_percent as get_cpu_percent
 from psutil import disk_usage, virtual_memory
@@ -29,9 +27,6 @@ from app.configs import file_logger
 
 logger = file_logger(getLogger(__name__))
 
-# Type variables for generic decorator
-P = ParamSpec("P")
-R = TypeVar("R")
 
 # Constants
 _BYTES_PER_MB: int = 1024 * 1024
@@ -283,39 +278,6 @@ class RequestTimer:
     def elapsed(self) -> float:
         """Get elapsed time since timer started."""
         return perf_counter() - self._start_time if self._start_time else 0.0
-
-
-def timed(
-    endpoint: str | None = None,
-    metrics: MetricsManager | None = None,
-) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
-    """
-    Time async functions with automatic metrics recording.
-
-    Args:
-        endpoint: API endpoint path (defaults to function name).
-        metrics: Optional metrics manager (defaults to global instance).
-
-    Returns:
-        Decorated function with timing instrumentation.
-
-    Example:
-        @timed("/api/items")
-        async def get_items() -> list[Item]:
-            ...
-    """
-
-    def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
-        ep = endpoint or func.__name__
-
-        @wraps(func)
-        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            async with RequestTimer(ep, metrics):
-                return await func(*args, **kwargs)
-
-        return wrapper
-
-    return decorator
 
 
 @dataclass(slots=True, frozen=True)

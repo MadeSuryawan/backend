@@ -8,7 +8,8 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import ORJSONResponse
 
 from app.configs import file_logger
-from app.managers import cache_manager, timed
+from app.decorators import timed
+from app.managers import cache_manager
 from app.managers.cache_manager import CacheManager
 from app.schemas import (
     CacheClearResponse,
