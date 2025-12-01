@@ -26,8 +26,16 @@ async def test_health_check(client: AsyncClient) -> None:
     # but since we overrode the dependency for the client, it should reflect that.
     assert response.status_code in [200, 503]
     data = response.json()
+    # Validate response matches HealthCheckResponse schema
     assert "status" in data
-    assert "cache" in data
+    assert "backend" in data
+    assert "statistics" in data
+    # Validate statistics structure
+    stats = data["statistics"]
+    assert "hits" in stats
+    assert "misses" in stats
+    assert "sets" in stats
+    assert "hit_rate" in stats
 
 
 @pytest.mark.asyncio
@@ -200,3 +208,96 @@ async def test_cache_clear(client: AsyncClient) -> None:
     assert "status" in data
     assert "message" in data
     assert data["status"] in ["success", "error"]
+
+
+@pytest.mark.asyncio
+async def test_disable_redis_endpoint(client: AsyncClient) -> None:
+    """Test disable Redis endpoint."""
+    response = await client.post("/cache/redis/disable")
+    assert response.status_code == 200
+    data = response.json()
+    assert "status" in data
+    assert "message" in data
+    assert "backend" in data
+    assert data["backend"] == "in-memory"
+    assert data["status"] in ["success", "unchanged"]
+
+
+@pytest.mark.asyncio
+async def test_disable_redis_endpoint_already_disabled(client: AsyncClient) -> None:
+    """Test disable Redis endpoint when already disabled."""
+    # First call to disable
+    await client.post("/cache/redis/disable")
+
+    # Second call should return unchanged
+    response = await client.post("/cache/redis/disable")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "unchanged"
+    assert data["backend"] == "in-memory"
+
+
+@pytest.mark.asyncio
+async def test_enable_redis_endpoint_mocked_success(client: AsyncClient) -> None:
+    """Test enable Redis endpoint with mocked successful connection."""
+    # First disable Redis
+    await client.post("/cache/redis/disable")
+
+    # Create a mock manager that simulates successful Redis enable
+    mock_manager = MagicMock()
+    mock_manager.enable_redis = AsyncMock(
+        return_value={
+            "status": "success",
+            "message": "Redis enabled successfully.",
+            "backend": "redis",
+        }
+    )
+
+    # Override the dependency
+    app.dependency_overrides[get_cache_manager] = lambda: mock_manager
+
+    response = await client.post("/cache/redis/enable")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["backend"] == "redis"
+
+
+@pytest.mark.asyncio
+async def test_enable_redis_endpoint_mocked_failure(client: AsyncClient) -> None:
+    """Test enable Redis endpoint with mocked connection failure."""
+    # Create a mock manager that simulates failed Redis connection
+    mock_manager = MagicMock()
+    mock_manager.enable_redis = AsyncMock(
+        return_value={
+            "status": "error",
+            "message": "Failed to connect to Redis: Connection refused",
+            "backend": "in-memory",
+        }
+    )
+
+    # Override the dependency
+    app.dependency_overrides[get_cache_manager] = lambda: mock_manager
+
+    response = await client.post("/cache/redis/enable")
+    assert response.status_code == 503
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["backend"] == "in-memory"
+
+
+@pytest.mark.asyncio
+async def test_redis_toggle_response_schema(client: AsyncClient) -> None:
+    """Test that Redis toggle endpoints return correct response schema."""
+    # Test disable endpoint
+    response = await client.post("/cache/redis/disable")
+    data = response.json()
+
+    # Verify all required fields are present
+    assert "status" in data
+    assert "message" in data
+    assert "backend" in data
+
+    # error_code is optional, but should be None or int if present
+    if "error_code" in data:
+        assert data["error_code"] is None or isinstance(data["error_code"], int)

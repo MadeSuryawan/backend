@@ -15,6 +15,7 @@ from app.schemas import (
     CachePingResponse,
     CacheResetStatsResponse,
     CacheStatsResponse,
+    CacheToggleResponse,
 )
 
 logger = file_logger(getLogger(__name__))
@@ -91,3 +92,27 @@ async def clear_cache(manager: CacheDep) -> ORJSONResponse:
     await manager.clear()
     response = CacheClearResponse(status="success", message="Cache cleared successfully")
     return ORJSONResponse(content=response.model_dump())
+
+
+@router.post("/redis/disable", response_model=CacheToggleResponse)
+async def disable_redis(manager: CacheDep) -> ORJSONResponse:
+    """
+    Disable Redis and switch to in-memory cache.
+
+    Returns:
+        Toggle operation result with new backend status.
+    """
+    result = await manager.disable_redis()
+    return ORJSONResponse(content=result.model_dump())
+
+
+@router.post("/redis/enable", response_model=CacheToggleResponse)
+async def enable_redis(manager: CacheDep) -> ORJSONResponse:
+    """
+    Enable Redis and switch from in-memory cache.
+
+    Returns:
+        Toggle operation result with new backend status.
+    """
+    result = await manager.enable_redis()
+    return ORJSONResponse(content=result.model_dump())

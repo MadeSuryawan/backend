@@ -25,7 +25,7 @@ from app.middleware import (
     lifespan,
 )
 from app.routes import cache_router, email_router
-from app.schemas import Item, ItemUpdate
+from app.schemas import HealthCheckResponse, Item, ItemUpdate
 
 app = FastAPI(
     title="BaliBlissed Backend",
@@ -47,7 +47,6 @@ app.add_exception_handler(
     cache_exception_handler,
 )
 
-
 app.add_exception_handler(
     RateLimitExceeded,
     rate_limit_exceeded_handler,
@@ -66,7 +65,7 @@ items_db: dict[int, Item] = {}
 
 
 # Routes
-@app.get("/", tags=["health"])
+@app.get("/", tags=["root"])
 @limiter.exempt
 async def root() -> dict[str, str]:
     """Root endpoint."""
@@ -181,19 +180,11 @@ async def delete_item(item_id: int, request: Request, response: Response) -> dic
     return {"message": "Item deleted successfully"}
 
 
-# Health check
-@app.get("/health", tags=["health"])
+@app.get("/health", tags=["health"], response_model=HealthCheckResponse)
 @limiter.exempt
-async def health_check() -> dict[str, str]:
+async def health_check() -> ORJSONResponse:
     """Health check endpoint."""
-    try:
-        is_alive = await cache_manager.ping()
-        status = "healthy" if is_alive else "unhealthy"
-    except Exception:
-        logger.exception("Health check failed")
-        return {"status": "unhealthy", "cache": "error"}
-
-    return {"status": status, "cache": "connected" if is_alive else "disconnected"}
+    return ORJSONResponse(await cache_manager.health_check())
 
 
 if __name__ == "__main__":

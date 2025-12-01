@@ -46,7 +46,7 @@ services:
     networks:
       - baliblissed-network
     env_file:
-      - secrets/.env
+      - ./secrets/.env
 
 volumes:
   redis_data:

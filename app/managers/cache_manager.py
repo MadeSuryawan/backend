@@ -10,11 +10,13 @@ from typing import Any
 
 from pydantic_core import ValidationError
 from redis.exceptions import ConnectionError as RedisConnectionError
+from starlette import status
 
 from app.clients import CacheClientProtocol, MemoryClient, RedisClient
-from app.configs import CacheConfig, file_logger
+from app.configs import CacheConfig, file_logger, settings
 from app.data import CacheStatistics
 from app.errors import BASE_EXCEPTION, CacheDeserializationError, CacheKeyError
+from app.schemas import CacheToggleResponse
 from app.utils import (
     compress,
     decompress,
@@ -67,9 +69,14 @@ class CacheManager:
         If the Redis connection fails, it falls back to an in-memory cache.
         """
         try:
-            await self.redis_client.connect()
-            self._client = self.redis_client
-            self.is_redis_available = True
+            if settings.REDIS_ENABLED:
+                await self.redis_client.connect()
+                self._client = self.redis_client
+                self.is_redis_available = True
+                return
+            logger.info("Redis disabled. Using in-memory cache.")
+            self._client = self.memory_client
+            self.is_redis_available = False
             # Also start memory client in case we need to fallback later
             await self.memory_client.start_lifecycle()
         except RedisConnectionError as e:
@@ -257,6 +264,75 @@ class CacheManager:
             if not self.memory_client.is_connected:
                 await self.memory_client.start_lifecycle()
 
+    async def disable_redis(self) -> CacheToggleResponse:
+        """
+        Disable Redis and switch to in-memory cache.
+
+        Returns:
+            Dictionary with status and message.
+        """
+        if not self.is_redis_available:
+            return CacheToggleResponse(
+                status="unchanged",
+                message="Redis is already disabled. Using in-memory cache.",
+                backend="in-memory",
+                status_code=status.HTTP_200_OK,
+            )
+
+        # Disconnect from Redis
+        await self.redis_client.disconnect()
+
+        # Switch to in-memory client
+        self._client = self.memory_client
+        self.is_redis_available = False
+
+        # Ensure memory client is running
+        if not self.memory_client.is_connected:
+            await self.memory_client.start_lifecycle()
+
+        logger.info("Redis disabled. Switched to in-memory cache.")
+        return CacheToggleResponse(
+            status="success",
+            message="Redis disabled successfully. Using in-memory cache.",
+            backend="in-memory",
+            status_code=status.HTTP_200_OK,
+        )
+
+    async def enable_redis(self) -> CacheToggleResponse:
+        """
+        Enable Redis and switch from in-memory cache.
+
+        Returns:
+            Dictionary with status and message.
+        """
+        if self.is_redis_available:
+            return CacheToggleResponse(
+                status="unchanged",
+                message="Redis is already enabled.",
+                backend="redis",
+                status_code=status.HTTP_200_OK,
+            )
+
+        try:
+            await self.redis_client.connect()
+            self._client = self.redis_client
+            self.is_redis_available = True
+            logger.info("Redis enabled. Switched from in-memory cache.")
+            return CacheToggleResponse(
+                status="success",
+                message="Redis enabled successfully.",
+                backend="redis",
+                status_code=status.HTTP_200_OK,
+            )
+        except RedisConnectionError as e:
+            logger.warning(f"Failed to enable Redis: {e}")
+            return CacheToggleResponse(
+                status="error",
+                message=f"Failed to connect to Redis: {e}",
+                backend="in-memory",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
     async def _try_reconnect_redis(self) -> bool:
         """
         Attempt to reconnect to Redis.
@@ -368,7 +444,7 @@ class CacheManager:
             Dictionary with health status and details.
         """
         result: dict[str, Any] = {
-            "backend": "redis" if self.is_redis_available else "memory",
+            "backend": "redis" if self.is_redis_available else "in-memory",
             "statistics": self.get_statistics(),
         }
 
