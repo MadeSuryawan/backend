@@ -13,7 +13,6 @@ from app.errors.cache import (
     CacheExceptionError,
     CacheKeyError,
     CacheSerializationError,
-    RateLimitError,
     cache_exception_handler,
 )
 
@@ -31,10 +30,10 @@ class TestCacheExceptionError:
         error = CacheExceptionError("Custom cache error")
         assert error.msg == "Custom cache error"
 
-    def test_status_code(self) -> None:
-        """Test status code is 500."""
+    def test_error_code(self) -> None:
+        """Test error code is 500."""
         error = CacheExceptionError()
-        assert error.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert error.error_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
     def test_str_representation(self) -> None:
         """Test string representation."""
@@ -97,10 +96,10 @@ class TestCacheCompressionError:
         error = CacheCompressionError()
         assert error.msg == "Cannot compress data"
 
-    def test_status_code(self) -> None:
-        """Test status code."""
+    def test_error_code(self) -> None:
+        """Test error code."""
         error = CacheCompressionError()
-        assert error.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert error.error_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 class TestCacheDecompressionError:
@@ -110,25 +109,6 @@ class TestCacheDecompressionError:
         """Test default error message."""
         error = CacheDecompressionError()
         assert error.msg == "Cannot decompress data"
-
-
-class TestRateLimitError:
-    """Tests for RateLimitError class."""
-
-    def test_default_message(self) -> None:
-        """Test default error message."""
-        error = RateLimitError()
-        assert error.msg == "Rate limit exceeded"
-
-    def test_status_code_is_429(self) -> None:
-        """Test status code is 429 Too Many Requests."""
-        error = RateLimitError()
-        assert error.status_code == status.HTTP_429_TOO_MANY_REQUESTS
-
-    def test_custom_message(self) -> None:
-        """Test custom error message."""
-        error = RateLimitError("API rate limit exceeded")
-        assert error.msg == "API rate limit exceeded"
 
 
 class TestCacheExceptionHandler:

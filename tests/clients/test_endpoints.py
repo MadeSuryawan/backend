@@ -101,4 +101,4 @@ def test_google_api_failure(client: TestClient, mock_email_client: MagicMock) ->
     assert response.status_code == 502
 
     # The exception handler returns just the error message string
-    assert response.json() == "Google API unavailable"
+    assert response.json() == {"detail": "Google API unavailable"}

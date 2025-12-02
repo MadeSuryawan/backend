@@ -6,15 +6,15 @@ from app.errors.cache import (
     CacheExceptionError,
     CacheKeyError,
     CacheSerializationError,
-    RateLimitError,
     cache_exception_handler,
 )
+from app.errors.circuit_breaker import CircuitBreakerError, circuit_breaker_exception_handler
 from app.errors.email import (
     AuthenticationError,
     ConfigurationError,
     EmailServiceError,
     SendingError,
-    email_service_exception_handler,
+    email_client_exception_handler,
 )
 
 __all__ = [
@@ -28,10 +28,11 @@ __all__ = [
     "CacheExceptionError",
     "CacheKeyError",
     "CacheSerializationError",
-    "RateLimitError",
     "BASE_EXCEPTION",
-    "email_service_exception_handler",
+    "email_client_exception_handler",
     "cache_exception_handler",
     "create_exception_handler",
     "BaseAppError",
+    "CircuitBreakerError",
+    "circuit_breaker_exception_handler",
 ]

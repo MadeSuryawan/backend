@@ -21,10 +21,10 @@ class BaseAppError(Exception):
     def __init__(
         self,
         msg: str = "Internal Server Error",
-        status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR,
+        error_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR,
     ) -> None:
         self.msg = msg
-        self.status_code = status_code
+        self.error_code = error_code
 
     def __str__(self) -> str:
         return self.msg
@@ -38,6 +38,7 @@ def create_exception_handler(
 
     Args:
         logger: Logger instance to use for logging exceptions.
+        limiter: Boolean flag to indicate if rate limiter is enabled.
 
     Returns:
         A callable exception handler.
@@ -47,17 +48,21 @@ def create_exception_handler(
         host = request.client.host if request.client else "unknown"
 
         # Default values
-        status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        error_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         msg = "Internal Server Error"
 
         # Extract from custom exception if available
-        if hasattr(exc, "status_code"):
-            status_code = exc.status_code
+        if hasattr(exc, "error_code"):
+            error_code = exc.error_code
         if hasattr(exc, "msg"):
             msg = exc.msg
 
         logger.warning(f"{msg} for ip: {host} for endpoint {request.url.path}")
 
-        return ORJSONResponse(content=msg, status_code=status_code)
+        # Build response content with msg and any additional exception attributes
+        content = {"detail": msg}
+        content.update({k: v for k, v in exc.__dict__.items() if k not in ("error_code", "msg")})
+
+        return ORJSONResponse(content=content, status_code=error_code)
 
     return handler

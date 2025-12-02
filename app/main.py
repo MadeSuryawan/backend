@@ -10,9 +10,11 @@ from slowapi.errors import RateLimitExceeded
 
 from app.errors import (
     CacheExceptionError,
+    CircuitBreakerError,
     EmailServiceError,
     cache_exception_handler,
-    email_service_exception_handler,
+    circuit_breaker_exception_handler,
+    email_client_exception_handler,
 )
 from app.managers import (
     cache_manager,
@@ -58,7 +60,11 @@ app.add_exception_handler(
 )
 app.add_exception_handler(
     EmailServiceError,
-    email_service_exception_handler,
+    email_client_exception_handler,
+)
+app.add_exception_handler(
+    CircuitBreakerError,
+    circuit_breaker_exception_handler,
 )
 
 

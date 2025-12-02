@@ -87,7 +87,7 @@ class TestEmailRequest:
             EmailRequest(
                 subject="Test",
                 message="Message",
-                email=12345,  # type: ignore[arg-type]
+                email=12345,
             )
 
 

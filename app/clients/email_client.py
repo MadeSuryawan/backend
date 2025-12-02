@@ -9,7 +9,7 @@ from os import chmod
 from re import compile as re_compile
 from stat import S_IRUSR, S_IRWXG, S_IRWXO, S_IWUSR
 from threading import Lock
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -18,6 +18,9 @@ from googleapiclient.errors import HttpError
 
 from app.configs import file_logger, settings
 from app.errors import AuthenticationError, ConfigurationError, SendingError
+
+if TYPE_CHECKING:
+    from app.managers import CircuitBreaker
 
 logger = file_logger(getLogger(__name__))
 
@@ -31,14 +34,22 @@ class EmailClient:
 
     Optimized for FastAPI with async support and thread safety.
     Includes security features for token file validation and email sanitization.
+    Supports optional circuit breaker for resilience against Gmail API failures.
     """
 
-    def __init__(self) -> None:
-        """Initialize EmailClient with thread-safe lazy loading."""
+    def __init__(self, circuit_breaker: "CircuitBreaker | None" = None) -> None:
+        """
+        Initialize EmailClient with thread-safe lazy loading.
+
+        Args:
+            circuit_breaker: Optional circuit breaker for resilience.
+                If provided, email sending will be protected by the circuit breaker.
+        """
         self._credentials: Credentials | None = None
         self._service: Resource | None = None
         # Lock ensures thread-safety during service lazy-loading
         self._service_lock: Lock = Lock()
+        self._circuit_breaker = circuit_breaker
 
     def _validate_token_file_permissions(self) -> None:
         """
@@ -264,16 +275,56 @@ class EmailClient:
             mssg = "An unexpected internal error occurred."
             raise SendingError(mssg) from error
 
+    async def _send_email_internal(
+        self,
+        subject: str,
+        body: str,
+        reply_to: str,
+    ) -> dict[str, Any]:
+        """
+        Send email asynchronously without circuit breaker protection.
+
+        Args:
+            subject: Email subject.
+            body: Email body content.
+            reply_to: Reply-to email address.
+
+        Returns:
+            Gmail API response dictionary.
+        """
+        loop = get_running_loop()
+        return await loop.run_in_executor(None, self.send_sync, subject, body, reply_to)
+
     async def send_email(self, subject: str, body: str, reply_to: str) -> dict[str, Any]:
         """
         Asynchronous wrapper to send email without blocking the Event Loop.
 
-        Uses a ThreadPoolExecutor.
+        Uses a ThreadPoolExecutor. If a circuit breaker is configured,
+        the email sending will be protected by it.
+
+        Args:
+            subject: Email subject.
+            body: Email body content.
+            reply_to: Reply-to email address.
+
+        Returns:
+            Gmail API response dictionary.
+
+        Raises:
+            CircuitBreakerError: If circuit breaker is open.
+            SendingError: If email sending fails.
+            AuthenticationError: If authentication fails.
+            ConfigurationError: If configuration is invalid.
         """
-        loop = get_running_loop()
         try:
-            # Run the synchronous 'send_sync' method in a separate thread
-            return await loop.run_in_executor(None, self.send_sync, subject, body, reply_to)
+            if self._circuit_breaker:
+                return await self._circuit_breaker.call(
+                    self._send_email_internal,
+                    subject,
+                    body,
+                    reply_to,
+                )
+            return await self._send_email_internal(subject, body, reply_to)
         except Exception:
             logger.exception("Async email sending failed")
             raise

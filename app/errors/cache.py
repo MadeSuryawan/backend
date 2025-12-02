@@ -16,7 +16,7 @@ class CacheExceptionError(BaseAppError):
     def __init__(self, msg: str = "Cache exception occurred") -> None:
         super().__init__(
             msg=msg,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            error_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
 
@@ -26,7 +26,7 @@ class CacheKeyError(CacheExceptionError):
     def __init__(self, msg: str = "Cache key error") -> None:
         super().__init__(msg)
         self.msg = msg
-        self.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        self.error_code = status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 class CacheSerializationError(CacheExceptionError):
@@ -35,7 +35,7 @@ class CacheSerializationError(CacheExceptionError):
     def __init__(self, msg: str = "Cannot serialize value") -> None:
         super().__init__(msg)
         self.msg = msg
-        self.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        self.error_code = status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 class CacheDeserializationError(CacheExceptionError):
@@ -44,7 +44,7 @@ class CacheDeserializationError(CacheExceptionError):
     def __init__(self, msg: str = "Cannot deserialize value") -> None:
         super().__init__(msg)
         self.msg = msg
-        self.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        self.error_code = status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 class CacheCompressionError(CacheExceptionError):
@@ -53,7 +53,7 @@ class CacheCompressionError(CacheExceptionError):
     def __init__(self, msg: str = "Cannot compress data") -> None:
         super().__init__(msg)
         self.msg = msg
-        self.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        self.error_code = status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 class CacheDecompressionError(CacheExceptionError):
@@ -62,16 +62,7 @@ class CacheDecompressionError(CacheExceptionError):
     def __init__(self, msg: str = "Cannot decompress data") -> None:
         super().__init__(msg)
         self.msg = msg
-        self.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-
-
-class RateLimitError(CacheExceptionError):
-    """Raised when rate limit is exceeded."""
-
-    def __init__(self, msg: str = "Rate limit exceeded") -> None:
-        super().__init__(msg)
-        self.msg = msg
-        self.status_code = status.HTTP_429_TOO_MANY_REQUESTS
+        self.error_code = status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 # Create the exception handler using the helper

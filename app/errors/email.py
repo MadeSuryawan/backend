@@ -14,7 +14,7 @@ class EmailServiceError(BaseAppError):
     def __init__(self, msg: str = "Email service error") -> None:
         super().__init__(
             msg=msg,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            error_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
 
@@ -24,7 +24,7 @@ class ConfigurationError(EmailServiceError):
     def __init__(self, msg: str = "Email service configuration error") -> None:
         super().__init__(msg)
         self.msg = msg
-        self.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        self.error_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
 
 class AuthenticationError(EmailServiceError):
@@ -33,7 +33,7 @@ class AuthenticationError(EmailServiceError):
     def __init__(self, msg: str = "Email service authentication error") -> None:
         super().__init__(msg)
         self.msg = msg
-        self.status_code = status.HTTP_401_UNAUTHORIZED
+        self.error_code = status.HTTP_401_UNAUTHORIZED
 
 
 class SendingError(EmailServiceError):
@@ -42,8 +42,8 @@ class SendingError(EmailServiceError):
     def __init__(self, msg: str = "Email service sending error") -> None:
         super().__init__(msg)
         self.msg = msg
-        self.status_code = status.HTTP_502_BAD_GATEWAY
+        self.error_code = status.HTTP_502_BAD_GATEWAY
 
 
 # Create the exception handler using the helper
-email_service_exception_handler = create_exception_handler(logger)
+email_client_exception_handler = create_exception_handler(logger)

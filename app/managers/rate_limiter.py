@@ -91,8 +91,6 @@ async def rate_limit_exceeded_handler(
         JSON response with error details.
     """
     http_exc = cast(RateLimitExceeded, exc)
-    host = request.client.host if request.client else "unknown"
-    logger.warning(f"Rate limit exceeded for ip: {host} for endpoint {request.url.path}")
     response = _rate_limit_exceeded_handler(request, http_exc)
     # limit = response.headers["x-ratelimit-limit"]
     # remaining = response.headers["x-ratelimit-remaining"]

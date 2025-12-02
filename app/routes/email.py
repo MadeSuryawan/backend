@@ -8,7 +8,7 @@ from fastapi.responses import ORJSONResponse
 from app.clients import EmailClient
 from app.configs import file_logger
 from app.decorators import timed
-from app.managers import limiter
+from app.managers import email_circuit_breaker, limiter
 from app.schemas import EmailRequest, EmailResponse
 
 logger = file_logger(getLogger(__name__))
@@ -17,11 +17,11 @@ router = APIRouter(prefix="/email", tags=["email"])
 
 
 # --- Dependency Injection ---
-email_client_instance = EmailClient()
+email_client = EmailClient(circuit_breaker=email_circuit_breaker)
 
 
 def get_email_client() -> EmailClient:
-    return email_client_instance
+    return email_client
 
 
 EmailDep = Annotated[EmailClient, Depends(get_email_client)]
