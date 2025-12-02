@@ -35,7 +35,12 @@ CacheDep = Annotated[CacheManager, Depends(get_cache_manager)]
 
 
 # --- Routes ---
-@router.get("/stats", response_model=CacheStatsResponse, summary="Get cache statistics")
+@router.get(
+    "/stats",
+    response_model=CacheStatsResponse,
+    summary="Get cache statistics",
+    response_class=ORJSONResponse,
+)
 @timed("/cache/stats")
 async def get_cache_stats(manager: CacheDep) -> ORJSONResponse:
     """
@@ -49,7 +54,12 @@ async def get_cache_stats(manager: CacheDep) -> ORJSONResponse:
     return ORJSONResponse(content=response.model_dump())
 
 
-@router.get("/ping", response_model=CachePingResponse, summary="Ping cache server")
+@router.get(
+    "/ping",
+    response_model=CachePingResponse,
+    summary="Ping cache server",
+    response_class=ORJSONResponse,
+)
 @timed("/cache/ping")
 async def ping_cache(manager: CacheDep) -> ORJSONResponse:
     """
@@ -75,6 +85,7 @@ async def ping_cache(manager: CacheDep) -> ORJSONResponse:
     "/reset-stats",
     response_model=CacheResetStatsResponse,
     summary="Reset cache statistics",
+    response_class=ORJSONResponse,
 )
 @timed("/cache/reset-stats")
 async def reset_stats(manager: CacheDep) -> ORJSONResponse:
@@ -89,7 +100,12 @@ async def reset_stats(manager: CacheDep) -> ORJSONResponse:
     return ORJSONResponse(content=response.model_dump())
 
 
-@router.delete("/clear", response_model=CacheClearResponse, summary="Clear all cache entries")
+@router.delete(
+    "/clear",
+    response_model=CacheClearResponse,
+    summary="Clear all cache entries",
+    response_class=ORJSONResponse,
+)
 @timed("/cache/clear")
 async def clear_cache(manager: CacheDep) -> ORJSONResponse:
     """
@@ -107,6 +123,7 @@ async def clear_cache(manager: CacheDep) -> ORJSONResponse:
     "/redis/disable",
     response_model=CacheToggleResponse,
     summary="Disable Redis and switch to in-memory cache",
+    response_class=ORJSONResponse,
 )
 @timed("/cache/redis/disable")
 async def disable_redis(manager: CacheDep) -> ORJSONResponse:
@@ -124,6 +141,7 @@ async def disable_redis(manager: CacheDep) -> ORJSONResponse:
     "/redis/enable",
     response_model=CacheToggleResponse,
     summary="Enable Redis and switch from in-memory cache",
+    response_class=ORJSONResponse,
 )
 @timed("/cache/redis/enable")
 async def enable_redis(manager: CacheDep) -> ORJSONResponse:

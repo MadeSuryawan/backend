@@ -2,7 +2,6 @@
 """BaliBlissed Backend - Seamless caching integration with Redis for FastAPI."""
 
 from pathlib import Path
-from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
@@ -30,7 +29,7 @@ from app.middleware import (
 )
 from app.routes import cache_router, email_router, items_router
 from app.schemas import HealthCheckResponse
-from app.utils.helpers import today_str
+from app.utils import today_str
 
 app = FastAPI(
     title="BaliBlissed Backend",
@@ -63,7 +62,7 @@ app.add_exception_handler(
 )
 
 
-@app.get("/", tags=["root"], summary="Root access")
+@app.get("/", tags=["root"], summary="Root access", response_model=dict[str, str])
 @limiter.exempt
 async def root() -> dict[str, str]:
     """Root endpoint."""
@@ -75,6 +74,7 @@ async def root() -> dict[str, str]:
     tags=["health"],
     summary="Health check endpoint",
     response_model=HealthCheckResponse,
+    response_class=ORJSONResponse,
 )
 @limiter.exempt
 async def health_check() -> ORJSONResponse:
@@ -93,7 +93,7 @@ async def get_favicon() -> FileResponse:
 @app.get(
     "/metrics",
     tags=["metrics"],
-    response_model=dict[str, Any],
+    response_class=ORJSONResponse,
     summary="Get metrics",
     description="Get API performance metrics.",
 )

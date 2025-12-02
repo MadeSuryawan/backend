@@ -28,7 +28,12 @@ EmailDep = Annotated[EmailClient, Depends(get_email_client)]
 
 
 # --- Routes ---
-@router.post("/contact-support/", response_model=EmailResponse, summary="Send a support email")
+@router.post(
+    "/contact-support/",
+    response_model=EmailResponse,
+    summary="Send a support email",
+    response_class=ORJSONResponse,
+)
 @timed("/email/contact-support")
 @limiter.limit("5/hour")
 async def contact_support(
@@ -56,6 +61,7 @@ async def contact_support(
     "/contact-background/",
     response_model=EmailResponse,
     summary="Queue an email in the background",
+    response_class=ORJSONResponse,
 )
 @timed("/email/contact-background")
 @limiter.limit("20/minute")

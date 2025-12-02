@@ -20,7 +20,12 @@ items_db: dict[int, Item] = {}
 
 
 # --- Routes ---
-@router.post("/", response_model=Item, summary="Create new item")
+@router.post(
+    "/",
+    response_model=Item,
+    summary="Create new item",
+    response_class=ORJSONResponse,
+)
 @timed("/items/create")
 @limiter.limit("2/minute")
 @cache_busting(cache_manager, keys=["get_all_items"], namespace="items")
@@ -36,7 +41,12 @@ async def create_item(item: Item, request: Request, response: Response) -> Item:
     return item
 
 
-@router.get("/get-item/{item_id}", summary="Get specific item")
+@router.get(
+    "/get-item/{item_id}",
+    summary="Get specific item",
+    response_class=ORJSONResponse,
+    response_model=Item,
+)
 @timed("/items/get")
 @limiter.limit("10/minute")
 @cached(
@@ -68,7 +78,7 @@ async def get_item(item_id: int, request: Request, response: Response) -> Item:
 @timed("/items/all")
 @limiter.limit("10/minute")
 @cached(cache_manager, ttl=3600, namespace="items", key_builder=lambda **kw: "get_all_items")
-async def get_all_items(request: Request, response: Response) -> dict[str, list[Item]]:
+async def get_all_items(request: Request, response: Response) -> ORJSONResponse:
     """
     Get all items with caching.
 
@@ -76,10 +86,15 @@ async def get_all_items(request: Request, response: Response) -> dict[str, list[
     Results cached for 1 hour.
     """
     logger.info("Fetching all items")
-    return {"items": list(items_db.values())}
+    return ORJSONResponse(content={"items": list(items_db.values())})
 
 
-@router.put("/update-item/{item_id}", summary="Update specific item")
+@router.put(
+    "/update-item/{item_id}",
+    summary="Update specific item",
+    response_class=ORJSONResponse,
+    response_model=Item,
+)
 @timed("/items/update")
 @limiter.limit("10/minute")
 @cache_busting(
@@ -110,7 +125,12 @@ async def update_item(
     return updated_item
 
 
-@router.delete("/delete-item/{item_id}", summary="Delete specific item")
+@router.delete(
+    "/delete-item/{item_id}",
+    summary="Delete specific item",
+    response_class=ORJSONResponse,
+    response_model=dict[str, str],
+)
 @timed("/items/delete")
 @limiter.limit("10/minute")
 @cache_busting(
@@ -118,7 +138,7 @@ async def update_item(
     key_builder=lambda item_id, **kw: [f"item_{item_id}", "get_all_items"],
     namespace="items",
 )
-async def delete_item(item_id: int, request: Request, response: Response) -> dict[str, str]:
+async def delete_item(item_id: int, request: Request, response: Response) -> ORJSONResponse:
     """
     Delete item with cache busting.
 
@@ -130,4 +150,4 @@ async def delete_item(item_id: int, request: Request, response: Response) -> dic
         raise HTTPException(status_code=404, detail="Item not found")
 
     del items_db[item_id]
-    return {"message": "Item deleted successfully"}
+    return ORJSONResponse(content={"message": "Item deleted successfully"})
