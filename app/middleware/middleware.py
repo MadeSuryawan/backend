@@ -1,3 +1,4 @@
+# app/middleware/middleware.py
 """
 Middleware components for the FastAPI Redis Cache application.
 
@@ -16,12 +17,14 @@ from time import perf_counter
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from pythonjsonlogger.json import JsonFormatter
 from rich.logging import RichHandler
 from rich.traceback import install
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from uvloop import Loop
 
 from app.configs import file_logger, settings
+from app.db import close_db, init_db
 from app.managers import cache_manager, close_limiter, limiter
 from app.utils.helpers import get_summary
 
@@ -37,6 +40,9 @@ basicConfig(
 )
 logger = getLogger("rich")
 file_logger(logger)
+for handler in logger.handlers:
+    handler.setFormatter(JsonFormatter())
+
 install()
 
 
@@ -52,6 +58,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         if log_to_file:
             logger.info("Logging to file enabled.")
 
+        await init_db()
+
         await cache_manager.initialize()
         app.state.cache_manager = cache_manager
 
@@ -64,9 +72,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
         # Initialize AI client
         # get_ai_client()
-
-        # Initialize email service
-        # await email_service.initialize()
 
         logger.info("Services initialized successfully")
         logger.info("Services:")
@@ -88,7 +93,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Cleanup services
     try:
-        # await cache_service.close()
+        await close_db()
         await close_limiter()
         await cache_manager.shutdown()
         logger.info("Cache manager stopped")

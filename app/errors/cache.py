@@ -13,56 +13,46 @@ logger = file_logger(getLogger(__name__))
 class CacheExceptionError(BaseAppError):
     """Base exception for cache operations."""
 
-    def __init__(self, msg: str = "Cache exception occurred") -> None:
+    def __init__(self, detail: str = "Cache exception occurred") -> None:
         super().__init__(
-            msg=msg,
-            error_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=detail,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
 
 class CacheKeyError(CacheExceptionError):
     """Raised when cache key operation fails."""
 
-    def __init__(self, msg: str = "Cache key error") -> None:
-        super().__init__(msg)
-        self.msg = msg
-        self.error_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    def __init__(self, detail: str = "Cache key error") -> None:
+        super().__init__(detail)
 
 
 class CacheSerializationError(CacheExceptionError):
     """Raised when cache serialization fails."""
 
-    def __init__(self, msg: str = "Cannot serialize value") -> None:
-        super().__init__(msg)
-        self.msg = msg
-        self.error_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    def __init__(self, detail: str = "Cannot serialize value") -> None:
+        super().__init__(detail)
 
 
 class CacheDeserializationError(CacheExceptionError):
     """Raised when cache deserialization fails."""
 
-    def __init__(self, msg: str = "Cannot deserialize value") -> None:
-        super().__init__(msg)
-        self.msg = msg
-        self.error_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    def __init__(self, detail: str = "Cannot deserialize value") -> None:
+        super().__init__(detail)
 
 
 class CacheCompressionError(CacheExceptionError):
     """Raised when cache compression fails."""
 
-    def __init__(self, msg: str = "Cannot compress data") -> None:
-        super().__init__(msg)
-        self.msg = msg
-        self.error_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    def __init__(self, detail: str = "Cannot compress data") -> None:
+        super().__init__(detail)
 
 
 class CacheDecompressionError(CacheExceptionError):
     """Raised when cache decompression fails."""
 
-    def __init__(self, msg: str = "Cannot decompress data") -> None:
-        super().__init__(msg)
-        self.msg = msg
-        self.error_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    def __init__(self, detail: str = "Cannot decompress data") -> None:
+        super().__init__(detail)
 
 
 # Create the exception handler using the helper

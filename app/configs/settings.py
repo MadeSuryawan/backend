@@ -5,12 +5,15 @@ This module contains application settings, constants, and configuration
 values for the BaliBlissed backend application.
 """
 
-from logging import INFO, FileHandler, Formatter, Logger, NullHandler
+from logging import INFO, Formatter, Logger, NullHandler
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Literal
 
+from passlib.context import CryptContext
 from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
-from pydantic_settings.main import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from rich import print as rprint
 
 ENV_FILE = Path(__file__).parent.parent.parent / "secrets" / ".env"
 
@@ -86,6 +89,46 @@ GEMINI_MODEL = "gemini-2.0-flash"
 # )
 
 
+class SecurityInfo(BaseModel):
+    description: str
+    memory_cost: int
+    time_cost: int
+    parallelism: int
+    hash_time: str
+
+
+CONFIG_MAP: dict[str, SecurityInfo] = {
+    "development": SecurityInfo(
+        description="Fast hashing for development/testing",
+        memory_cost=65536,  # 64 MB
+        time_cost=1,  # 1 iteration
+        parallelism=1,  # 1 thread
+        hash_time="~20ms",
+    ),
+    "standard": SecurityInfo(
+        description="Balanced security and performance (default)",
+        memory_cost=524288,  # 512 MB
+        time_cost=2,  # 2 iterations
+        parallelism=2,  # 2 threads
+        hash_time="~100-150ms",
+    ),
+    "high": SecurityInfo(
+        description="High security, slower hashing",
+        memory_cost=1048576,  # 1 GB
+        time_cost=3,  # 3 iterations
+        parallelism=4,  # 4 threads
+        hash_time="~500ms",
+    ),
+    "paranoid": SecurityInfo(
+        description="Maximum security, very slow",
+        memory_cost=2097152,  # 2 GB
+        time_cost=4,  # 4 iterations
+        parallelism=8,  # 8 threads
+        hash_time="~2-5s",
+    ),
+}
+
+
 class Settings(BaseSettings):
     """Application settings with validation and default values."""
 
@@ -111,6 +154,10 @@ class Settings(BaseSettings):
     LOG_FILE: str = "logs/app.log"
     PRODUCTION_FRONTEND_URL: str | None = None
 
+    # Password Security
+    PASSWORD_SECURITY_LEVEL: str = "standard"
+    PASSWORD_HASHER_DEBUG: bool = False
+
     # Email Configuration
     # Path to the file downloaded from Google Cloud
     GMAIL_CLIENT_SECRET_FILE: Path = Path("secrets/client_secret.json")
@@ -121,6 +168,25 @@ class Settings(BaseSettings):
     COMPANY_TARGET_EMAIL: str = "example@gmail.com"
     # Scopes required for the application
     GMAIL_SCOPES: list[str] = ["https://www.googleapis.com/auth/gmail.send"]
+
+    # Database settings
+    DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost:5432/baliblissed"
+    DATABASE_ECHO: bool = False  # Set to True to log SQL queries
+
+    # Database connection pool settings
+    POOL_SIZE: int = 5
+    MAX_OVERFLOW: int = 10
+    POOL_TIMEOUT: int = 30
+    POOL_RECYCLE: int = 3600  # Recycle connections after 1 hour
+
+    # Security settings
+    SECRET_KEY: str = "your-secret-key-change-this-in-production"  # noqa: S105
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+
+    # Pagination defaults
+    DEFAULT_PAGE_SIZE: int = 10
+    MAX_PAGE_SIZE: int = 100
 
     # Redis Configuration
     REDIS_ENABLED: bool = True
@@ -157,30 +223,23 @@ class Settings(BaseSettings):
         return v
 
 
-def no_api_key_error() -> None:
-    """Raise error if GEMINI_API_KEY is not set."""
-    mssg = "GEMINI_API_KEY is required but not set"
-    raise ValueError(mssg)
-
-
-def no_email_config_error() -> None:
-    """Raise error if email configuration is not set."""
-    mssg = "Email configuration (MAIL_USERNAME, MAIL_PASSWORD) is required"
-    raise ValueError(mssg)
-
-
-# Initialize settings from environment variables
-# try:
-#     settings = Settings()
-#     # Validate critical settings
-#     if not settings.GEMINI_API_KEY:
-#         no_api_key_error()
-#     if not settings.MAIL_USERNAME or not settings.MAIL_PASSWORD:
-#         no_email_config_error()
-# except Exception as e:
-#     print(f"Configuration error: {e}")
-#     raise
 settings = Settings()
+
+
+def file_logger(logger: Logger) -> Logger:
+    """Log to file."""
+    log_file = Path(settings.LOG_FILE)
+    log_file.parent.mkdir(exist_ok=True)
+    file_handler = (
+        RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=5)
+        if settings.LOG_TO_FILE
+        else NullHandler()
+    )
+    file_handler.setLevel(INFO)
+    formatter = Formatter("%(asctime)s - %(filename)s - %(levelname)s - %(message)s")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    return logger
 
 
 class RedisConfig(BaseSettings):
@@ -250,13 +309,88 @@ class LimiterConfig(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-def file_logger(logger: Logger) -> Logger:
-    """Log to file."""
-    log_file = Path(settings.LOG_FILE)
-    log_file.parent.mkdir(exist_ok=True)
-    file_handler = FileHandler(log_file) if settings.LOG_TO_FILE else NullHandler()
-    file_handler.setLevel(INFO)
-    formatter = Formatter("%(asctime)s - %(filename)s - %(levelname)s - %(message)s")
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-    return logger
+def get_context(level: str) -> CryptContext:
+    """
+    Get CryptContext configured for specified security level.
+
+    Args:
+        level: Security level to use
+
+    Returns:
+        CryptContext: Configured context
+
+    Example:
+        >>> ctx = get_context("high")
+        >>> hashed = ctx.hash("password")
+
+    """
+    config = CONFIG_MAP[level]
+
+    return CryptContext(
+        schemes=["argon2", "pbkdf2_sha256"],
+        deprecated="pbkdf2_sha256",
+        argon2__memory_cost=config.memory_cost,
+        argon2__time_cost=config.time_cost,
+        argon2__parallelism=config.parallelism,
+    )
+
+
+def print_config_info() -> None:
+    """Print detailed information about all security levels."""
+    rprint("\n" + "[yellow]=[yellow]" * 80)
+    rprint("[b i blue]Password Hashing Configuration Guide[b i blue]")
+    rprint("[yellow]=[yellow]" * 80)
+
+    for level, config in CONFIG_MAP.items():
+        mem_cost: int = config.memory_cost
+        rprint(f"\n[b green]{level.upper()}:[b green]")
+        rprint("[yellow]=[yellow]" * 80)
+        rprint(
+            f"\t[i blue]Description:[i blue]        [green]{config.description}[green]",
+        )
+        rprint(
+            f"\t[i blue]Memory Cost:[i blue]        [green]{mem_cost:,} bytes ({mem_cost // (1024 * 1024)}MB)[green]",
+        )
+        rprint(
+            f"\t[i blue]Time Cost:[i blue]          [green]{config.time_cost} iterations[green]",
+        )
+        rprint(
+            f"\t[i blue]Parallelism:[i blue]        [green]{config.parallelism} threads[green]",
+        )
+        rprint(
+            f"\t[i blue]Estimated Time:[i blue]     [green]{config.hash_time}[green]",
+        )
+
+    rprint("\n" + "[yellow]=[yellow]" * 80)
+    rprint("[b i blue]Recommendations:[b i blue]")
+    rprint("[yellow]=[yellow]" * 80)
+    rprint("""
+  DEVELOPMENT:
+    Use for local testing and development
+    Fastest option for rapid iteration
+
+  STANDARD (default):
+    Use for most production applications
+    Good balance of security and performance
+    Suitable for web applications with normal load
+
+  HIGH:
+    Use for sensitive applications (banking, health)
+    Higher security with acceptable performance
+    Monitor system load when under heavy authentication
+
+  PARANOID:
+    Use only for extremely sensitive systems
+    Maximum brute-force resistance
+    May impact user experience during login
+    Consider using only for initial password setup
+
+Parameters Explanation:
+  - Memory Cost: Higher = harder for GPU/ASIC attacks
+  - Time Cost: More iterations = harder to brute-force
+  - Parallelism: More threads = better performance on multi-core systems
+    """)
+
+
+if __name__ == "__main__":
+    print_config_info()

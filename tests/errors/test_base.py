@@ -15,18 +15,18 @@ class TestBaseAppError:
     def test_default_values(self) -> None:
         """Test default initialization values."""
         error = BaseAppError()
-        assert error.msg == "Internal Server Error"
-        assert error.error_code == 500
+        assert error.detail == "Internal Server Error"
+        assert error.status_code == 500
 
     def test_custom_values(self) -> None:
         """Test custom initialization values."""
-        error = BaseAppError(msg="Custom error", error_code=400)
-        assert error.msg == "Custom error"
-        assert error.error_code == 400
+        error = BaseAppError(detail="Custom error", status_code=400)
+        assert error.detail == "Custom error"
+        assert error.status_code == 400
 
     def test_str_representation(self) -> None:
         """Test string representation returns message."""
-        error = BaseAppError(msg="Test error")
+        error = BaseAppError(detail="Test error")
         assert str(error) == "Test error"
 
 
@@ -45,7 +45,7 @@ class TestCreateExceptionHandler:
         request.url.path = "/api/test"
 
         # Create custom error
-        error = BaseAppError(msg="Test error", error_code=400)
+        error = BaseAppError(detail="Test error", status_code=400)
 
         # Call handler
         response = await handler(request, error)
@@ -97,7 +97,7 @@ class TestCreateExceptionHandler:
         request.url.path = "/api/test"
 
         # Create error
-        error = BaseAppError(msg="Error")
+        error = BaseAppError(detail="Error")
 
         # Call handler
         _ = await handler(request, error)
@@ -111,8 +111,8 @@ class TestCreateExceptionHandler:
 
         class CustomError(Exception):
             def __init__(self) -> None:
-                self.error_code = 418
-                self.msg = "I'm a teapot"
+                self.status_code = 418
+                self.detail = "I'm a teapot"
 
         logger = MagicMock()
         handler = create_exception_handler(logger)
@@ -143,8 +143,8 @@ class TestCreateExceptionHandler:
 
         class PartialError(Exception):
             def __init__(self) -> None:
-                self.msg = "Rate limit exceeded"
-                self.error_code = 429
+                self.detail = "Rate limit exceeded"
+                self.status_code = 429
 
         logger = MagicMock()
         handler = create_exception_handler(logger)

@@ -1,5 +1,6 @@
 # from app.configs.logger import file_logger
 from app.configs.settings import (
+    CONFIG_MAP,
     CacheConfig,
     LimiterConfig,
     RedisConfig,
@@ -15,4 +16,5 @@ __all__ = [
     "file_logger",
     "pool_kwargs",
     "settings",
+    "CONFIG_MAP",
 ]

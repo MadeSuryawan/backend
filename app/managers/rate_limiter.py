@@ -6,7 +6,7 @@ from logging import getLogger
 from typing import cast
 
 from fastapi import Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import ORJSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -79,7 +79,7 @@ async def close_limiter() -> None:
 async def rate_limit_exceeded_handler(
     request: Request,
     exc: Exception,
-) -> JSONResponse:
+) -> ORJSONResponse:
     """
     Handle rate limit exceeded exceptions.
 
@@ -96,7 +96,7 @@ async def rate_limit_exceeded_handler(
     # remaining = response.headers["x-ratelimit-remaining"]
     # reset = response.headers["x-ratelimit-reset"]
     # retry_after: str = response.headers["retry-after"]
-    return JSONResponse(
+    return ORJSONResponse(
         status_code=HTTP_429_TOO_MANY_REQUESTS,
         content={
             "detail": "Rate limit exceeded",

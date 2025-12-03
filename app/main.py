@@ -12,9 +12,11 @@ from app.errors import (
     CacheExceptionError,
     CircuitBreakerError,
     EmailServiceError,
+    PasswordHashingError,
     cache_exception_handler,
     circuit_breaker_exception_handler,
     email_client_exception_handler,
+    password_hashing_exception_handler,
 )
 from app.managers import (
     cache_manager,
@@ -65,6 +67,10 @@ app.add_exception_handler(
 app.add_exception_handler(
     CircuitBreakerError,
     circuit_breaker_exception_handler,
+)
+app.add_exception_handler(
+    PasswordHashingError,
+    password_hashing_exception_handler,
 )
 
 

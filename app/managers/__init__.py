@@ -7,6 +7,12 @@ from app.managers.circuit_breaker import (
     email_circuit_breaker,
 )
 from app.managers.metrics import RequestTimer, get_system_metrics, metrics_manager
+from app.managers.password_manager import (
+    hash_password,
+    password_info,
+    verify_and_update_password,
+    verify_password,
+)
 from app.managers.rate_limiter import close_limiter, limiter, rate_limit_exceeded_handler
 
 __all__ = [
@@ -22,4 +28,8 @@ __all__ = [
     "limiter",
     "metrics_manager",
     "rate_limit_exceeded_handler",
+    "hash_password",
+    "password_info",
+    "verify_and_update_password",
+    "verify_password",
 ]

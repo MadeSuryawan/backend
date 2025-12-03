@@ -1,6 +1,11 @@
 from logging import getLogger
 
-from starlette import status
+from starlette.status import (
+    HTTP_401_UNAUTHORIZED,
+    HTTP_500_INTERNAL_SERVER_ERROR,
+    HTTP_502_BAD_GATEWAY,
+    HTTP_503_SERVICE_UNAVAILABLE,
+)
 
 from app.configs import file_logger
 from app.errors import BaseAppError, create_exception_handler
@@ -11,38 +16,38 @@ logger = file_logger(getLogger(__name__))
 class EmailServiceError(BaseAppError):
     """Base class for all email service related errors."""
 
-    def __init__(self, msg: str = "Email service error") -> None:
+    def __init__(self, detail: str = "Email service error") -> None:
         super().__init__(
-            msg=msg,
-            error_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=detail,
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
 
 class ConfigurationError(EmailServiceError):
     """Raised when files (secrets/tokens) are missing."""
 
-    def __init__(self, msg: str = "Email service configuration error") -> None:
-        super().__init__(msg)
-        self.msg = msg
-        self.error_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    def __init__(self, detail: str = "Email service configuration error") -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.status_code = HTTP_503_SERVICE_UNAVAILABLE
 
 
 class AuthenticationError(EmailServiceError):
     """Raised when OAuth2 token refresh fails."""
 
-    def __init__(self, msg: str = "Email service authentication error") -> None:
-        super().__init__(msg)
-        self.msg = msg
-        self.error_code = status.HTTP_401_UNAUTHORIZED
+    def __init__(self, detail: str = "Email service authentication error") -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.status_code = HTTP_401_UNAUTHORIZED
 
 
 class SendingError(EmailServiceError):
     """Raised when the Google API fails to send the message."""
 
-    def __init__(self, msg: str = "Email service sending error") -> None:
-        super().__init__(msg)
-        self.msg = msg
-        self.error_code = status.HTTP_502_BAD_GATEWAY
+    def __init__(self, detail: str = "Email service sending error") -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.status_code = HTTP_502_BAD_GATEWAY
 
 
 # Create the exception handler using the helper

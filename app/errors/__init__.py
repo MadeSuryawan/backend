@@ -16,6 +16,11 @@ from app.errors.email import (
     SendingError,
     email_client_exception_handler,
 )
+from app.errors.password_hasher import (
+    PasswordHashingError,
+    PasswordRehashError,
+    password_hashing_exception_handler,
+)
 
 __all__ = [
     "AuthenticationError",
@@ -35,4 +40,7 @@ __all__ = [
     "BaseAppError",
     "CircuitBreakerError",
     "circuit_breaker_exception_handler",
+    "PasswordHashingError",
+    "PasswordRehashError",
+    "password_hashing_exception_handler",
 ]

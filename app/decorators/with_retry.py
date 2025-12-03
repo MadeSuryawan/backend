@@ -38,18 +38,27 @@ def _log_before_sleep(
 
     def before_sleep_callback(retry_state: RetryCallState) -> None:
         """Log retry information before sleeping."""
-        exception = retry_state.outcome.exception() if retry_state.outcome else None
-        # next_action contains the sleep duration
-        sleep_duration = retry_state.next_action.sleep if retry_state.next_action else 0
-        func_name = retry_state.fn.__name__ if retry_state.fn else "unknown"
 
+        exception = None
+        if (outcome := retry_state.outcome) and outcome.failed:
+            exception: BaseException | None = outcome.exception()
+
+        # next_action contains the sleep duration
+        sleep_duration = 0
+        func_name = retry_state.fn.__name__ if retry_state.fn else "unknown"
+        if retry_state.next_action:
+            sleep_duration = retry_state.next_action.sleep
+            logger.warning(
+                "Retry %d/%d for %s after %.2fs delay. Exception: %s",
+                retry_state.attempt_number,
+                max_retries,
+                func_name,
+                sleep_duration,
+                exception,
+            )
+            return
         logger.warning(
-            "Retry %d/%d for %s after %.2fs delay. Exception: %s",
-            retry_state.attempt_number,
-            max_retries,
-            func_name,
-            sleep_duration,
-            exception,
+            f"{func_name} Last attempt failed with {exception}. No more retries scheduled.",
         )
 
     return before_sleep_callback
@@ -59,7 +68,7 @@ def with_retry(
     max_retries: int = 3,
     base_delay: float = 0.1,
     max_delay: float = 2.0,
-    exec_retry: tuple[type[Exception], ...] = RETRIABLE_EXCEPTIONS,
+    exec_retry: type[Exception] | tuple[type[Exception], ...] = RETRIABLE_EXCEPTIONS,
 ) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Awaitable[T]]]:
     """
     Apply retry logic with exponential backoff to async functions using Tenacity.

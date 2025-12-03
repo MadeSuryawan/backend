@@ -183,7 +183,7 @@ class CircuitBreaker:
                     f"Circuit breaker '{self.name}' is OPEN. Retry in {retry_after:.1f}s",
                 )
                 raise CircuitBreakerError(
-                    msg=f"Service '{self.name}' temporarily unavailable",
+                    detail=f"Service '{self.name}' temporarily unavailable",
                     retry_after=retry_after,
                     circuit_name=self.name,
                 )

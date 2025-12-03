@@ -1,9 +1,4 @@
-# docker-compose up -d
-
-# uvicorn app:app --host 127.0.0.1 --port 8000 --reload --workers 4 --loop uvloop --http httptools
 #!/bin/bash
-# scripts/docker-dev.sh
-# Development Docker management script for BaliBlissed
 
 set -e
 
@@ -16,8 +11,11 @@ NC='\033[0m' # No Color
 
 # Configuration
 COMPOSE_FILE="docker-compose.yml"
-ENV_FILE=".env"
+ENV_FILE="../secrets/.env"
 PROJECT_NAME="baliblissed"
+
+DB_NAME=""
+DB_USER=""
 
 PID_FILE="uvicorn.pid"
 
@@ -36,6 +34,81 @@ log_warning() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# load environment variables
+load_env() {
+    if [ -f "$ENV_FILE" ]; then
+        log_info "Loading environment variables from $ENV_FILE"
+        export $(grep -v '^#' "$ENV_FILE" | xargs)
+    else
+        log_error "Environment file $ENV_FILE not found"
+        exit 1
+    fi
+}
+
+# Extract database name from DATABASE_URL
+get_db_name() {
+    DB_NAME=$(echo $DATABASE_URL | sed -n 's/.*\/\([^?]*\).*/\1/p')
+    DB_USER=$(echo $DATABASE_URL | sed -n 's/.*:\/\/\([^:]*\):.*/\1/p')
+    
+    if [ -z "$DB_NAME" ]; then
+    DB_NAME="baliblissed"
+    fi
+
+    if [ -z "$DB_USER" ]; then
+        DB_USER="postgres"
+    fi
+}
+
+# Checking Postgres connection
+check_postgres() {
+    log_info "Checking Postgres connection..."
+    if command -v psql &> /dev/null; then
+        # Try to connect to PostgreSQL
+        if psql -U $DB_USER -c '\q' 2>/dev/null; then
+            log_success "✅ Postgres connection successful"
+        else
+            log_error "❌ Could not connect to PostgreSQL"
+            log_error "   Make sure PostgreSQL is running:"
+            log_error "   - macOS: brew services start postgresql"
+            log_error "   - Linux: sudo service postgresql start"
+            exit 1
+        fi
+    else
+        log_error "❌ psql command not found"
+        log_error "   Please install PostgreSQL"
+        exit 1
+    fi
+    log_info ""
+}
+
+# Ask user if they want to recreate the database
+ask_recreate_db() {
+    log_info "🗄️  Database Setup"
+    log_info "Current database: $DB_NAME"
+    log_info ""
+    read -p "Do you want to recreate the database? This will DELETE all existing data! (y/N): " -n 1 -r
+    log_info ""
+
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        log_info "⚠️  Dropping existing database..."
+        dropdb -U $DB_USER --if-exists $DB_NAME 2>/dev/null || true
+
+        log_info "📦 Creating new database..."
+        createdb -U $DB_USER $DB_NAME
+        log_info "✅ Database created"
+        log_info ""
+
+        log_info "🔧 Initializing database tables..."
+        python -m app.db.init_db
+        log_info "✅ Database initialized"
+    else
+        log_info "🔧 Checking/updating database tables..."
+        python -m app.db.init_db
+        log_info "✅ Database ready"
+    fi
+    log_info ""
 }
 
 # Check if Docker is running
@@ -57,9 +130,15 @@ create_directories() {
 
 # Start development environment
 start() {
-    log_info "Starting BaliBlissed development environment..."
+    # log_info "Starting BaliBlissed development environment..."
+    log_info "🚀 BaliBlissed Blog API - Quick Start"
+    log_info "======================================"
+    log_info ""
+    load_env
+    get_db_name
+    check_postgres
+    ask_recreate_db
     check_docker
-    # check_env
     create_directories
     
     # docker-compose --profile development up --build -d

@@ -23,17 +23,17 @@ class TestCacheExceptionError:
     def test_default_message(self) -> None:
         """Test default error message."""
         error = CacheExceptionError()
-        assert error.msg == "Cache exception occurred"
+        assert error.detail == "Cache exception occurred"
 
     def test_custom_message(self) -> None:
         """Test custom error message."""
         error = CacheExceptionError("Custom cache error")
-        assert error.msg == "Custom cache error"
+        assert error.detail == "Custom cache error"
 
     def test_error_code(self) -> None:
         """Test error code is 500."""
         error = CacheExceptionError()
-        assert error.error_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert error.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
     def test_str_representation(self) -> None:
         """Test string representation."""
@@ -47,12 +47,12 @@ class TestCacheKeyError:
     def test_default_message(self) -> None:
         """Test default error message."""
         error = CacheKeyError()
-        assert error.msg == "Cache key error"
+        assert error.detail == "Cache key error"
 
     def test_custom_message(self) -> None:
         """Test custom error message."""
         error = CacheKeyError("Invalid key format")
-        assert error.msg == "Invalid key format"
+        assert error.detail == "Invalid key format"
 
     def test_inherits_from_base(self) -> None:
         """Test inheritance from CacheExceptionError."""
@@ -66,12 +66,12 @@ class TestCacheSerializationError:
     def test_default_message(self) -> None:
         """Test default error message."""
         error = CacheSerializationError()
-        assert error.msg == "Cannot serialize value"
+        assert error.detail == "Cannot serialize value"
 
     def test_custom_message(self) -> None:
         """Test custom error message."""
         error = CacheSerializationError("Failed to serialize object")
-        assert error.msg == "Failed to serialize object"
+        assert error.detail == "Failed to serialize object"
 
 
 class TestCacheDeserializationError:
@@ -80,12 +80,12 @@ class TestCacheDeserializationError:
     def test_default_message(self) -> None:
         """Test default error message."""
         error = CacheDeserializationError()
-        assert error.msg == "Cannot deserialize value"
+        assert error.detail == "Cannot deserialize value"
 
     def test_custom_message(self) -> None:
         """Test custom error message."""
         error = CacheDeserializationError("Invalid JSON format")
-        assert error.msg == "Invalid JSON format"
+        assert error.detail == "Invalid JSON format"
 
 
 class TestCacheCompressionError:
@@ -94,12 +94,12 @@ class TestCacheCompressionError:
     def test_default_message(self) -> None:
         """Test default error message."""
         error = CacheCompressionError()
-        assert error.msg == "Cannot compress data"
+        assert error.detail == "Cannot compress data"
 
     def test_error_code(self) -> None:
         """Test error code."""
         error = CacheCompressionError()
-        assert error.error_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert error.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 class TestCacheDecompressionError:
@@ -108,7 +108,7 @@ class TestCacheDecompressionError:
     def test_default_message(self) -> None:
         """Test default error message."""
         error = CacheDecompressionError()
-        assert error.msg == "Cannot decompress data"
+        assert error.detail == "Cannot decompress data"
 
 
 class TestCacheExceptionHandler:
