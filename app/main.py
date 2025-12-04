@@ -7,6 +7,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, ORJSONResponse, Response
 from slowapi.errors import RateLimitExceeded
+from starlette.responses import JSONResponse
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.errors import (
     CacheExceptionError,
@@ -47,6 +49,8 @@ configure_cors(app)
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+# Middleware to tell FastAPI it is behind a proxy (Zuplo) or Render
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 app.include_router(cache_router)
 app.include_router(email_router)
@@ -74,11 +78,18 @@ app.add_exception_handler(
 )
 
 
-@app.get("/", tags=["root"], summary="Root access", response_model=dict[str, str])
-@limiter.exempt
-async def root() -> dict[str, str]:
+@app.get(
+    "/",
+    tags=["root"],
+    summary="Root access",
+    response_model=dict[str, str],
+    response_class=JSONResponse,
+)
+@limiter.limit("5/minute")
+async def root(request: Request, response: Response) -> JSONResponse:
     """Root endpoint."""
-    return {"message": "Welcome to FastAPI Redis Cache"}
+    response.headers["X-Frame-Options"] = "DENY"
+    return JSONResponse(content={"message": "Welcome to BaliBlissed Backend"})
 
 
 @app.get(
@@ -122,7 +133,7 @@ async def get_metrics(request: Request, response: Response) -> ORJSONResponse:
     system_metrics = await get_system_metrics()
 
     return ORJSONResponse(
-        {
+        content={
             "timestamp": today_str(),
             "api_metrics": api_metrics,
             "system_metrics": system_metrics,

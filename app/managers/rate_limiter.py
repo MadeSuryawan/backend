@@ -1,5 +1,4 @@
 # app/managers/rate_limiter.py
-
 """Rate limiter configuration using slowapi."""
 
 from logging import getLogger
@@ -33,8 +32,7 @@ def get_identifier(request: Request) -> str:
     if api_key:
         return f"apikey:{api_key}"
 
-    remote_address = get_remote_address(request)
-    return f"ip:{remote_address}"
+    return f"ip:{get_remote_address(request)}"
 
 
 limiter = Limiter(**LimiterConfig().model_dump(), key_func=get_identifier)
