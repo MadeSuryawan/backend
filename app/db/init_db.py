@@ -10,15 +10,19 @@ from logging import getLogger
 
 from app.configs import file_logger
 from app.db.database import init_db
+from app.errors.database import DatabaseInitializationError
 
 logger = file_logger(getLogger(__name__))
 
 
 async def main() -> None:
     """Initialize database tables."""
-    logger.info("Creating database tables...")
-    await init_db()
-    logger.info("Database tables created successfully!")
+    try:
+        logger.info("Creating database tables...")
+        await init_db()
+    except Exception as e:
+        logger.exception("Failed to initialize database")
+        raise DatabaseInitializationError from e
 
 
 if __name__ == "__main__":

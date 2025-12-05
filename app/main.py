@@ -13,10 +13,12 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from app.errors import (
     CacheExceptionError,
     CircuitBreakerError,
+    DatabaseError,
     EmailServiceError,
     PasswordHashingError,
     cache_exception_handler,
     circuit_breaker_exception_handler,
+    database_exception_handler,
     email_client_exception_handler,
     password_hashing_exception_handler,
 )
@@ -75,6 +77,10 @@ app.add_exception_handler(
 app.add_exception_handler(
     PasswordHashingError,
     password_hashing_exception_handler,
+)
+app.add_exception_handler(
+    DatabaseError,
+    database_exception_handler,
 )
 
 

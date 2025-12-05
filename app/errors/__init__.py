@@ -9,6 +9,13 @@ from app.errors.cache import (
     cache_exception_handler,
 )
 from app.errors.circuit_breaker import CircuitBreakerError, circuit_breaker_exception_handler
+from app.errors.database import (
+    DatabaseConfigurationError,
+    DatabaseConnectionError,
+    DatabaseError,
+    DatabaseInitializationError,
+    database_exception_handler,
+)
 from app.errors.email import (
     AuthenticationError,
     ConfigurationError,
@@ -43,4 +50,9 @@ __all__ = [
     "PasswordHashingError",
     "PasswordRehashError",
     "password_hashing_exception_handler",
+    "DatabaseError",
+    "DatabaseConnectionError",
+    "DatabaseConfigurationError",
+    "DatabaseInitializationError",
+    "database_exception_handler",
 ]
