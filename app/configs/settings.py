@@ -10,6 +10,14 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Literal
 
+from google.genai.types import (
+    GenerateContentConfig,
+    GoogleSearch,
+    HarmBlockThreshold,
+    HarmCategory,
+    SafetySetting,
+    Tool,
+)
 from passlib.context import CryptContext
 from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -33,60 +41,45 @@ WHATSAPP_NUMBER = "+6285847006743"
 RATE_LIMIT_REQUESTS = 100
 RATE_LIMIT_WINDOW = 3600  # 1 hour in seconds
 
-# Response constants
-DEFAULT_ERROR_MESSAGE = "An unexpected server error occurred."
-ITINERARY_GENERATION_ERROR = "Failed to generate itinerary."
-QUERY_PROCESSING_ERROR = "Failed to process query."
-CONTACT_INQUIRY_ERROR = "Failed to process contact inquiry."
-
 # AI Model Configuration
 GEMINI_MODEL = "gemini-2.0-flash"
 
-# Harm = HarmCategory
-# Block = HarmBlockThreshold
+Harm = HarmCategory
+Block = HarmBlockThreshold
 
-# # Safety settings for content generation
-# SAFETY_SETTINGS = [
-#     SafetySetting(
-#         category=Harm.HARM_CATEGORY_HARASSMENT,
-#         threshold=Block.BLOCK_MEDIUM_AND_ABOVE,
-#     ),
-#     SafetySetting(
-#         category=Harm.HARM_CATEGORY_HATE_SPEECH,
-#         threshold=Block.BLOCK_MEDIUM_AND_ABOVE,
-#     ),
-#     SafetySetting(
-#         category=Harm.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-#         threshold=Block.BLOCK_MEDIUM_AND_ABOVE,
-#     ),
-#     SafetySetting(
-#         category=Harm.HARM_CATEGORY_DANGEROUS_CONTENT,
-#         threshold=Block.BLOCK_MEDIUM_AND_ABOVE,
-#     ),
-# ]
+# Safety settings for content generation
+SAFETY_SETTINGS = [
+    SafetySetting(
+        category=Harm.HARM_CATEGORY_HARASSMENT,
+        threshold=Block.BLOCK_MEDIUM_AND_ABOVE,
+    ),
+    SafetySetting(
+        category=Harm.HARM_CATEGORY_HATE_SPEECH,
+        threshold=Block.BLOCK_MEDIUM_AND_ABOVE,
+    ),
+    SafetySetting(
+        category=Harm.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        threshold=Block.BLOCK_MEDIUM_AND_ABOVE,
+    ),
+    SafetySetting(
+        category=Harm.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold=Block.BLOCK_MEDIUM_AND_ABOVE,
+    ),
+]
 
-# tools = {
-#     "function_declarations": None,
-#     "retrieval": None,
-#     "google_search": GoogleSearch(),
-#     "google_search_retrieval": None,
-#     "enterprise_web_search": None,
-#     "google_maps": None,
-#     "url_context": None,
-#     "computer_use": None,
-#     "code_execution": None,
-# }
+# Tools: Explicitly enable only what needed (Google Search)
+SEARCH_TOOL = [Tool(google_search=GoogleSearch())]
 
-# GENERATION_CONFIG = GenerateContentConfig(
-#     temperature=0.7,
-#     top_p=0.8,
-#     top_k=40,
-#     max_output_tokens=4096 * 2,
-#     response_mime_type="application/json",
-#     system_instruction="You are a friendly customer service assistant for a Bali travel agency called BaliBlissed.",
-#     safety_settings=SAFETY_SETTINGS,
-#     # tools=[Tool(**tools)],
-# )
+GENERATION_CONFIG = GenerateContentConfig(
+    temperature=0.7,
+    top_p=0.8,
+    top_k=40,
+    max_output_tokens=8192,  # 4096 * 2
+    # response_mime_type="application/json",
+    # system_instruction="You are a friendly customer service assistant for a Bali travel agency called BaliBlissed.",
+    safety_settings=SAFETY_SETTINGS,
+    tools=SEARCH_TOOL,
+)
 
 
 class SecurityInfo(BaseModel):

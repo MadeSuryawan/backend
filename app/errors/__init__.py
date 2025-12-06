@@ -1,3 +1,16 @@
+from app.errors.ai import (
+    AiAuthenticationError,
+    AIClientError,
+    AiError,
+    AIGenerationError,
+    AiNetworkError,
+    AiQuotaExceededError,
+    AiResponseError,
+    ContactAnalysisError,
+    ItineraryGenerationError,
+    QueryProcessingError,
+    ai_exception_handler,
+)
 from app.errors.base import BASE_EXCEPTION, BaseAppError, create_exception_handler
 from app.errors.cache import (
     CacheCompressionError,
@@ -55,4 +68,15 @@ __all__ = [
     "DatabaseConfigurationError",
     "DatabaseInitializationError",
     "database_exception_handler",
+    "AiError",
+    "AiAuthenticationError",
+    "AiQuotaExceededError",
+    "AiNetworkError",
+    "AiResponseError",
+    "ai_exception_handler",
+    "AIGenerationError",
+    "AIClientError",
+    "ContactAnalysisError",
+    "ItineraryGenerationError",
+    "QueryProcessingError",
 ]

@@ -11,11 +11,13 @@ from starlette.responses import JSONResponse
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.errors import (
+    AiError,
     CacheExceptionError,
     CircuitBreakerError,
     DatabaseError,
     EmailServiceError,
     PasswordHashingError,
+    ai_exception_handler,
     cache_exception_handler,
     circuit_breaker_exception_handler,
     database_exception_handler,
@@ -35,7 +37,7 @@ from app.middleware import (
     configure_cors,
     lifespan,
 )
-from app.routes import cache_router, email_router, items_router
+from app.routes import ai_router, cache_router, email_router, items_router
 from app.schemas import HealthCheckResponse
 from app.utils import today_str
 
@@ -57,6 +59,8 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 app.include_router(cache_router)
 app.include_router(email_router)
 app.include_router(items_router)
+app.include_router(ai_router)
+
 
 app.add_exception_handler(
     CacheExceptionError,
@@ -81,6 +85,11 @@ app.add_exception_handler(
 app.add_exception_handler(
     DatabaseError,
     database_exception_handler,
+)
+
+app.add_exception_handler(
+    AiError,
+    ai_exception_handler,
 )
 
 
