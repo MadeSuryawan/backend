@@ -71,7 +71,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
         logger.info(f"is uvloop: {type(get_event_loop()) is Loop}")
 
-        get_ai_client()
+        if ai_client := get_ai_client():
+            app.state.ai_client = ai_client
+            logger.info("AI client initialized successfully.")
 
         logger.info("Services initialized successfully")
         logger.info("Services:")
@@ -93,6 +95,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Cleanup services
     try:
+        if ai_client := app.state.ai_client:
+            await ai_client.close()
         await close_db()
         await close_limiter()
         await cache_manager.shutdown()

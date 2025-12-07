@@ -5,6 +5,7 @@ from re import DOTALL, search
 from typing import Any
 
 from google.genai import Client
+from google.genai.client import AsyncClient
 from google.genai.types import (
     Content,
     ContentListUnion,
@@ -89,7 +90,11 @@ class AiClient:
             raise AIClientError(detail=msg) from e
 
         logger.info(f"AIClient initialized with model: {self._model}")
-        # return self._client
+
+    @property
+    def client(self) -> AsyncClient:
+        """Get the AI client instance."""
+        return self._client
 
     async def _parse_json_response(self, response_text: str) -> dict[str, Any]:
         """
@@ -328,6 +333,15 @@ class AiClient:
             contents=contents,
             config=self._config,
         )
+
+    async def close(self) -> None:
+        try:
+            logger.info("Closing AI client")
+            await self.client.aclose()
+        except Exception:
+            logger.exception("Failed to close AI client", exc_info=True)
+        else:
+            logger.info("AI client closed successfully")
 
 
 ai_client = AiClient()
