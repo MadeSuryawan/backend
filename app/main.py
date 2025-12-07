@@ -31,14 +31,16 @@ from app.managers import (
     metrics_manager,
     rate_limit_exceeded_handler,
 )
+from app.managers.circuit_breaker import ai_circuit_breaker, email_circuit_breaker
 from app.middleware import (
     LoggingMiddleware,
     SecurityHeadersMiddleware,
     configure_cors,
     lifespan,
 )
-from app.routes import ai_router, cache_router, email_router, items_router
+from app.routes import ai_router, cache_router, email_router, get_email_client, items_router
 from app.schemas import HealthCheckResponse
+from app.schemas.cache import CacheHealthResponse, ServicesStatus
 from app.utils import today_str
 
 app = FastAPI(
@@ -115,9 +117,43 @@ async def root(request: Request, response: Response) -> JSONResponse:
     response_class=ORJSONResponse,
 )
 @limiter.exempt
-async def health_check() -> ORJSONResponse:
-    """Health check endpoint."""
-    return ORJSONResponse(await cache_manager.health_check())
+async def health_check(request: Request) -> ORJSONResponse:
+    """Health check endpoint with comprehensive status."""
+    # Get cache health info
+    cache_health_data = await cache_manager.health_check()
+
+    # Determine AI client status
+    ai_client_status = (
+        "initialized"
+        if hasattr(request.app.state, "ai_client") and request.app.state.ai_client
+        else "not_initialized"
+    )
+
+    # Determine Email client status (check if credentials are configured)
+    try:
+        email_client = get_email_client()
+        # Check if service can be initialized (credentials available)
+        email_client_status = "available" if email_client.service else "not_configured"
+    except EmailServiceError:
+        email_client_status = "not_configured"
+
+    # Build services status
+    services = ServicesStatus(
+        ai_client=ai_client_status,
+        email_client=email_client_status,
+        ai_circuit_breaker=ai_circuit_breaker.get_state(),
+        email_circuit_breaker=email_circuit_breaker.get_state(),
+    )
+
+    # Build response
+    response_data = {
+        "version": request.app.version,
+        "timestamp": today_str(),
+        "services": services.model_dump(),
+        "cache": CacheHealthResponse(**cache_health_data).model_dump(),
+    }
+
+    return ORJSONResponse(response_data)
 
 
 @app.get("/favicon.ico", include_in_schema=False)

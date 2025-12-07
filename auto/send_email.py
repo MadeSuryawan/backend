@@ -10,7 +10,6 @@ path.append(f"{Path(__file__).parent.parent}")
 
 from app.clients import EmailClient
 from app.errors import SendingError
-from app.managers import email_circuit_breaker
 
 # Setup simple logging to see what happens
 basicConfig(level=INFO)
@@ -18,7 +17,7 @@ basicConfig(level=INFO)
 
 async def send_real_email() -> None:
     rprint("[b i blue]--- Initializing Client ---[/b i blue]")
-    client = EmailClient(circuit_breaker=email_circuit_breaker)
+    client = EmailClient()
 
     rprint("[b i blue]--- Sending Email ---[/b i blue]")
     try:

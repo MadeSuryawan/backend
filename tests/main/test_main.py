@@ -20,12 +20,35 @@ async def test_health_check(client: AsyncClient) -> None:
     # but since we overrode the dependency for the client, it should reflect that.
     assert response.status_code in [200, 503]
     data = response.json()
-    # Validate response matches HealthCheckResponse schema
+
+    # Validate top-level response structure
+    assert "version" in data
     assert "status" in data
-    assert "backend" in data
-    assert "statistics" in data
+    assert "timestamp" in data
+    assert "services" in data
+    assert "cache" in data
+
+    # Validate services structure
+    services = data["services"]
+    assert "ai_client" in services
+    assert "email_client" in services
+    assert "ai_circuit_breaker" in services
+    assert "email_circuit_breaker" in services
+
+    # Validate circuit breaker structure
+    ai_cb = services["ai_circuit_breaker"]
+    assert "name" in ai_cb
+    assert "state" in ai_cb
+    assert "failure_count" in ai_cb
+
+    # Validate cache structure
+    cache = data["cache"]
+    assert "backend" in cache
+    assert "statistics" in cache
+    assert "status" in cache
+
     # Validate statistics structure
-    stats = data["statistics"]
+    stats = cache["statistics"]
     assert "hits" in stats
     assert "misses" in stats
     assert "sets" in stats

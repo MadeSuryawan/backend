@@ -27,11 +27,11 @@ def get_ai_client_state(request: Request) -> AiClient:
 AiDep = Annotated[AiClient, Depends(get_ai_client_state)]
 
 
-def get_email_client_state() -> EmailClient:
+def get_email_client() -> EmailClient:
     return EmailClient()
 
 
-EmailDep = Annotated[EmailClient, Depends(get_email_client_state)]
+EmailDep = Annotated[EmailClient, Depends(get_email_client)]
 
 
 @router.post(
