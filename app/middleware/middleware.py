@@ -23,7 +23,7 @@ from rich.traceback import install
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from uvloop import Loop
 
-from app.clients.ai_client import get_ai_client
+from app.clients import AiClient
 from app.configs import file_logger, settings
 from app.db import close_db, init_db
 from app.managers import cache_manager, close_limiter, limiter
@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
         logger.info(f"is uvloop: {type(get_event_loop()) is Loop}")
 
-        if ai_client := get_ai_client():
+        if ai_client := AiClient():
             app.state.ai_client = ai_client
             logger.info("AI client initialized successfully.")
 

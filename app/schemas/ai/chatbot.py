@@ -68,4 +68,4 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     """Response model for query processing."""
 
-    answer: dict[str, str] = Field(..., description="AI-generated response to the query")
+    answer: str = Field(..., description="AI-generated response to the query")

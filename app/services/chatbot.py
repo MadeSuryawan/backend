@@ -4,10 +4,8 @@ from app.clients.ai_client import AiClient
 from app.schemas.ai.chatbot import ChatRequest, ChatResponse
 
 
-async def chat_with_ai(request: ChatRequest, client: AiClient) -> ChatResponse:
-    """Process a chat request and return an itinerary."""
+async def chat_with_ai(chat: ChatRequest, client: AiClient) -> ChatResponse:
+    """Chat to agent."""
 
-    history = [Content(**h.model_dump()) for h in request.history]
-
-    response_text = await client.chat(request.query, history)
-    return ChatResponse(answer=response_text)
+    history = [Content(**h.model_dump()) for h in chat.history]
+    return await client.chat(chat.query, history)

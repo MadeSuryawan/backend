@@ -1,15 +1,14 @@
 from logging import getLogger
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import ORJSONResponse
+from starlette.responses import Response
 
-from app.clients.ai_client import AiClient, get_ai_client
+from app.clients.ai_client import AiClient
 from app.configs import file_logger
-
-# from app.decorators import cache_busting, timedå
-# from app.decorators.caching import cached
-# from app.managers import cache_manager, limiter
+from app.decorators import timed
+from app.managers import limiter
 from app.schemas.ai.chatbot import ChatRequest, ChatResponse
 from app.services.chatbot import chat_with_ai
 
@@ -17,15 +16,21 @@ logger = file_logger(getLogger(__name__))
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
-AiDep = Annotated[AiClient, Depends(get_ai_client)]
+
+def get_ai_client_state(request: Request) -> AiClient:
+    return request.app.state.ai_client
+
+
+AiDep = Annotated[AiClient, Depends(get_ai_client_state)]
 
 
 @router.post(
-    "/api/chat",
-    response_model=ChatResponse,
-    summary="Chat to agent",
+    "/chat",
     response_class=ORJSONResponse,
+    response_model=ChatResponse,
 )
+@limiter.limit("10/minute")
+@timed("/ai/chat")
 async def chat_bot(
     request: Request,
     response: Response,
@@ -35,5 +40,4 @@ async def chat_bot(
 ) -> ORJSONResponse:
     """Chat to agent."""
     answer = await chat_with_ai(chat, ai_client)
-    logger.info(f"{answer.model_dump()['answer']['response']}")
-    return ORJSONResponse(answer.model_dump()["answer"])
+    return ORJSONResponse(answer.model_dump())

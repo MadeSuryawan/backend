@@ -2,7 +2,7 @@ from json import JSONDecodeError
 from json.decoder import JSONDecoder
 from logging import getLogger
 from re import DOTALL, search
-from typing import Any
+from typing import Any, cast
 
 from google.genai import Client
 from google.genai.client import AsyncClient
@@ -10,7 +10,7 @@ from google.genai.types import (
     Content,
     ContentListUnion,
     ContentListUnionDict,
-    GenerateContentResponse,
+    GenerateContentConfig,
     Part,
 )
 
@@ -31,6 +31,7 @@ from app.errors import (
     AiNetworkError,
     AiQuotaExceededError,
 )
+from app.schemas.ai.chatbot import ChatResponse
 
 # from app.managers import cache_manager
 # from app.schemas.ai import Itinerary
@@ -38,27 +39,6 @@ from app.errors import (
 logger = file_logger(getLogger(__name__))
 
 RETRIABLE_EXCEPTIONS = (AiNetworkError, AiQuotaExceededError, AIGenerationError, AiError)
-
-
-def validate_response(response: GenerateContentResponse) -> str:
-    """
-    Validate and extract text from API response.
-
-    Args:
-        response: The response object from the API.
-
-    Returns:
-        The extracted text from the response.
-
-    Raises:
-        AIGenerationError: If response is empty or invalid.
-
-    """
-    if response and response.text:
-        return response.text
-
-    msg = "Empty response from Gemini API"
-    raise AIGenerationError(msg)
 
 
 class AiClient:
@@ -111,6 +91,7 @@ class AiClient:
 
         """
         logger.debug(f"Raw response text: {response_text}")
+        logger.debug(f"{type(response_text)=}")
         # 1. Regex to extract content strictly within ```json ... ``` blocks if present.
         #    This is safer than simple stripping if the AI puts text before AND after.
         code_block_match = search(r"```(?:json)?\s*(.*?)```", response_text, DOTALL)
@@ -219,51 +200,45 @@ class AiClient:
     #         self._handle_exception(e)
     #         raise  # Should be unreachable due to _handle_exception raising
 
-    async def chat(self, message: str, history: list[Content]) -> dict[str, str]:
+    async def chat(self, query: str, history: list[Content]) -> ChatResponse:
         """
         Handle chat interactions.
 
         Expects history in format: [{'role': 'user', 'parts': [{'text': '...'}]}, ...]
-
         """
         contents = history if history else []
         contents.append(
-            Content(role="user", parts=[Part(text=message)]),
+            Content(role="user", parts=[Part(text=query)]),
         )
-
-        # 1. Prepare the system instruction
-        # system_instruction = "You are Aero, a friendly and helpful travel agent assistant."
-
-        # 2. Prepare contents (History + New Message)
-        # The SDK expects 'contents' to be a list of messages including the history
-        # contents = []
-
-        # Convert simple frontend history to SDK format if necessary
-        # Assuming frontend sends: [{'role': 'user', 'content': 'hi'}]
-        # We need SDK format: Content(role='user', parts=[Part(text='hi')])
-
-        # for msg in history:
-        #     role = "user" if msg.get("role") in ["user", "human"] else "model"
-        #     text_content = msg.get("content", "")
-        #     contents.append(Content(role=role, parts=[Part(text=text_content)]))
 
         system_instruction = (
             "You are a friendly customer service assistant for a Bali travel agency called BaliBlissed."
-            "You MUST reply with a SINGLE valid JSON object in this format: "
-            '{"response": "your markdown formatted message here"}. '
             "Do not output multiple JSON objects. Do not add explanations outside the JSON."
         )
-        self._config.system_instruction = system_instruction
-        self._config.response_mime_type = "application/json"
-        # Higher temp for creativity, 0.4 for itinerary for more factual responses
-        self._config.temperature = 0.7
 
-        # Append the current new user message
-        contents.append(Content(role="user", parts=[Part(text=message)]))
+        # Create a new config for this request to ensure thread safety
+        # We copy settings from the base config but override what we need
+        config = GenerateContentConfig(
+            temperature=0.7,
+            top_p=self._config.top_p,
+            top_k=self._config.top_k,
+            max_output_tokens=self._config.max_output_tokens,
+            safety_settings=self._config.safety_settings,
+            tools=self._config.tools,
+            system_instruction=system_instruction,
+            response_mime_type="application/json",
+            # response_schema={
+            #     "type": "object",
+            #     "properties": {
+            #         "answer": {"type": "string"},
+            #     },
+            #     "required": ["answer"],
+            # },
+            response_schema=ChatResponse,
+        )
 
-        response = await self._generate_content(contents)
-
-        return await self._parse_json_response(validate_response(response))
+        result = await self._generate_content(contents, config)
+        return cast(ChatResponse, result)
 
     def _construct_itinerary_prompt(self, preferences: dict[str, str]) -> str:
         """Construct a detailed prompt for itinerary generation."""
@@ -309,7 +284,8 @@ class AiClient:
     async def _generate_content(
         self,
         contents: ContentListUnion | ContentListUnionDict,
-    ) -> GenerateContentResponse:
+        config: GenerateContentConfig,
+    ) -> object:
         """
         Generate content from a custom prompt.
 
@@ -319,6 +295,7 @@ class AiClient:
 
         Args:
             contents: The contents to send to the model.
+            config: The configuration for the content generation.
 
         Returns:
             The generated text response.
@@ -328,11 +305,23 @@ class AiClient:
 
         """
 
-        return await self._client.models.generate_content(
+        response = await self._client.models.generate_content(
             model=self._model,
             contents=contents,
-            config=self._config,
+            config=config,
         )
+
+        if response and not response.text:
+            msg = "Empty response from Gemini API"
+            raise AIGenerationError(detail=msg)
+
+        # Validate response schema. (Defensive programming)
+        schema = config.response_schema
+        # If schema is a Class (like Pydantic model), use isinstance check
+        if isinstance(schema, type) and not isinstance(response.parsed, schema):
+            msg = f"Unexpected response type: {type(response.parsed)}, expected {schema}"
+            raise AIGenerationError(detail=msg)
+        return response.parsed
 
     async def close(self) -> None:
         try:
@@ -342,10 +331,3 @@ class AiClient:
             logger.exception("Failed to close AI client", exc_info=True)
         else:
             logger.info("AI client closed successfully")
-
-
-ai_client = AiClient()
-
-
-def get_ai_client() -> AiClient:
-    return ai_client
