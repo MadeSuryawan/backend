@@ -11,7 +11,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 COMPOSE_FILE="docker-compose.yml"
-ENV_FILE="../secrets/.env"
+ENV_FILE="./secrets/.env"
 PROJECT_NAME="baliblissed"
 
 DB_NAME=""

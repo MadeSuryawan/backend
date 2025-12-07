@@ -23,7 +23,7 @@ AiDep = Annotated[AiClient, Depends(get_ai_client)]
 @router.post(
     "/api/chat",
     response_model=ChatResponse,
-    summary="Send a support email",
+    summary="Chat to agent",
     response_class=ORJSONResponse,
 )
 async def chat_bot(
@@ -33,7 +33,7 @@ async def chat_bot(
     # user: User = Depends(get_current_user), # auth logic
     ai_client: AiDep,
 ) -> ORJSONResponse:
-    """Process a chat request and return an itinerary."""
+    """Chat to agent."""
     answer = await chat_with_ai(chat, ai_client)
     logger.info(f"{answer.model_dump()['answer']['response']}")
     return ORJSONResponse(answer.model_dump()["answer"])

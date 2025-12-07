@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from rich import print as rprint
 
-ENV_FILE = Path(__file__).parent.parent.parent / "secrets" / ".env"
+ENV_FILE = Path().cwd() / "secrets" / ".env"
 
 # --- Constants ---
 MAX_QUERY_LENGTH = 1000
