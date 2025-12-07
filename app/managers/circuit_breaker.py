@@ -23,7 +23,7 @@ from time import time
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 
 from app.configs import file_logger
-from app.errors import CircuitBreakerError, EmailServiceError
+from app.errors import AiError, CircuitBreakerError, EmailServiceError
 
 if TYPE_CHECKING:
     from app.managers.metrics import MetricsManager
@@ -327,13 +327,13 @@ class CircuitBreaker:
         return wrapper
 
 
-# Global circuit breakers for different services
+# Global circuit breakers for different clients
 ai_circuit_breaker = CircuitBreaker(
     config=CircuitBreakerConfig(
         name="gemini_ai",
         failure_threshold=5,
         recovery_timeout=60.0,
-        expected_exceptions=Exception,
+        expected_exceptions=AiError,
     ),
 )
 

@@ -16,6 +16,7 @@ def test_contact_support_success(client: TestClient, mock_email_client: MagicMoc
     """
     # Added email field
     payload = {
+        "name": "Alice",
         "subject": "Login Issue",
         "message": "I cannot access my dashboard.",
         "email": "alice@example.com",
@@ -45,6 +46,7 @@ def test_contact_background_success(client: TestClient, mock_email_client: Magic
     """
     # Added email field
     payload = {
+        "name": "Bob",
         "subject": "Weekly Report",
         "message": "Attached is the PDF.",
         "email": "bob@example.com",
@@ -90,6 +92,7 @@ def test_google_api_failure(client: TestClient, mock_email_client: MagicMock) ->
 
     # Added email field
     payload = {
+        "name": "Alice",
         "subject": "Crash Test",
         "message": "This should fail.",
         "email": "crash@test.com",

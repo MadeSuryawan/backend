@@ -2,6 +2,7 @@
 
 from asyncio import get_running_loop
 from base64 import urlsafe_b64encode
+from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import parseaddr
 from logging import getLogger
@@ -9,7 +10,7 @@ from os import chmod
 from re import compile as re_compile
 from stat import S_IRUSR, S_IRWXG, S_IRWXO, S_IWUSR
 from threading import Lock
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -18,14 +19,24 @@ from googleapiclient.errors import HttpError
 
 from app.configs import file_logger, settings
 from app.errors import AuthenticationError, ConfigurationError, SendingError
-
-if TYPE_CHECKING:
-    from app.managers import CircuitBreaker
+from app.managers.circuit_breaker import email_circuit_breaker
 
 logger = file_logger(getLogger(__name__))
 
 # Regex pattern for header injection prevention
 _HEADER_INJECTION_PATTERN = re_compile(r"[\r\n]")
+
+
+@dataclass(frozen=True, slots=True)
+class MessageParams:
+    """Parameters for creating an email message."""
+
+    subject: str
+    body: str
+    sender: str
+    to: str
+    reply_to: str
+    is_html: bool = False
 
 
 class EmailClient:
@@ -37,7 +48,7 @@ class EmailClient:
     Supports optional circuit breaker for resilience against Gmail API failures.
     """
 
-    def __init__(self, circuit_breaker: "CircuitBreaker | None" = None) -> None:
+    def __init__(self) -> None:
         """
         Initialize EmailClient with thread-safe lazy loading.
 
@@ -49,7 +60,7 @@ class EmailClient:
         self._service: Resource | None = None
         # Lock ensures thread-safety during service lazy-loading
         self._service_lock: Lock = Lock()
-        self._circuit_breaker = circuit_breaker
+        self._circuit_breaker = email_circuit_breaker
 
     def _validate_token_file_permissions(self) -> None:
         """
@@ -195,25 +206,15 @@ class EmailClient:
             raise ConfigurationError(mssg)
         return self._service
 
-    def _create_message(
-        self,
-        subject: str,
-        body: str,
-        sender: str,
-        to: str,
-        reply_to: str,
-    ) -> dict[str, str]:
+    def _create_message(self, params: MessageParams) -> dict[str, str]:
         """
         Create a MIME message and encode it for Gmail API.
 
         All header values are sanitized to prevent header injection attacks.
 
         Args:
-            subject: Email subject.
-            body: Email body content.
-            sender: Sender email address.
-            to: Recipient email address.
-            reply_to: Reply-to email address.
+            params: Message parameters containing subject, body, sender, to,
+                reply_to, and is_html fields.
 
         Returns:
             Dictionary with base64-encoded message.
@@ -222,15 +223,18 @@ class EmailClient:
             ValueError: If email addresses are invalid.
         """
         # Validate and sanitize all email addresses
-        validated_to = self._validate_email(to)
-        validated_sender = self._validate_email(sender)
-        validated_reply_to = self._validate_email(reply_to)
+        validated_to = self._validate_email(params.to)
+        validated_sender = self._validate_email(params.sender)
+        validated_reply_to = self._validate_email(params.reply_to)
 
         # Sanitize headers to prevent injection
-        sanitized_subject = self._sanitize_header(subject)
+        sanitized_subject = self._sanitize_header(params.subject)
 
         message = EmailMessage()
-        message.set_content(body)
+        if params.is_html:
+            message.set_content(params.body, subtype="html")
+        else:
+            message.set_content(params.body)
         message["To"] = validated_to
         message["From"] = validated_sender
         message["Subject"] = sanitized_subject
@@ -240,20 +244,38 @@ class EmailClient:
         encoded_message = urlsafe_b64encode(message.as_bytes()).decode()
         return {"raw": encoded_message}
 
-    def send_sync(self, subject: str, body: str, reply_to: str) -> dict[str, Any]:
+    def send_sync(
+        self,
+        subject: str,
+        body: str,
+        reply_to: str,
+        *,
+        is_html: bool = False,
+    ) -> dict[str, Any]:
         """
         Blocking method to send an email.
 
         Should not be called directly within an async route.
+
+        Args:
+            subject: Email subject.
+            body: Email body content.
+            reply_to: Reply-to email address.
+            is_html: If True, send body as HTML content. Defaults to False.
+
+        Returns:
+            Gmail API response dictionary.
         """
         try:
-            message_body = self._create_message(
+            params = MessageParams(
                 subject=subject,
                 body=body,
                 sender=reply_to,
                 to=settings.COMPANY_TARGET_EMAIL,
                 reply_to=reply_to,
+                is_html=is_html,
             )
+            message_body = self._create_message(params)
 
             # Cast to Any so static analysis ignores the dynamic .users() method
             service = cast(Any, self.service)
@@ -280,6 +302,8 @@ class EmailClient:
         subject: str,
         body: str,
         reply_to: str,
+        *,
+        is_html: bool = False,
     ) -> dict[str, Any]:
         """
         Send email asynchronously without circuit breaker protection.
@@ -288,14 +312,25 @@ class EmailClient:
             subject: Email subject.
             body: Email body content.
             reply_to: Reply-to email address.
+            is_html: If True, send body as HTML content. Defaults to False.
 
         Returns:
             Gmail API response dictionary.
         """
         loop = get_running_loop()
-        return await loop.run_in_executor(None, self.send_sync, subject, body, reply_to)
+        return await loop.run_in_executor(
+            None,
+            lambda: self.send_sync(subject, body, reply_to, is_html=is_html),
+        )
 
-    async def send_email(self, subject: str, body: str, reply_to: str) -> dict[str, Any]:
+    async def send_email(
+        self,
+        subject: str,
+        body: str,
+        reply_to: str,
+        *,
+        is_html: bool = False,
+    ) -> dict[str, Any]:
         """
         Asynchronous wrapper to send email without blocking the Event Loop.
 
@@ -306,6 +341,7 @@ class EmailClient:
             subject: Email subject.
             body: Email body content.
             reply_to: Reply-to email address.
+            is_html: If True, send body as HTML content. Defaults to False.
 
         Returns:
             Gmail API response dictionary.
@@ -323,8 +359,9 @@ class EmailClient:
                     subject,
                     body,
                     reply_to,
+                    is_html=is_html,
                 )
-            return await self._send_email_internal(subject, body, reply_to)
+            return await self._send_email_internal(subject, body, reply_to, is_html=is_html)
         except Exception:
             logger.exception("Async email sending failed")
             raise

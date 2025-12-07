@@ -5,7 +5,11 @@ import pytest
 from fastapi.testclient import TestClient
 from googleapiclient.errors import HttpError
 
-from app.clients.email_client import _HEADER_INJECTION_PATTERN, EmailClient
+from app.clients.email_client import (
+    _HEADER_INJECTION_PATTERN,
+    EmailClient,
+    MessageParams,
+)
 from app.errors import AuthenticationError, ConfigurationError, SendingError
 
 
@@ -86,26 +90,28 @@ class TestCreateMessage:
     def test_create_message_format(self) -> None:
         """Test message creation returns proper format."""
         client = EmailClient()
-        result = client._create_message(
+        params = MessageParams(
             subject="Test Subject",
             body="Test Body",
             sender="me",
             to="recipient@example.com",
             reply_to="sender@example.com",
         )
+        result = client._create_message(params)
         assert "raw" in result
         assert isinstance(result["raw"], str)
 
     def test_create_message_encoded_content(self) -> None:
         """Test that message content is properly base64 encoded."""
         client = EmailClient()
-        result = client._create_message(
+        params = MessageParams(
             subject="Test",
             body="Hello World",
             sender="me",
             to="test@example.com",
             reply_to="user@example.com",
         )
+        result = client._create_message(params)
         # Decode and verify content
         decoded = urlsafe_b64decode(result["raw"]).decode("utf-8")
         assert "Hello World" in decoded
@@ -114,13 +120,14 @@ class TestCreateMessage:
     def test_create_message_sanitizes_subject(self) -> None:
         """Test that subject is sanitized."""
         client = EmailClient()
-        result = client._create_message(
+        params = MessageParams(
             subject="Test\nInjected",
             body="Body",
             sender="me",
             to="test@example.com",
             reply_to="user@example.com",
         )
+        result = client._create_message(params)
         decoded = urlsafe_b64decode(result["raw"]).decode("utf-8")
         assert "Subject: TestInjected" in decoded
 
@@ -194,7 +201,12 @@ class TestEndpoints:
         mock_email_client: MagicMock,
     ) -> None:
         """Test successful contact support endpoint."""
-        payload = {"subject": "Help", "message": "Please help.", "email": "user@test.com"}
+        payload = {
+            "name": "John",
+            "subject": "Help",
+            "message": "Please help.",
+            "email": "user@test.com",
+        }
         response = client.post("/email/contact-support/", json=payload)
         assert response.status_code == 200
         mock_email_client.send_email.assert_called_once()
@@ -205,7 +217,12 @@ class TestEndpoints:
         mock_email_client: MagicMock,
     ) -> None:
         """Test contact background endpoint."""
-        payload = {"subject": "Bg", "message": "Bg msg.", "email": "user@test.com"}
+        payload = {
+            "name": "John",
+            "subject": "Bg",
+            "message": "Bg message test.",
+            "email": "user@test.com",
+        }
         response = client.post("/email/contact-background/", json=payload)
         assert response.status_code == 200
         mock_email_client.send_email.assert_called_once()

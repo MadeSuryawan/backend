@@ -8,7 +8,7 @@ from app.schemas.cache import (
     CacheToggleResponse,
     HealthCheckResponse,
 )
-from app.schemas.email import EmailRequest, EmailResponse
+from app.schemas.email import AnalysisFormat, ContactAnalysisResponse, EmailInquiry, EmailResponse
 from app.schemas.items import Item, ItemUpdate
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 
@@ -19,7 +19,7 @@ __all__ = [
     "CacheStatistics",
     "CacheStatsResponse",
     "CacheToggleResponse",
-    "EmailRequest",
+    "EmailInquiry",
     "EmailResponse",
     "HealthCheckResponse",
     "Item",
@@ -31,4 +31,6 @@ __all__ = [
     "BlogListResponse",
     "BlogResponse",
     "BlogUpdate",
+    "AnalysisFormat",
+    "ContactAnalysisResponse",
 ]

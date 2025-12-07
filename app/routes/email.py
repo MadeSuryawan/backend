@@ -8,20 +8,16 @@ from fastapi.responses import ORJSONResponse
 from app.clients import EmailClient
 from app.configs import file_logger
 from app.decorators import timed
-from app.managers import email_circuit_breaker, limiter
-from app.schemas import EmailRequest, EmailResponse
+from app.managers import limiter
+from app.schemas import EmailInquiry, EmailResponse
 
 logger = file_logger(getLogger(__name__))
 
 router = APIRouter(prefix="/email", tags=["email"])
 
 
-# --- Dependency Injection ---
-email_client = EmailClient(circuit_breaker=email_circuit_breaker)
-
-
 def get_email_client() -> EmailClient:
-    return email_client
+    return EmailClient()
 
 
 EmailDep = Annotated[EmailClient, Depends(get_email_client)]
@@ -39,7 +35,7 @@ EmailDep = Annotated[EmailClient, Depends(get_email_client)]
 async def contact_support(
     request: Request,
     response: Response,
-    email_req: EmailRequest,
+    email_req: EmailInquiry,
     client: EmailDep,
 ) -> ORJSONResponse:
     """
@@ -68,7 +64,7 @@ async def contact_support(
 async def contact_background(
     request: Request,
     response: Response,
-    email_req: EmailRequest,
+    email_req: EmailInquiry,
     background_tasks: BackgroundTasks,
     client: EmailDep,
 ) -> ORJSONResponse:

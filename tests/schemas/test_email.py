@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.email import DISPOSABLE_DOMAINS, EmailRequest, EmailResponse
+from app.schemas.email import DISPOSABLE_DOMAINS, EmailInquiry, EmailResponse
 
 
 class TestEmailRequest:
@@ -11,7 +11,8 @@ class TestEmailRequest:
 
     def test_valid_email_request(self) -> None:
         """Test valid email request passes validation."""
-        request = EmailRequest(
+        request = EmailInquiry(
+            name="John Doe",
             subject="Test Subject",
             message="Test message body",
             email="user@gmail.com",
@@ -23,28 +24,43 @@ class TestEmailRequest:
     def test_empty_subject_fails(self) -> None:
         """Test that empty subject fails validation."""
         with pytest.raises(ValidationError) as exc_info:
-            EmailRequest(subject="", message="Test message", email="user@gmail.com")
+            EmailInquiry(
+                name="John Doe",
+                subject="",
+                message="Test message",
+                email="user@gmail.com",
+            )
         errors = exc_info.value.errors()
         assert any(e["loc"] == ("subject",) for e in errors)
 
     def test_empty_message_fails(self) -> None:
         """Test that empty message fails validation."""
         with pytest.raises(ValidationError) as exc_info:
-            EmailRequest(subject="Subject", message="", email="user@gmail.com")
+            EmailInquiry(name="John Doe", subject="Subject", message="", email="user@gmail.com")
         errors = exc_info.value.errors()
         assert any(e["loc"] == ("message",) for e in errors)
 
     def test_invalid_email_format_fails(self) -> None:
         """Test that invalid email format fails validation."""
         with pytest.raises(ValidationError) as exc_info:
-            EmailRequest(subject="Subject", message="Message", email="not-an-email")
+            EmailInquiry(
+                name="John Doe",
+                subject="Subject",
+                message="Message",
+                email="not-an-email",
+            )
         errors = exc_info.value.errors()
         assert any(e["loc"] == ("email",) for e in errors)
 
     def test_email_without_at_sign_fails(self) -> None:
         """Test that email without @ sign fails validation."""
         with pytest.raises(ValidationError) as exc_info:
-            EmailRequest(subject="Subject", message="Message", email="usergmail.com")
+            EmailInquiry(
+                name="John Doe",
+                subject="Subject",
+                message="Message",
+                email="usergmail.com",
+            )
         errors = exc_info.value.errors()
         assert any(e["loc"] == ("email",) for e in errors)
 
@@ -52,7 +68,8 @@ class TestEmailRequest:
     def test_disposable_email_domains_rejected(self, disposable_domain: str) -> None:
         """Test that known disposable email domains are rejected."""
         with pytest.raises(ValidationError) as exc_info:
-            EmailRequest(
+            EmailInquiry(
+                name="John Doe",
                 subject="Test",
                 message="Message",
                 email=f"user@{disposable_domain}",
@@ -64,9 +81,10 @@ class TestEmailRequest:
         """Test that valid email domains are accepted."""
         valid_domains = ["gmail.com", "yahoo.com", "outlook.com", "company.org"]
         for domain in valid_domains:
-            request = EmailRequest(
-                subject="Test",
-                message="Message",
+            request = EmailInquiry(
+                name="John Doe",
+                subject="This is a test subject",
+                message="This is a test message",
                 email=f"user@{domain}",
             )
             assert request.email == f"user@{domain}"
@@ -75,7 +93,8 @@ class TestEmailRequest:
         """Test that domain check is case-insensitive."""
         # MAILINATOR.COM should still be blocked
         with pytest.raises(ValidationError):
-            EmailRequest(
+            EmailInquiry(
+                name="John Doe",
                 subject="Test",
                 message="Message",
                 email="user@MAILINATOR.COM",
@@ -84,7 +103,8 @@ class TestEmailRequest:
     def test_non_string_email_raises_type_error(self) -> None:
         """Test that non-string email raises TypeError or ValidationError."""
         with pytest.raises(TypeError):
-            EmailRequest(
+            EmailInquiry(
+                name="John Doe",
                 subject="Test",
                 message="Message",
                 email=12345,

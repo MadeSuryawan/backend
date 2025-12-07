@@ -6,12 +6,11 @@ from typing import Any, cast
 
 from google.genai import Client
 from google.genai.client import AsyncClient
+from google.genai.errors import ClientError
 from google.genai.types import (
-    Content,
     ContentListUnion,
     ContentListUnionDict,
     GenerateContentConfig,
-    Part,
 )
 
 # from pydantic import ValidationError
@@ -31,14 +30,27 @@ from app.errors import (
     AiNetworkError,
     AiQuotaExceededError,
 )
+from app.errors.ai import ContactAnalysisError
+from app.managers.circuit_breaker import ai_circuit_breaker
 from app.schemas.ai.chatbot import ChatResponse
+from app.schemas.email import AnalysisFormat, ContactAnalysisResponse
 
 # from app.managers import cache_manager
 # from app.schemas.ai import Itinerary
 
 logger = file_logger(getLogger(__name__))
 
-RETRIABLE_EXCEPTIONS = (AiNetworkError, AiQuotaExceededError, AIGenerationError, AiError)
+RETRIABLE_EXCEPTIONS = (
+    AiNetworkError,
+    AiQuotaExceededError,
+    AIGenerationError,
+    AiError,
+    ContactAnalysisError,
+    ClientError,
+    TypeError,
+)
+
+RespType = type[ChatResponse] | type[AnalysisFormat] | type[ContactAnalysisResponse]
 
 
 class AiClient:
@@ -59,6 +71,7 @@ class AiClient:
         self._retry_delay = settings.AI_RETRY_DELAY
         self._backoff_factor = settings.AI_BACKOFF_FACTOR
         self._timeout = settings.AI_REQUEST_TIMEOUT
+        self._circuit_breaker = ai_circuit_breaker
 
         try:
             self._client = Client(api_key=settings.GEMINI_API_KEY).aio
@@ -75,6 +88,52 @@ class AiClient:
     def client(self) -> AsyncClient:
         """Get the AI client instance."""
         return self._client
+
+    @with_retry(
+        max_retries=settings.AI_MAX_RETRIES,
+        base_delay=settings.AI_RETRY_DELAY,
+        max_delay=settings.AI_REQUEST_TIMEOUT,
+        exec_retry=RETRIABLE_EXCEPTIONS,
+    )
+    async def _generate_content(
+        self,
+        contents: ContentListUnion | ContentListUnionDict,
+        config: GenerateContentConfig,
+    ) -> object:
+        """
+        Generate content from a custom prompt.
+
+        This is a low-level method for generating content with custom prompts
+        and configurations. For specific use cases, prefer the higher-level
+        methods like generate_itinerary, process_query, etc.
+
+        Args:
+            contents: The contents to send to the model.
+            config: The configuration for the content generation.
+
+        Returns:
+            The generated text response.
+
+        Raises:
+            AIGenerationError: If content generation fails.
+
+        """
+        response = await self._client.models.generate_content(
+            model=self._model,
+            contents=contents,
+            config=config,
+        )
+
+        if response and not response.text:
+            msg = "Empty response from Gemini API"
+            raise AIGenerationError(detail=msg)
+        # Validate response schema. (Defensive programming)
+        schema = config.response_schema
+        # If schema is a Class (like Pydantic model), use isinstance check
+        if isinstance(schema, type) and not isinstance(response.parsed, schema):
+            msg = f"Unexpected response type: {type(response.parsed)}, expected {schema}"
+            raise AIGenerationError(detail=msg)
+        return response.parsed
 
     async def _parse_json_response(self, response_text: str) -> dict[str, Any]:
         """
@@ -200,45 +259,58 @@ class AiClient:
     #         self._handle_exception(e)
     #         raise  # Should be unreachable due to _handle_exception raising
 
-    async def chat(self, query: str, history: list[Content]) -> ChatResponse:
+    async def do_service(
+        self,
+        contents: ContentListUnion | ContentListUnionDict,
+        system_instruction: str,
+        resp_type: RespType,
+        temperature: float = 0.7,
+    ) -> object:
         """
-        Handle chat interactions.
+        Generate content with AI using circuit breaker protection.
 
-        Expects history in format: [{'role': 'user', 'parts': [{'text': '...'}]}, ...]
+        This is the main method for interacting with the AI model.
+        It includes circuit breaker protection to prevent cascading failures.
+
+        Args:
+            contents: The contents to send to the model.
+            system_instruction: The system instruction for the content generation.
+            resp_type: The type of the response.
+            temperature: The temperature for the content generation.
+
+        Returns:
+            The response object matching resp_type.
+
+        Raises:
+            CircuitBreakerError: If the circuit breaker is open.
+            AIGenerationError: If content generation fails.
         """
-        contents = history if history else []
-        contents.append(
-            Content(role="user", parts=[Part(text=query)]),
-        )
-
-        system_instruction = (
-            "You are a friendly customer service assistant for a Bali travel agency called BaliBlissed."
-            "Do not output multiple JSON objects. Do not add explanations outside the JSON."
-        )
-
-        # Create a new config for this request to ensure thread safety
-        # We copy settings from the base config but override what we need
         config = GenerateContentConfig(
-            temperature=0.7,
             top_p=self._config.top_p,
             top_k=self._config.top_k,
             max_output_tokens=self._config.max_output_tokens,
             safety_settings=self._config.safety_settings,
             tools=self._config.tools,
-            system_instruction=system_instruction,
             response_mime_type="application/json",
-            # response_schema={
-            #     "type": "object",
-            #     "properties": {
-            #         "answer": {"type": "string"},
-            #     },
-            #     "required": ["answer"],
-            # },
-            response_schema=ChatResponse,
+            system_instruction=system_instruction,
+            response_schema=resp_type,
+            temperature=temperature,
         )
 
-        result = await self._generate_content(contents, config)
-        return cast(ChatResponse, result)
+        try:
+            if self._circuit_breaker:
+                result = await self._circuit_breaker.call(
+                    self._generate_content,
+                    contents,
+                    config,
+                )
+            else:
+                result = await self._generate_content(contents, config)
+
+            return cast(resp_type, result)
+        except Exception:
+            logger.exception("AI content generation failed")
+            raise
 
     def _construct_itinerary_prompt(self, preferences: dict[str, str]) -> str:
         """Construct a detailed prompt for itinerary generation."""
@@ -274,54 +346,6 @@ class AiClient:
         else:
             detail = f"An unexpected error occurred: {error_msg}"
             raise AiError(detail=detail) from e
-
-    @with_retry(
-        max_retries=settings.AI_MAX_RETRIES,
-        base_delay=settings.AI_RETRY_DELAY,
-        max_delay=settings.AI_REQUEST_TIMEOUT,
-        exec_retry=RETRIABLE_EXCEPTIONS,
-    )
-    async def _generate_content(
-        self,
-        contents: ContentListUnion | ContentListUnionDict,
-        config: GenerateContentConfig,
-    ) -> object:
-        """
-        Generate content from a custom prompt.
-
-        This is a low-level method for generating content with custom prompts
-        and configurations. For specific use cases, prefer the higher-level
-        methods like generate_itinerary, process_query, etc.
-
-        Args:
-            contents: The contents to send to the model.
-            config: The configuration for the content generation.
-
-        Returns:
-            The generated text response.
-
-        Raises:
-            AIGenerationError: If content generation fails.
-
-        """
-
-        response = await self._client.models.generate_content(
-            model=self._model,
-            contents=contents,
-            config=config,
-        )
-
-        if response and not response.text:
-            msg = "Empty response from Gemini API"
-            raise AIGenerationError(detail=msg)
-
-        # Validate response schema. (Defensive programming)
-        schema = config.response_schema
-        # If schema is a Class (like Pydantic model), use isinstance check
-        if isinstance(schema, type) and not isinstance(response.parsed, schema):
-            msg = f"Unexpected response type: {type(response.parsed)}, expected {schema}"
-            raise AIGenerationError(detail=msg)
-        return response.parsed
 
     async def close(self) -> None:
         try:

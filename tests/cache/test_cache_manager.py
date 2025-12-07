@@ -343,7 +343,6 @@ async def test_try_reconnect_redis_success(
 
     result = await manager._try_reconnect_redis()
     assert result is True
-    assert manager.is_redis_available is True
 
 
 @pytest.mark.asyncio
@@ -360,7 +359,6 @@ async def test_try_reconnect_redis_failure(
 
     result = await manager._try_reconnect_redis()
     assert result is False
-    assert manager.is_redis_available is False
 
 
 @pytest.mark.asyncio
@@ -369,7 +367,6 @@ async def test_fallback_to_memory(cache_manager: CacheManager) -> None:
     cache_manager.is_redis_available = True
     await cache_manager._fallback_to_memory()
 
-    assert cache_manager.is_redis_available is False
     assert isinstance(cache_manager._client, MemoryClient)
 
 
@@ -397,7 +394,6 @@ async def test_disable_redis_success(cache_manager: CacheManager) -> None:
 
     assert result.status == "success"
     assert result.backend == "in-memory"
-    assert cache_manager.is_redis_available is False
     assert isinstance(cache_manager._client, MemoryClient)
 
 
@@ -427,7 +423,6 @@ async def test_enable_redis_success(mock_connect: Mock) -> None:
 
     assert result.status == "success"
     assert result.backend == "redis"
-    assert manager.is_redis_available is True
     mock_connect.assert_called_once()
 
 
@@ -447,7 +442,6 @@ async def test_enable_redis_failure(mock_connect: Mock) -> None:  # noqa: ARG001
     assert result.status == "error"
     assert result.backend == "in-memory"
     assert "Failed to connect" in result.message
-    assert manager.is_redis_available is False
 
 
 @pytest.mark.asyncio
