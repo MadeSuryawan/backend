@@ -3,7 +3,6 @@ from re import sub
 from pydantic import BaseModel, Field, field_validator
 
 from app.configs.settings import (
-    MAX_DESTINATION_LENGTH,
     MAX_INTERESTS_COUNT,
     MAX_TRIP_DURATION,
     MIN_TRIP_DURATION,
@@ -14,9 +13,7 @@ class ItineraryRequest(BaseModel):
     """Model for travel itinerary generation requests."""
 
     destination: str = Field(
-        ...,
-        min_length=1,
-        max_length=MAX_DESTINATION_LENGTH,  # Using constant from settings
+        default="Bali, Indonesia",  # Using constant from settings
         description="The travel destination",
         examples=["Bali, Indonesia"],
     )

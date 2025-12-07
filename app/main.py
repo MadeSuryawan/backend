@@ -88,7 +88,6 @@ app.add_exception_handler(
     DatabaseError,
     database_exception_handler,
 )
-
 app.add_exception_handler(
     AiError,
     ai_exception_handler,

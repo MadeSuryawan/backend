@@ -1,10 +1,13 @@
 from collections.abc import MutableMapping
 from datetime import datetime
+from logging import Logger
 from time import perf_counter
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.routing import APIRoute
+from mdformat import text as mdformat_text
 from starlette.routing import BaseRoute, Match, Route
 
 from app.models.blog import BlogDB
@@ -67,3 +70,27 @@ def response_datetime(db: UserDB | BlogDB) -> dict[str, Any]:
         db_dict["updated_at"] = updated.astimezone().strftime(date_format)
 
     return db_dict
+
+
+async def clean_markdown(text: str, logger: Logger) -> str:
+    """
+    Format raw Markdown text to be CommonMark/GFM compliant.
+
+    Useful for standardizing AI outputs before sending to frontend.
+    """
+    try:
+        return await run_in_threadpool(
+            mdformat_text,
+            text,
+            extensions={"gfm"},  # 1. Enable Plugins: Explicitly list extensions that installed
+            options={  # 2. Options: Customize how the text is rendered
+                "wrap": "no",  # 'no' is best for Frontends (let CSS handle wrapping)
+                "number": True,  # Use ordered numbering (1. 2. 3.) instead of auto (1. 1. 1.)
+                "end_of_line": "lf",  # Use Unix line endings (LF)
+            },
+        )
+    except Exception:
+        # Fallback: If formatting fails (rare), return original text
+        # so the user still gets their answer.
+        logger.exception("Markdown formatting failed")
+        return text
