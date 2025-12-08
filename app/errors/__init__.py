@@ -41,6 +41,7 @@ from app.errors.password_hasher import (
     PasswordRehashError,
     password_hashing_exception_handler,
 )
+from app.errors.validation import ValidationError, validation_exception_handler
 
 __all__ = [
     "AuthenticationError",
@@ -79,4 +80,6 @@ __all__ = [
     "ContactAnalysisError",
     "ItineraryGenerationError",
     "QueryProcessingError",
+    "ValidationError",
+    "validation_exception_handler",
 ]

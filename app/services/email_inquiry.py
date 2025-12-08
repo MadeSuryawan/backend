@@ -21,7 +21,8 @@ def contact_analysis_prompt(name: str, message: str) -> str:
     """
 
     return f"""
-            Analyze the following customer inquiry for a Bali travel service company. Provide a structured analysis in JSON format.
+            Analyze the following customer inquiry for a Bali travel service company.
+            Provide a structured analysis in JSON format.
 
             **Customer Message:** "{message}"
 
@@ -39,7 +40,7 @@ def contact_analysis_prompt(name: str, message: str) -> str:
             4. **Urgency**: Rate as "High", "Medium", or "Low"
             5. **Suggested Response**: A professional, helpful response template
             6. **Required Action**: What the team should do next
-            7. **Keywords**: Key topics mentioned in the message
+            7. **Keywords**: Key topics mentioned in the {message}
 
             Respond ONLY with a valid JSON object in this exact format:
             {{
@@ -72,7 +73,7 @@ async def analyze_contact(
 
     """
     host = request.client.host if request.client else "unknown"
-    logger.info("Analyzing contact inquiry: %s, ip %s", email_inquiry.name, host)
+    logger.info(f"Analyzing email inquiry for {email_inquiry.name} from ip {host}")
     content = contact_analysis_prompt(email_inquiry.name, email_inquiry.message)
     system_prompt = "You are a travel assistant for Bali travel service company."
     response = await ai_client.do_service(content, system_prompt, AnalysisFormat)

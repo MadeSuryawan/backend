@@ -1,9 +1,8 @@
 # app/main.py
 """BaliBlissed Backend - Seamless caching integration with Redis for FastAPI."""
 
-from pathlib import Path
-
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, ORJSONResponse, Response
 from slowapi.errors import RateLimitExceeded
@@ -23,6 +22,7 @@ from app.errors import (
     database_exception_handler,
     email_client_exception_handler,
     password_hashing_exception_handler,
+    validation_exception_handler,
 )
 from app.managers import (
     cache_manager,
@@ -92,6 +92,10 @@ app.add_exception_handler(
     AiError,
     ai_exception_handler,
 )
+app.add_exception_handler(
+    RequestValidationError,
+    validation_exception_handler,
+)
 
 
 @app.get(
@@ -159,8 +163,7 @@ async def health_check(request: Request) -> ORJSONResponse:
 async def get_favicon() -> FileResponse:
     """Get favicon."""
 
-    parent_dir = Path(__file__).parent
-    return FileResponse(parent_dir / "favicon.ico")
+    return FileResponse("favicon.ico")
 
 
 @app.get(

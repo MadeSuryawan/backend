@@ -24,15 +24,15 @@ from app.configs.settings import (
 from app.decorators import with_retry
 from app.errors import (
     AiAuthenticationError,
-    AIClientError,
     AiError,
     AIGenerationError,
     AiNetworkError,
     AiQuotaExceededError,
 )
-from app.errors.ai import ContactAnalysisError
+from app.errors.ai import ContactAnalysisError, ItineraryGenerationError
 from app.managers.circuit_breaker import ai_circuit_breaker
 from app.schemas.ai.chatbot import ChatResponse
+from app.schemas.ai.itinerary import ItineraryResponse
 from app.schemas.email import AnalysisFormat, ContactAnalysisResponse
 
 # from app.managers import cache_manager
@@ -48,9 +48,15 @@ RETRIABLE_EXCEPTIONS = (
     ContactAnalysisError,
     ClientError,
     TypeError,
+    ItineraryGenerationError,
 )
 
-RespType = type[ChatResponse] | type[AnalysisFormat] | type[ContactAnalysisResponse]
+RespType = (
+    type[ChatResponse]
+    | type[AnalysisFormat]
+    | type[ContactAnalysisResponse]
+    | type[ItineraryResponse]
+)
 
 
 class AiClient:
@@ -79,8 +85,9 @@ class AiClient:
             logger.exception(
                 "Failed to initialize Gemini client, missing or invalid API key?",
             )
-            msg = "Failed to initialize Gemini client"
-            raise AIClientError(detail=msg) from e
+            # msg = "Failed to initialize Gemini client"
+            # raise AIClientError(detail=msg) from e
+            self._handle_exception(e)
 
         logger.info(f"AIClient initialized with model: {self._model}")
 
@@ -177,88 +184,6 @@ class AiClient:
             logger.exception("json_decode_error")
             raise AIGenerationError(detail=msg) from e
 
-    # async def generate_itinerary(
-    #     self,
-    #     user_preferences: dict[str, Any],
-    #     *,
-    #     force_refresh: bool = False,
-    # ) -> Itinerary:
-    #     """
-    #     Generate a personalized travel itinerary based on user preferences.
-
-    #     Args:
-    #         user_preferences: Dictionary containing user preferences (destination, dates, interests, etc.)
-    #         force_refresh: Whether to bypass the cache.
-
-    #     Returns:
-    #         Itinerary: A structured itinerary object.
-
-    #     Raises:
-    #         AiError: If generation fails.
-    #     """
-    #     if not self._client:
-    #         msg = "AI client is not initialized."
-    #         raise AiAuthenticationError(msg)
-
-    #     # Create a cache key based on sorted preferences
-    #     prefs_str = dumps(user_preferences, sort_keys=True)
-    #     cache_key = f"itinerary:{hash(prefs_str)}"
-
-    #     if not force_refresh:
-    #         cached_data = await cache_manager.get(cache_key)
-    #         if cached_data:
-    #             try:
-    #                 # cached_data is already deserialized (dict)
-    #                 if isinstance(cached_data, dict):
-    #                     return Itinerary.model_validate(cached_data)
-    #                 logger.warning(f"Cached data has unexpected type: {type(cached_data)}")
-    #             except ValidationError as e:
-    #                 logger.warning(f"Failed to validate cached itinerary: {e}")
-    #                 # Proceed to generate
-
-    #     prompt = self._construct_itinerary_prompt(user_preferences)
-
-    #     try:
-    #         response = await self._client.models.generate_content(
-    #             model=self._model,
-    #             contents=prompt,
-    #             config=GenerateContentConfig(
-    #                 response_mime_type="application/json",
-    #                 response_schema=Itinerary,
-    #                 temperature=0.7,
-    #             ),
-    #         )
-
-    #         if not response.parsed:
-    #             msg = "Failed to parse itinerary response."
-    #             raise AiResponseError(msg)
-
-    #         itinerary = response.parsed
-
-    #         # Ensure it's the correct type
-    #         if not isinstance(itinerary, Itinerary):
-    #             if isinstance(itinerary, dict):
-    #                 itinerary = Itinerary.model_validate(itinerary)
-    #             else:
-    #                 try:
-    #                     itinerary = Itinerary.model_validate(itinerary)
-    #                 except Exception as e:
-    #                     msg = f"Received unexpected type from AI: {type(itinerary)}"
-    #                     raise AiResponseError(msg) from e
-
-    #         # Cache the result
-    #         await cache_manager.set(
-    #             cache_key,
-    #             itinerary.model_dump(),
-    #             ttl=3600 * 24,  # Cache for 24 hours
-    #         )
-
-    #         return itinerary
-
-    #     except Exception as e:
-    #         self._handle_exception(e)
-    #         raise  # Should be unreachable due to _handle_exception raising
-
     async def do_service(
         self,
         contents: ContentListUnion | ContentListUnionDict,
@@ -311,22 +236,6 @@ class AiClient:
         except Exception:
             logger.exception("AI content generation failed")
             raise
-
-    def _construct_itinerary_prompt(self, preferences: dict[str, str]) -> str:
-        """Construct a detailed prompt for itinerary generation."""
-        destination = preferences.get("destination", "Bali")
-        duration = preferences.get("duration", "5 days")
-        interests = preferences.get("interests", [])
-        budget = preferences.get("budget", "medium")
-        travelers = preferences.get("travelers", "couple")
-
-        return (
-            f"Plan a {duration} trip to {destination} for a {travelers}. "
-            f"Interests: {', '.join(interests)}. "
-            f"Budget: {budget}. "
-            "Please provide a detailed day-by-day itinerary with activities, "
-            "locations, and practical travel tips."
-        )
 
     def _handle_exception(self, e: Exception) -> None:
         """Map generic exceptions to specific AiError."""

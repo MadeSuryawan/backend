@@ -12,11 +12,11 @@ from app.configs.settings import (
 class ItineraryRequest(BaseModel):
     """Model for travel itinerary generation requests."""
 
-    destination: str = Field(
-        default="Bali, Indonesia",  # Using constant from settings
-        description="The travel destination",
-        examples=["Bali, Indonesia"],
-    )
+    # destination: str = Field(
+    #     default="Bali, Indonesia",  # Using constant from settings
+    #     description="The travel destination",
+    #     examples=["Bali, Indonesia"],
+    # )
     duration: int = Field(
         ...,
         ge=MIN_TRIP_DURATION,  # Using constant from settings
@@ -34,22 +34,22 @@ class ItineraryRequest(BaseModel):
     budget: str = Field(
         ...,
         description="The traveler's budget",
-        examples=["$1000"],
+        examples=["US$ 1000"],
     )
 
-    @field_validator("destination")
-    @classmethod
-    def validate_destination(cls, v: str) -> str:
-        """Validate and sanitize destination input."""
-        if not v or not v.strip():
-            msg = "Destination cannot be empty"
-            raise ValueError(msg)
-        # Remove potentially harmful characters
-        sanitized = sub(r'[<>"\']', "", v.strip())
-        if len(sanitized) < 1:
-            msg = "Destination must contain valid characters"
-            raise ValueError(msg)
-        return sanitized
+    # @field_validator("destination")
+    # @classmethod
+    # def validate_destination(cls, v: str) -> str:
+    #     """Validate and sanitize destination input."""
+    #     if not v or not v.strip():
+    #         msg = "Destination cannot be empty"
+    #         raise ValueError(msg)
+    #     # Remove potentially harmful characters
+    #     sanitized = sub(r'[<>"\']', "", v.strip())
+    #     if len(sanitized) < 1:
+    #         msg = "Destination must contain valid characters"
+    #         raise ValueError(msg)
+    #     return sanitized
 
     @field_validator("interests")
     @classmethod
@@ -80,6 +80,12 @@ class ItineraryRequest(BaseModel):
         if not v or not v.strip():
             msg = "Budget cannot be empty"
             raise ValueError(msg)
+
+        v = v.strip()
+        if not v.upper().startswith("US$"):
+            if v.startswith("$"):
+                return f"US{v}"
+            return f"US$ {v}"
         return v
 
 

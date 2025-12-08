@@ -1,1 +1,192 @@
 # app/services/itinerary.py
+
+from logging import getLogger
+from typing import cast
+
+from fastapi import Request
+
+from app.clients.ai_client import AiClient
+from app.configs.settings import WHATSAPP_NUMBER, file_logger
+from app.schemas.ai.itinerary import ItineraryRequest, ItineraryResponse
+from app.utils import clean_markdown
+
+logger = file_logger(getLogger(__name__))
+
+
+def itinerary_topics(duration: int) -> str:
+    """
+    Itinerary topics analysis.
+
+    Args:
+        duration: The duration of the itinerary.
+
+    Returns:
+        A formatted itinerary topics string.
+    """
+
+    # 🚗 **TRANSPORTATION & LOGISTICS**
+    # - **1** Getting to/from airport
+    # - **2** Daily transportation options (cars, scooters, taxis)
+    # - **3** Estimated costs and booking tips
+
+    # 💸 **COMPREHENSIVE BUDGET BREAKDOWN**
+    # - **1** Daily spending estimates
+    # - **2** Total estimated cost vs. declared budget
+    # - **3** Cost-saving tips and premium upgrade options
+
+    return f"""
+    🌅 **DAILY BREAKDOWN** (Provide {duration} full days)
+    For each day, include:
+    - **Morning Activity** (9-11 AM) with specific locations and times
+    - **Afternoon Activity** (12-4 PM) with lunch suggestions
+    - **Evening Activity** (5-8 PM) with dinner recommendations
+    - **Evening Wind-down** (relaxation/beverages options)
+
+    🏨 **HANDPICKED ACCOMMODATIONS**
+    - **1** 2-3 specific hotel/villa recommendations with price ranges
+    - **2** Location details and why they suit the traveler's interests
+    - **3** Include both mid-range and premium options within budget
+
+    🍜 **CULINARY EXPERIENCES**
+    - **1** Daily restaurant recommendations for breakfast, lunch, dinner
+    - **2** Must-try Balinese dishes with local specialties
+    - **3** Food market or cooking class suggestions
+    - **4** Beverage recommendations (non-alcoholic where appropriate)
+
+    🎭 **CULTURAL IMMERSION**
+    - **1** Local customs and etiquette tips
+    - **2** Temple visit protocols if applicable
+    - **3** Respectful photography guidelines
+
+    ⭐ **AUTHENTIC EXPERIENCES**
+    - **1** Unique local experiences not found in guidebooks
+    - **2** Behind-the-scenes access opportunities
+    - **3** Meet locals and community interactions
+    - **4** Hidden gems based on their specific interests
+
+    ⚡ **PRACTICAL INFORMATION**
+    - **1** Best times to visit featured locations
+    - **2** Weather considerations by season
+    - **4** Emergency contacts
+    """
+
+
+def itinerary_structure(duration: int, budget: str) -> str:
+    """
+    Itinerary structure analysis.
+
+    Returns:
+        A formatted itinerary structure string.
+    """
+
+    friendly_note = f"""
+    ## 🌟 A Friendly Note
+
+    This itinerary is a great starting point, but remember that details like opening hours and prices can change.
+    We recommend double-checking before you go! For the most up-to-date information and to customize this plan with one of our experts,
+    please contact us on WhatsApp at {WHATSAPP_NUMBER}. We'd love to help you create the perfect Bali journey
+    """
+
+    return f"""
+    # 🌴 Here's your {duration}-Days Bali trip Itinerary with {budget} budget 🌴
+    --title--
+    ## 🌅 DAILY BREAKDOWN
+    ## 🏨 HANDPICKED ACCOMMODATIONS
+    ## 🍜 CULINARY EXPERIENCES
+    ## 🎭 CULTURAL IMMERSION
+    ## ⭐ AUTHENTIC EXPERIENCES
+    ## ⚡ PRACTICAL INFORMATION
+    ## {friendly_note}
+    """
+
+
+def itinerary_prompt(request: ItineraryRequest) -> str:
+    """
+    Create a detailed prompt for itinerary generation.
+
+    Args:
+        request: The itinerary request containing destination, duration, and interests.
+
+    Returns:
+        A formatted prompt string for the AI model.
+    """
+
+    interests = ", ".join(request.interests)
+    duration = request.duration
+    budget = request.budget
+    topics = itinerary_topics(duration)
+    structure = itinerary_structure(duration, budget)
+
+    return f"""
+    Create a comprehensive and engaging {duration} day(s) travel itinerary for Bali.
+
+    <traveler_profile>
+    🎯 Interests: {interests}
+    📅 Duration: {duration} day(s)
+    💰 Budget: {budget}
+    </traveler_profile>
+
+    <title_instruction>
+    Create a catchy, engaging title based on the traveler profile above.
+    The title should:
+    - Capture the essence of the trip in one memorable phrase
+    - Include relevant emojis
+    - Be concise (max 20 words)
+    Example formats:
+    - "🌴 Beach Bliss & Temple Trails: Your 5-Day Bali Escape 🌴"
+    - "🌊 Surf, Soul & Serenity: A Week in Paradise 🌊"
+    Place this title as a bold subtitle immediately after the main header.
+    </title_instruction>
+
+    <content_topics>
+    {topics}
+    </content_topics>
+
+    <structure>
+    Follow this exact markdown structure for your output:
+    {structure}
+    </structure>
+
+    <formatting_rules>
+    - Follow proper markdown structure and headers usage
+    - Use emojis liberally to make content engaging and easy to scan
+    - Insert your creative title immediately after the main "🌴 Here's your..." header, use ## (h2) (e.g., "## **Your Title**")
+    - For DAILY BREAKDOWN section, use ### (h3) for each day header (e.g., "### **Day 1: ...**", "### **Day 2: ...**")
+    - Make sure no trailing spaces before a new line and end with a single newline character
+    - Use bold text for important information (restaurant names, locations, prices)
+    - Ensure each day has substantial content (at least 300-400 words each)
+    - Total itinerary should be comprehensive enough for the traveler to execute
+    </formatting_rules>
+
+    Create a memorable, practical, and culturally rich Bali itinerary that exceeds expectations!
+    """
+
+
+async def generate_itinerary(
+    request: Request,
+    itinerary_req: ItineraryRequest,
+    ai_client: AiClient,
+) -> ItineraryResponse:
+    """
+    Generate an itinerary based on the itinerary request.
+
+    Args:
+        request: The request object.
+        itinerary_req: The itinerary request containing destination, duration, and interests.
+        ai_client: The AI client to use for itinerary generation.
+
+    Returns:
+        A formatted itinerary string.
+    """
+    host = request.client.host if request.client else "unknown"
+    # will include "for {user name"} for future implementation that comes from User database.
+    logger.info(f"Generating itinerary from ip {host}")
+    contents = itinerary_prompt(itinerary_req)
+    result = await ai_client.do_service(
+        contents=contents,
+        system_instruction="You are an expert travel planner specializing in authentic Bali experiences.",
+        resp_type=ItineraryResponse,
+        temperature=0.4,
+    )
+    response = cast(ItineraryResponse, result)
+    return ItineraryResponse(itinerary=await clean_markdown(response.itinerary, logger))

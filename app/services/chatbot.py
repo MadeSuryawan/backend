@@ -9,6 +9,7 @@ from app.schemas.ai.chatbot import ChatRequest, ChatResponse
 CHATBOT_SYSTEM_INSTRUCTION = (
     "You are a friendly customer service assistant for a Bali travel agency called BaliBlissed. "
     "Do not output multiple JSON objects. Do not add explanations outside the JSON."
+    "Use emojis liberally to make content engaging and easy to scan"
 )
 
 
