@@ -1,8 +1,7 @@
-from json import JSONDecodeError
-from json.decoder import JSONDecoder
+# app/clients/ai_client.py
+
 from logging import getLogger
-from re import DOTALL, search
-from typing import Any, cast
+from typing import cast
 
 from google.genai import Client
 from google.genai.client import AsyncClient
@@ -12,6 +11,7 @@ from google.genai.types import (
     ContentListUnionDict,
     GenerateContentConfig,
 )
+from httpx import RemoteProtocolError, TimeoutException
 
 # from pydantic import ValidationError
 from app.configs.settings import (
@@ -32,13 +32,21 @@ from app.errors import (
 from app.errors.ai import ContactAnalysisError, ItineraryGenerationError
 from app.managers.circuit_breaker import ai_circuit_breaker
 from app.schemas.ai.chatbot import ChatResponse
-from app.schemas.ai.itinerary import ItineraryResponse
+from app.schemas.ai.itinerary import ConversionResponse, ItineraryResponse
 from app.schemas.email import AnalysisFormat, ContactAnalysisResponse
 
 # from app.managers import cache_manager
 # from app.schemas.ai import Itinerary
 
 logger = file_logger(getLogger(__name__))
+
+# Network-related exceptions that should be caught and converted
+NETWORK_EXCEPTIONS = (
+    RemoteProtocolError,
+    TimeoutException,
+    ConnectionError,
+    OSError,
+)
 
 RETRIABLE_EXCEPTIONS = (
     AiNetworkError,
@@ -56,6 +64,7 @@ RespType = (
     | type[AnalysisFormat]
     | type[ContactAnalysisResponse]
     | type[ItineraryResponse]
+    | type[ConversionResponse]
 )
 
 
@@ -142,48 +151,6 @@ class AiClient:
             raise AIGenerationError(detail=msg)
         return response.parsed
 
-    async def _parse_json_response(self, response_text: str) -> dict[str, Any]:
-        """
-        Parse JSON response from model.
-
-        Args:
-            response_text: The raw response text from the model.
-
-        Returns:
-            Parsed JSON dictionary.
-
-        Raises:
-            AIGenerationError: If JSON parsing fails.
-
-        """
-        logger.debug(f"Raw response text: {response_text}")
-        logger.debug(f"{type(response_text)=}")
-        # 1. Regex to extract content strictly within ```json ... ``` blocks if present.
-        #    This is safer than simple stripping if the AI puts text before AND after.
-        code_block_match = search(r"```(?:json)?\s*(.*?)```", response_text, DOTALL)
-        if code_block_match:
-            text_to_parse = code_block_match.group(1).strip()
-        else:
-            text_to_parse = response_text.strip()
-
-        # 2. Find the absolute starting point of the JSON structure
-        start_index = text_to_parse.find("{")
-        if start_index == -1:
-            msg = "No JSON object found in response."
-            logger.exception(msg)
-            raise ValueError(msg)
-
-        text_to_parse = text_to_parse[start_index:]
-
-        # 3. raw_decode parses strictly one object and ignores trailing data
-        try:
-            obj, _ = JSONDecoder().raw_decode(text_to_parse)
-            return obj  # type: ignore[no-any-return]
-        except JSONDecodeError as e:
-            msg = f"Failed to parse JSON response. {e}"
-            logger.exception("json_decode_error")
-            raise AIGenerationError(detail=msg) from e
-
     async def do_service(
         self,
         contents: ContentListUnion | ContentListUnionDict,
@@ -219,6 +186,13 @@ class AiClient:
             response_mime_type="application/json",
             system_instruction=system_instruction,
             response_schema=resp_type,
+            # response_schema={
+            #     "type": "object",
+            #     "properties": {
+            #         "answer": {"type": "string"},
+            #     },
+            #     "required": ["answer"],
+            # },
             temperature=temperature,
         )
 
@@ -233,9 +207,19 @@ class AiClient:
                 result = await self._generate_content(contents, config)
 
             return cast(resp_type, result)
-        except Exception:
-            logger.exception("AI content generation failed")
+        except NETWORK_EXCEPTIONS as e:
+            # Convert network errors to AiNetworkError for proper handling
+            error_msg = str(e)
+            logger.exception(f"AI network error: {error_msg}")
+            detail = f"AI service temporarily unavailable: {error_msg}"
+            raise AiNetworkError(detail=detail) from e
+        except AiError:
+            # Already our custom error, just re-raise
             raise
+        except Exception as e:
+            # Convert unknown exceptions to AiError for proper handling
+            logger.exception("AI content generation failed")
+            self._handle_exception(e)
 
     def _handle_exception(self, e: Exception) -> None:
         """Map generic exceptions to specific AiError."""

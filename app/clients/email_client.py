@@ -8,20 +8,36 @@ from email.utils import parseaddr
 from logging import getLogger
 from os import chmod
 from re import compile as re_compile
+from socket import gaierror
 from stat import S_IRUSR, S_IRWXG, S_IRWXO, S_IWUSR
 from threading import Lock
 from typing import Any, cast
 
+from google.auth.exceptions import TransportError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import Resource, build
 from googleapiclient.errors import HttpError
+from httpx import RemoteProtocolError, TimeoutException
 
 from app.configs import file_logger, settings
 from app.errors import AuthenticationError, ConfigurationError, SendingError
+from app.errors.email import NetworkError
 from app.managers.circuit_breaker import email_circuit_breaker
 
 logger = file_logger(getLogger(__name__))
+
+# Network-related exceptions that indicate connectivity issues
+NETWORK_EXCEPTIONS = (
+    TransportError,
+    RemoteProtocolError,
+    TimeoutException,
+    ConnectionError,
+    TimeoutError,
+    gaierror,
+    OSError,
+)
+
 
 # Regex pattern for header injection prevention
 _HEADER_INJECTION_PATTERN = re_compile(r"[\r\n]")
@@ -161,6 +177,11 @@ class EmailClient:
                 logger.info("Refreshing expired Gmail access token.")
                 try:
                     creds.refresh(Request())
+                except NETWORK_EXCEPTIONS as e:
+                    # Network connectivity issue during token refresh
+                    logger.exception("Network error during token refresh")
+                    mssg = f"Email service temporarily unavailable: {e}"
+                    raise NetworkError(mssg) from e
                 except Exception as e:
                     # google-auth can raise various errors
                     logger.exception("Token refresh failed.")
@@ -288,6 +309,11 @@ class EmailClient:
             logger.exception("Google API Error")
             mssg = f"Google API refused request: {error}"
             raise SendingError(mssg) from error
+        except NETWORK_EXCEPTIONS as error:
+            # Network connectivity issues during email sending
+            logger.exception("Network error during email sending")
+            mssg = f"Email service temporarily unavailable: {error}"
+            raise NetworkError(mssg) from error
         except (ConfigurationError, AuthenticationError):
             # Let these bubble up as is
             raise

@@ -285,3 +285,13 @@ class ItineraryResponse(BaseModel):
     """Response model for itinerary generation."""
 
     itinerary: str = Field(..., description="Generated travel itinerary")
+
+
+class ConversionResponse(BaseModel):
+    conversion: str
+
+
+class ItineraryResult(ItineraryResponse):
+    """API Response model including WhatsApp-friendly text."""
+
+    text_content: str = Field(..., description="WhatsApp-friendly plain text version")

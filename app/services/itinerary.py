@@ -7,13 +7,20 @@ from fastapi import Request
 
 from app.clients.ai_client import AiClient
 from app.configs.settings import WHATSAPP_NUMBER, file_logger
-from app.schemas.ai.itinerary import ItineraryRequest, ItineraryResponse
-from app.utils import clean_markdown
+from app.schemas.ai.itinerary import (
+    ConversionResponse,
+    ItineraryRequest,
+    ItineraryResponse,
+    ItineraryResult,
+)
+from app.utils import clean_markdown, md_to_text
+
+# from app.utils import save_to_file
 
 logger = file_logger(getLogger(__name__))
 
 
-def itinerary_topics(duration: int) -> str:
+def topics(duration: int) -> str:
     """
     Itinerary topics analysis.
 
@@ -28,11 +35,6 @@ def itinerary_topics(duration: int) -> str:
     # - **1** Getting to/from airport
     # - **2** Daily transportation options (cars, scooters, taxis)
     # - **3** Estimated costs and booking tips
-
-    # 💸 **COMPREHENSIVE BUDGET BREAKDOWN**
-    # - **1** Daily spending estimates
-    # - **2** Total estimated cost vs. declared budget
-    # - **3** Cost-saving tips and premium upgrade options
 
     return f"""
     🌅 **DAILY BREAKDOWN** (Provide {duration} full days)
@@ -64,6 +66,11 @@ def itinerary_topics(duration: int) -> str:
     - **3** Meet locals and community interactions
     - **4** Hidden gems based on their specific interests
 
+    💸 **COMPREHENSIVE BUDGET BREAKDOWN**
+    - **1** Daily spending estimates
+    - **2** Total estimated cost vs. declared budget
+    - **3** Cost-saving tips and premium upgrade options
+
     ⚡ **PRACTICAL INFORMATION**
     - **1** Best times to visit featured locations
     - **2** Weather considerations by season
@@ -71,7 +78,7 @@ def itinerary_topics(duration: int) -> str:
     """
 
 
-def itinerary_structure(duration: int, budget: str) -> str:
+def structure(duration: int, budget: str) -> str:
     """
     Itinerary structure analysis.
 
@@ -90,17 +97,18 @@ def itinerary_structure(duration: int, budget: str) -> str:
     return f"""
     # 🌴 Here's your {duration}-Days Bali trip Itinerary with {budget} budget 🌴
     --title--
-    ## 🌅 DAILY BREAKDOWN
+    ### 🌅 DAILY BREAKDOWN
     ## 🏨 HANDPICKED ACCOMMODATIONS
     ## 🍜 CULINARY EXPERIENCES
     ## 🎭 CULTURAL IMMERSION
     ## ⭐ AUTHENTIC EXPERIENCES
+    ## 💸 COMPREHENSIVE BUDGET BREAKDOWN
     ## ⚡ PRACTICAL INFORMATION
     ## {friendly_note}
     """
 
 
-def itinerary_prompt(request: ItineraryRequest) -> str:
+def prompt(request: ItineraryRequest) -> str:
     """
     Create a detailed prompt for itinerary generation.
 
@@ -114,8 +122,6 @@ def itinerary_prompt(request: ItineraryRequest) -> str:
     interests = ", ".join(request.interests)
     duration = request.duration
     budget = request.budget
-    topics = itinerary_topics(duration)
-    structure = itinerary_structure(duration, budget)
 
     return f"""
     Create a comprehensive and engaging {duration} day(s) travel itinerary for Bali.
@@ -133,26 +139,27 @@ def itinerary_prompt(request: ItineraryRequest) -> str:
     - Include relevant emojis
     - Be concise (max 20 words)
     Example formats:
-    - "🌴 Beach Bliss & Temple Trails: Your 5-Day Bali Escape 🌴"
-    - "🌊 Surf, Soul & Serenity: A Week in Paradise 🌊"
+    - "## **🌴 Beach Bliss & Temple Trails: Your 5-Day Bali Escape 🌴**"
+    - "## **🌊 Surf, Soul & Serenity: A Week in Paradise 🌊**"
     Place this title as a bold subtitle immediately after the main header.
     </title_instruction>
 
     <content_topics>
-    {topics}
+    {topics(duration)}
     </content_topics>
 
     <structure>
     Follow this exact markdown structure for your output:
-    {structure}
+    {structure(duration, budget)}
     </structure>
 
     <formatting_rules>
     - Follow proper markdown structure and headers usage
     - Use emojis liberally to make content engaging and easy to scan
-    - Insert your creative title immediately after the main "🌴 Here's your..." header, use ## (h2) (e.g., "## **Your Title**")
-    - For DAILY BREAKDOWN section, use ### (h3) for each day header (e.g., "### **Day 1: ...**", "### **Day 2: ...**")
-    - Make sure no trailing spaces before a new line and end with a single newline character
+    - Insert your creative title immediately after the main "# 🌴 Here's your..." header
+    - For DAILY BREAKDOWN section, use #### (h4) for each day header (e.g., "#### **Day 1: ...**", "#### **Day 2: ...**")
+    - Make sure no trailing spaces before any new line
+    - Put a single newline character at the end of the document
     - Use bold text for important information (restaurant names, locations, prices)
     - Ensure each day has substantial content (at least 300-400 words each)
     - Total itinerary should be comprehensive enough for the traveler to execute
@@ -166,7 +173,7 @@ async def generate_itinerary(
     request: Request,
     itinerary_req: ItineraryRequest,
     ai_client: AiClient,
-) -> ItineraryResponse:
+) -> ItineraryResult:
     """
     Generate an itinerary based on the itinerary request.
 
@@ -181,12 +188,50 @@ async def generate_itinerary(
     host = request.client.host if request.client else "unknown"
     # will include "for {user name"} for future implementation that comes from User database.
     logger.info(f"Generating itinerary from ip {host}")
-    contents = itinerary_prompt(itinerary_req)
+
     result = await ai_client.do_service(
-        contents=contents,
+        contents=prompt(itinerary_req),
         system_instruction="You are an expert travel planner specializing in authentic Bali experiences.",
         resp_type=ItineraryResponse,
         temperature=0.4,
     )
     response = cast(ItineraryResponse, result)
-    return ItineraryResponse(itinerary=await clean_markdown(response.itinerary, logger))
+    clean_md = await clean_markdown(response.itinerary, logger)
+    # text_content = await ai_convert_txt(clean_md, ai_client)
+    text_content = md_to_text(clean_md)
+
+    # parent_dir = Path(__file__).parent
+    # await save_to_file(clean_md, parent_dir / "ITINERARY.md")
+    # await save_to_file(text_content, parent_dir / "ITINERARY.txt")
+    return ItineraryResult(itinerary=clean_md, text_content=text_content)
+
+
+# will use this function for future conversion endpoint for better accuracy
+async def ai_convert_txt(clean_md: str, ai_client: AiClient) -> str:
+    """
+    Ask ai to convert the itinerary to a text file.
+
+    Args:
+        clean_md: The itinerary string to convert.
+        ai_client: The AI client to use for itinerary generation.
+
+    Returns:
+        A formatted itinerary string.
+    """
+
+    system_instruction = """
+    You are an expert on file conversion.
+    Convert the input markdown file into a plain text file format.
+    Create a proper text file that will send to WhatsApp that is easy to read and scan without losing the original content structure.
+    """
+
+    logger.info("Ai converting itinerary markdown to text format")
+
+    result = await ai_client.do_service(
+        contents=clean_md,
+        system_instruction=system_instruction,
+        resp_type=ConversionResponse,
+        temperature=0.0,
+    )
+    response = cast(ConversionResponse, result)
+    return response.conversion

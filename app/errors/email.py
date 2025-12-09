@@ -50,5 +50,14 @@ class SendingError(EmailServiceError):
         self.status_code = HTTP_502_BAD_GATEWAY
 
 
+class NetworkError(EmailServiceError):
+    """Raised when network connectivity issues occur."""
+
+    def __init__(self, detail: str = "Email service network error") -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.status_code = HTTP_503_SERVICE_UNAVAILABLE
+
+
 # Create the exception handler using the helper
 email_client_exception_handler = create_exception_handler(logger)

@@ -3,7 +3,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import ORJSONResponse
-from rich import print as rprint
 from starlette.responses import Response
 
 from app.clients.ai_client import AiClient
@@ -12,7 +11,10 @@ from app.configs import file_logger
 from app.decorators import cached, timed
 from app.managers import cache_manager, limiter
 from app.schemas.ai.chatbot import ChatRequest, ChatResponse
-from app.schemas.ai.itinerary import ItineraryRequest, ItineraryResponse
+from app.schemas.ai.itinerary import (
+    ItineraryRequest,
+    ItineraryResult,
+)
 from app.schemas.email import ContactAnalysisResponse, EmailInquiry
 from app.services.chatbot import chat_with_ai
 from app.services.email_inquiry import analyze_contact, confirmation_message
@@ -102,7 +104,7 @@ async def email_inquiry_confirmation_message(
     "/itinerary",
     response_class=ORJSONResponse,
     summary="Generate an itinerary",
-    response_model=ItineraryResponse,
+    response_model=ItineraryResult,
 )
 @timed("/ai/itinerary")
 # @limiter.limit("5/hour")
@@ -111,7 +113,7 @@ async def email_inquiry_confirmation_message(
     ttl=3600,
     key_builder=lambda itinerary_req, **kw: itinerary_key_builder(itinerary_req),
     namespace="itinerary",
-    response_model=ItineraryRequest,
+    response_model=ItineraryResult,
 )
 async def itinerary(
     request: Request,
@@ -126,5 +128,4 @@ async def itinerary(
     Rate Limited: 5 requests per hour for fair usage.
     """
     itinerary = await generate_itinerary(request, itinerary_req, ai_client)
-    rprint(f"[magenta]Itinerary:[/magenta]\n[blue]{itinerary.model_dump()['itinerary']}\n[/blue]")
     return ORJSONResponse(content=itinerary.model_dump())

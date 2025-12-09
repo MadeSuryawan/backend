@@ -55,8 +55,16 @@ async def validation_exception_handler(
         if "input" in error:
             formatted_error["input"] = error["input"]
         # Include context if available (e.g., max_length, min_length)
+        # Convert non-serializable values (like ValueError) to strings
         if "ctx" in error:
-            formatted_error["context"] = error["ctx"]
+            ctx = error["ctx"]
+            serializable_ctx = {}
+            for key, value in ctx.items():
+                if isinstance(value, Exception):
+                    serializable_ctx[key] = str(value)
+                else:
+                    serializable_ctx[key] = value
+            formatted_error["context"] = serializable_ctx
         formatted_errors.append(formatted_error)
 
     logger.warning(

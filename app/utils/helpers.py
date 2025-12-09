@@ -4,9 +4,13 @@ from logging import Logger
 from time import perf_counter
 from typing import Any
 
+from anyio import Path
+from bs4 import BeautifulSoup
+from bs4.exceptions import ParserRejectedMarkup
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.routing import APIRoute
+from markdown import markdown
 from mdformat import text as mdformat_text
 from starlette.routing import BaseRoute, Match, Route
 
@@ -94,3 +98,47 @@ async def clean_markdown(text: str, logger: Logger) -> str:
         # so the user still gets their answer.
         logger.exception("Markdown formatting failed")
         return text
+
+
+def md_to_text(text: str) -> str:
+    """
+    Convert Markdown text to plain text (removing Markdown syntax).
+
+    Uses BeautifulSoup to extract text content, which is safer and cleaner
+    than regex for removing complex Markdown formatting.
+    """
+    if not text:
+        return ""
+
+    try:
+        # 1. Parse Markdown to HTML
+        html_content = markdown(text)
+
+        # 2. Extract Text using BeautifulSoup
+        soup = BeautifulSoup(html_content, "html.parser")
+
+        # Prepend "- " to list items to preserve structure, handling indentation for nested lists
+        for li in soup.find_all("li"):
+            # Calculate depth based on parent ul/ol tags
+            depth = len(list(li.find_parents(["ul", "ol"])))
+            indent = "  " * (depth - 1)
+            li.string = f"{indent}- {li.get_text()}"
+
+        plain_text = soup.get_text()
+
+        return plain_text.strip()
+    except ParserRejectedMarkup:
+        # Fallback to original text if conversion fails
+        return text
+
+
+async def save_to_file(data: str, file_path: Path) -> None:
+    """
+    Write the itinerary to a file.
+
+    Args:
+        data: The data string to write.
+        file_path: The path to the file to write to.
+    """
+    async with await file_path.open("w") as f:
+        await f.write(data)
