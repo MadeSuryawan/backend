@@ -3,17 +3,21 @@
 from logging import getLogger
 from typing import cast
 
+# from anyio import Path
 from fastapi import Request
 
 from app.clients.ai_client import AiClient
 from app.configs.settings import WHATSAPP_NUMBER, file_logger
+from app.errors import host
 from app.schemas.ai.itinerary import (
-    ConversionResponse,
-    ItineraryRequest,
-    ItineraryResponse,
-    ItineraryResult,
+    ItineraryMD,
+    ItineraryRequestMD,
+    ItineraryRequestTXT,
+    ItineraryTXT,
 )
-from app.utils import clean_markdown, host, md_to_text
+
+# from app.utils import md_to_text
+from app.utils import clean_markdown
 
 # from app.utils import save_to_file
 
@@ -108,7 +112,7 @@ def structure(duration: int, budget: str) -> str:
     """
 
 
-def prompt(request: ItineraryRequest) -> str:
+def prompt(request: ItineraryRequestMD) -> str:
     """
     Create a detailed prompt for itinerary generation.
 
@@ -171,9 +175,9 @@ def prompt(request: ItineraryRequest) -> str:
 
 async def generate_itinerary(
     request: Request,
-    itinerary_req: ItineraryRequest,
+    itinerary_req: ItineraryRequestMD,
     ai_client: AiClient,
-) -> ItineraryResult:
+) -> ItineraryMD:
     """
     Generate an itinerary based on the itinerary request.
 
@@ -185,34 +189,37 @@ async def generate_itinerary(
     Returns:
         A formatted itinerary string.
     """
-    # will include "for {user name"} for future implementation that comes from User database.
+    # will include "for {user name"} for future implementation from User database.
     logger.info(f"Generating itinerary from ip {host(request)}")
 
     result = await ai_client.do_service(
         contents=prompt(itinerary_req),
         system_instruction="You are an expert travel planner specializing in authentic Bali experiences.",
-        resp_type=ItineraryResponse,
+        resp_type=ItineraryMD,
         temperature=0.4,
     )
-    response = cast(ItineraryResponse, result)
+    response = cast(ItineraryMD, result)
     clean_md = await clean_markdown(response.itinerary, logger)
-    # text_content = await ai_convert_txt(clean_md, ai_client)
-    text_content = md_to_text(clean_md)
+    # text_content = md_to_text(clean_md)
 
     # parent_dir = Path(__file__).parent
     # await save_to_file(clean_md, parent_dir / "ITINERARY.md")
     # await save_to_file(text_content, parent_dir / "ITINERARY.txt")
-    return ItineraryResult(itinerary=clean_md, text_content=text_content)
+    return ItineraryMD(itinerary=clean_md)
 
 
-# will use this function for future conversion endpoint for better accuracy
-async def ai_convert_txt(clean_md: str, ai_client: AiClient) -> str:
+async def ai_convert_txt(
+    request: Request,
+    itinerary_md: ItineraryRequestTXT,
+    ai_client: AiClient,
+) -> ItineraryTXT:
     """
     Ask ai to convert the itinerary to a text file.
 
     Args:
-        clean_md: The itinerary string to convert.
-        ai_client: The AI client to use for itinerary generation.
+        request: The request object.
+        itinerary_md: The itinerary markdown to convert request object.
+        ai_client: The AI client to use for conversion.
 
     Returns:
         A formatted itinerary string.
@@ -223,14 +230,17 @@ async def ai_convert_txt(clean_md: str, ai_client: AiClient) -> str:
     Convert the input markdown file into a plain text file format.
     Create a proper text file that will send to WhatsApp that is easy to read and scan without losing the original content structure.
     """
-
-    logger.info("Ai converting itinerary markdown to text format")
+    user_name = itinerary_md.user_name
+    md_id = itinerary_md.md_id
+    logger.info(
+        f"Converting itinerary markdown for: user {user_name}, md_id: {md_id}, ip: {host(request)}",
+    )
 
     result = await ai_client.do_service(
-        contents=clean_md,
+        contents=itinerary_md.itinerary_md,
         system_instruction=system_instruction,
-        resp_type=ConversionResponse,
+        resp_type=ItineraryTXT,
         temperature=0.0,
     )
-    response = cast(ConversionResponse, result)
-    return response.conversion
+
+    return cast(ItineraryTXT, result)

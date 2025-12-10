@@ -41,11 +41,11 @@ from app.middleware import (
 from app.routes import ai_router, cache_router, email_router, get_email_client, items_router
 from app.schemas import HealthCheckResponse
 from app.schemas.cache import CacheHealthResponse, ServicesStatus
-from app.utils import today_str
+from app.utils.helpers import today_str
 
 app = FastAPI(
     title="BaliBlissed Backend",
-    description="Seamless caching integration with Redis for FastAPI",
+    description="BaliBlissed Backend API",
     version="1.0.0",
     lifespan=lifespan,
 )

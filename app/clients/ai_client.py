@@ -13,7 +13,6 @@ from google.genai.types import (
 )
 from httpx import RemoteProtocolError, TimeoutException
 
-# from pydantic import ValidationError
 from app.configs.settings import (
     GEMINI_MODEL,
     GENERATION_CONFIG,
@@ -32,11 +31,8 @@ from app.errors import (
 from app.errors.ai import ContactAnalysisError, ItineraryGenerationError
 from app.managers.circuit_breaker import ai_circuit_breaker
 from app.schemas.ai.chatbot import ChatResponse
-from app.schemas.ai.itinerary import ConversionResponse, ItineraryResponse
+from app.schemas.ai.itinerary import ItineraryMD, ItineraryTXT
 from app.schemas.email import AnalysisFormat, ContactAnalysisResponse
-
-# from app.managers import cache_manager
-# from app.schemas.ai import Itinerary
 
 logger = file_logger(getLogger(__name__))
 
@@ -63,8 +59,8 @@ RespType = (
     type[ChatResponse]
     | type[AnalysisFormat]
     | type[ContactAnalysisResponse]
-    | type[ItineraryResponse]
-    | type[ConversionResponse]
+    | type[ItineraryMD]
+    | type[ItineraryTXT]
 )
 
 

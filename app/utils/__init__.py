@@ -10,7 +10,6 @@ from app.utils.cache_serializer import (
 from app.utils.helpers import (
     clean_markdown,
     get_summary,
-    host,
     md_to_text,
     response_datetime,
     save_to_file,
@@ -29,5 +28,4 @@ __all__ = [
     "clean_markdown",
     "md_to_text",
     "save_to_file",
-    "host",
 ]

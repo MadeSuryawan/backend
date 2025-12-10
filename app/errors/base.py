@@ -5,8 +5,6 @@ from fastapi import Request
 from fastapi.responses import ORJSONResponse
 from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 
-from app.utils import host
-
 BASE_EXCEPTION = (
     OSError,
     PermissionError,
@@ -15,6 +13,11 @@ BASE_EXCEPTION = (
     ConnectionError,
     TimeoutError,
 )
+
+
+def host(request: Request) -> str:
+    """Return the host IP address."""
+    return request.client.host if request.client else "unknown"
 
 
 class BaseAppError(Exception):

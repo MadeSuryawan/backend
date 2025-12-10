@@ -9,6 +9,7 @@ realistic itinerary combinations of budget, duration, and interests.
 
 from re import sub
 from typing import Self
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -126,7 +127,7 @@ def calculate_max_interests_for_budget(budget: float, duration: int) -> int:
     return int(remaining / cost_per_interest_with_buffer)
 
 
-class ItineraryRequest(BaseModel):
+class ItineraryRequestMD(BaseModel):
     """
     Model for travel itinerary generation requests.
 
@@ -141,7 +142,7 @@ class ItineraryRequest(BaseModel):
         - Cross-validation: Budget must be sufficient for duration × interests
 
     Example:
-        >>> request = ItineraryRequest(
+        >>> request = ItineraryRequestMD(
         ...     duration=7,
         ...     interests=["beaches", "temples"],
         ...     budget="US$ 1000"
@@ -278,20 +279,22 @@ class ItineraryRequest(BaseModel):
         return self
 
 
+class ItineraryRequestTXT(BaseModel):
+    user_name: str = Field(..., description="User name")
+    md_id: UUID = Field(..., description="Markdown itinerary id")
+    itinerary_md: str = Field(..., description="Markdown itinerary source")
+
+
 # --- Response Models ---
 
 
-class ItineraryResponse(BaseModel):
+class ItineraryMD(BaseModel):
     """Response model for itinerary generation."""
 
-    itinerary: str = Field(..., description="Generated travel itinerary")
+    itinerary: str = Field(..., description="Generated markdown travel itinerary")
 
 
-class ConversionResponse(BaseModel):
-    conversion: str
-
-
-class ItineraryResult(ItineraryResponse):
+class ItineraryTXT(BaseModel):
     """API Response model including WhatsApp-friendly text."""
 
     text_content: str = Field(..., description="WhatsApp-friendly plain text version")
