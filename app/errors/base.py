@@ -5,6 +5,8 @@ from fastapi import Request
 from fastapi.responses import ORJSONResponse
 from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 
+from app.utils import host
+
 BASE_EXCEPTION = (
     OSError,
     PermissionError,
@@ -44,8 +46,6 @@ def create_exception_handler(
     """
 
     async def handler(request: Request, exc: Exception) -> ORJSONResponse:
-        host = request.client.host if request.client else "unknown"
-
         # Default values
         status_code = HTTP_500_INTERNAL_SERVER_ERROR
         detail = "Internal Server Error"
@@ -56,7 +56,7 @@ def create_exception_handler(
         if hasattr(exc, "detail"):
             detail = exc.detail
 
-        logger.warning(f"{detail} for ip: {host} for endpoint {request.url.path}")
+        logger.warning(f"{detail} for ip: {host(request)} for endpoint {request.url.path}")
 
         # Build response content with msg and any additional exception attributes
         content = {"detail": detail}

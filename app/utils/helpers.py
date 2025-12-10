@@ -18,6 +18,11 @@ from app.models.blog import BlogDB
 from app.models.user import UserDB
 
 
+def host(request: Request) -> str:
+    """Return the host IP address."""
+    return request.client.host if request.client else "unknown"
+
+
 def today_str() -> str:
     """Return today's date as a string."""
     # return datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M:%S")

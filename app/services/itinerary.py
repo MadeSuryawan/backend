@@ -13,7 +13,7 @@ from app.schemas.ai.itinerary import (
     ItineraryResponse,
     ItineraryResult,
 )
-from app.utils import clean_markdown, md_to_text
+from app.utils import clean_markdown, host, md_to_text
 
 # from app.utils import save_to_file
 
@@ -185,9 +185,8 @@ async def generate_itinerary(
     Returns:
         A formatted itinerary string.
     """
-    host = request.client.host if request.client else "unknown"
     # will include "for {user name"} for future implementation that comes from User database.
-    logger.info(f"Generating itinerary from ip {host}")
+    logger.info(f"Generating itinerary from ip {host(request)}")
 
     result = await ai_client.do_service(
         contents=prompt(itinerary_req),

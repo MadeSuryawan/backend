@@ -10,6 +10,7 @@ from starlette.status import HTTP_422_UNPROCESSABLE_CONTENT
 
 from app.configs import file_logger
 from app.errors.base import BaseAppError
+from app.utils import host
 
 logger = file_logger(getLogger(__name__))
 
@@ -40,7 +41,6 @@ async def validation_exception_handler(
     Returns:
         ORJSONResponse with formatted validation errors.
     """
-    host = request.client.host if request.client else "unknown"
     exec_error = cast(RequestValidationError, exc)
 
     # Format errors for cleaner response
@@ -68,7 +68,7 @@ async def validation_exception_handler(
         formatted_errors.append(formatted_error)
 
     logger.warning(
-        f"Validation error for ip: {host} at endpoint {request.url.path}: {formatted_errors}",
+        f"Validation error for ip: {host(request)} at endpoint {request.url.path}: {formatted_errors}",
     )
 
     return ORJSONResponse(
