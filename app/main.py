@@ -38,7 +38,14 @@ from app.middleware import (
     configure_cors,
     lifespan,
 )
-from app.routes import ai_router, cache_router, email_router, get_email_client, items_router
+from app.routes import (
+    ai_router,
+    cache_router,
+    email_router,
+    get_email_client,
+    items_router,
+    limiter_router,
+)
 from app.schemas import HealthCheckResponse
 from app.schemas.cache import CacheHealthResponse, ServicesStatus
 from app.utils.helpers import today_str
@@ -62,6 +69,7 @@ app.include_router(cache_router)
 app.include_router(email_router)
 app.include_router(items_router)
 app.include_router(ai_router)
+app.include_router(limiter_router)
 
 
 app.add_exception_handler(
@@ -151,6 +159,7 @@ async def health_check(request: Request) -> ORJSONResponse:
     # Build response
     response_data = {
         "version": request.app.version,
+        "status": "ok",
         "timestamp": today_str(),
         "services": services.model_dump(),
         "cache": CacheHealthResponse(**cache_health_data).model_dump(),

@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 from app import app
 from app.clients.email_client import EmailClient
 from app.managers import limiter
-from app.routes import get_email_client
+from app.routes.ai import get_email_client as ai_get_email_client
+from app.routes.email import get_email_client as email_get_email_client
 
 
 @pytest.fixture
@@ -22,7 +23,8 @@ def mock_email_client() -> Generator[MagicMock]:
 def client(mock_email_client: MagicMock) -> Generator[TestClient]:
     # Disable rate limiting for tests
     limiter.enabled = False
-    app.dependency_overrides[get_email_client] = lambda: mock_email_client
+    app.dependency_overrides[email_get_email_client] = lambda: mock_email_client
+    app.dependency_overrides[ai_get_email_client] = lambda: mock_email_client
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

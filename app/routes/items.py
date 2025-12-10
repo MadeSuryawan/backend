@@ -33,7 +33,7 @@ async def create_item(item: Item, request: Request, response: Response) -> Item:
     """
     Create new item with cache busting.
 
-    Rate limited to 50 requests per minute.
+    Rate limited to 2 requests per minute.
     Invalidates the items list cache.
     """
     logger.info(f"Creating item: {item.name}")

@@ -4,6 +4,7 @@ from app.routes.cache import get_cache_manager
 from app.routes.cache import router as cache_router
 from app.routes.email import router as email_router
 from app.routes.items import router as items_router
+from app.routes.limiter import router as limiter_router
 
 __all__ = [
     "cache_router",
@@ -12,4 +13,5 @@ __all__ = [
     "items_router",
     "ai_router",
     "get_email_client",
+    "limiter_router",
 ]

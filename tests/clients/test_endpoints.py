@@ -78,7 +78,8 @@ def test_validation_error_missing_field(client: TestClient) -> None:
     assert response.status_code == 422
     data = response.json()
     # It might report multiple missing fields now, so we check if at least one is reported
-    assert data["detail"][0]["msg"] == "Field required"
+    assert data["detail"] == "Validation failed"
+    assert "Field required" in data["errors"][0]["message"]
 
 
 def test_google_api_failure(client: TestClient, mock_email_client: MagicMock) -> None:
