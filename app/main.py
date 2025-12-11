@@ -75,47 +75,30 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Middleware to tell FastAPI it is behind a proxy (Zuplo) or Render
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
-app.include_router(ai_router)
-app.include_router(email_router)
-app.include_router(user_router)
-app.include_router(blog_router)
-app.include_router(items_router)
-app.include_router(cache_router)
-app.include_router(limiter_router)
+routes = [
+    ai_router,
+    email_router,
+    user_router,
+    blog_router,
+    items_router,
+    cache_router,
+    limiter_router,
+]
 
+_ = [app.include_router(router) for router in routes]
 
-app.add_exception_handler(
-    CacheExceptionError,
-    cache_exception_handler,
-)
-app.add_exception_handler(
-    RateLimitExceeded,
-    rate_limit_exceeded_handler,
-)
-app.add_exception_handler(
-    EmailServiceError,
-    email_client_exception_handler,
-)
-app.add_exception_handler(
-    CircuitBreakerError,
-    circuit_breaker_exception_handler,
-)
-app.add_exception_handler(
-    PasswordHashingError,
-    password_hashing_exception_handler,
-)
-app.add_exception_handler(
-    DatabaseError,
-    database_exception_handler,
-)
-app.add_exception_handler(
-    AiError,
-    ai_exception_handler,
-)
-app.add_exception_handler(
-    RequestValidationError,
-    validation_exception_handler,
-)
+errors = [
+    (CacheExceptionError, cache_exception_handler),
+    (RateLimitExceeded, rate_limit_exceeded_handler),
+    (EmailServiceError, email_client_exception_handler),
+    (CircuitBreakerError, circuit_breaker_exception_handler),
+    (PasswordHashingError, password_hashing_exception_handler),
+    (DatabaseError, database_exception_handler),
+    (AiError, ai_exception_handler),
+    (RequestValidationError, validation_exception_handler),
+]
+
+_ = [app.add_exception_handler(exc_type, handler) for exc_type, handler in errors]
 
 app.state.limiter = limiter
 limiter: Limiter = app.state.limiter
