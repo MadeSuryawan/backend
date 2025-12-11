@@ -104,7 +104,7 @@ class CacheManager:
         self,
         key: str,
         namespace: str | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> object | None:
         """Get value from cache."""
         try:
             full_key = self._build_key(key, namespace)
@@ -135,7 +135,7 @@ class CacheManager:
     async def set(
         self,
         key: str,
-        value: dict[str, Any],
+        value: object,
         ttl: int | None = None,
         namespace: str | None = None,
     ) -> bool:

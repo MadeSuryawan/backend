@@ -1,3 +1,9 @@
+"""
+Limiter Routes.
+
+Endpoints to inspect limiter health and reset rate limits with clear error responses.
+"""
+
 from logging import getLogger
 from typing import Annotated
 
@@ -14,7 +20,7 @@ from app.schemas import LimiterHealthResponse, LimiterResetRequest, LimiterReset
 
 logger = file_logger(getLogger(__name__))
 
-router = APIRouter(prefix="/limiter", tags=["limiter"])
+router = APIRouter(prefix="/limiter", tags=["🚦 Limiter"])
 
 
 def get_limiter(app: FastAPI) -> Limiter:
@@ -82,9 +88,31 @@ async def _perform_limiter_reset(
     summary="Get limiter status",
     response_class=ORJSONResponse,
     response_model=LimiterHealthResponse,
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {"healthy": True, "storage": "redis", "detail": None},
+                },
+            },
+        },
+    },
+    operation_id="limiter_status",
 )
 async def get_limiter_status(request: Request) -> ORJSONResponse:
-    """Get status of the rate limiter storage."""
+    """
+    Get status of the rate limiter storage.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+
+    Returns
+    -------
+    ORJSONResponse
+        Health status of limiter storage.
+    """
     # Check if we can ping Redis via cache manager since it shares the same backend
 
     status = LimiterHealthResponse()
@@ -103,6 +131,48 @@ async def get_limiter_status(request: Request) -> ORJSONResponse:
     summary="Reset rate limits",
     response_class=ORJSONResponse,
     response_model=LimiterResetResponse,
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Reset 3 rate limit keys for identifier '127.0.0.1'",
+                        "count": 3,
+                        "identifier": "127.0.0.1",
+                    },
+                },
+            },
+        },
+        400: {
+            "description": "Bad request",
+            "content": {
+                "application/json": {"example": {"detail": "Could not determine identifier"}},
+            },
+        },
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required (localhost only)"},
+                },
+            },
+        },
+        503: {
+            "description": "Redis unavailable",
+            "content": {"application/json": {"example": {"detail": "Redis unavailable"}}},
+        },
+        501: {
+            "description": "Not implemented",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Per-endpoint reset requires explicit endpoint knowledge. Use all_endpoints=True for now.",
+                    },
+                },
+            },
+        },
+    },
+    operation_id="limiter_reset",
 )
 async def reset_limiter(
     request: Request,
@@ -111,10 +181,16 @@ async def reset_limiter(
     """
     Return limiter reset result.
 
-    Delegates all business logic to a dedicated helper for separation of concerns.
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    body : LimiterResetRequest
+        Reset parameters.
 
-    Args:
-        request: FastAPI Request object.
-        body: Reset parameters.
+    Returns
+    -------
+    LimiterResetResponse
+        Structured result including message, count, and identifier.
     """
     return await _perform_limiter_reset(request, body)

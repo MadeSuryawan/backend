@@ -41,7 +41,7 @@ logger = file_logger(getLogger(__name__))
 COMPRESSION_MARKER = b"\x00GZIP\x00"
 
 
-def serialize(value: dict[str, Any]) -> str:
+def serialize(value: object) -> str:
     """
     Serialize value to JSON string.
 

@@ -1,4 +1,5 @@
 # app/main.py
+
 """BaliBlissed Backend - Seamless caching integration with Redis for FastAPI."""
 
 from fastapi import FastAPI, Request
@@ -56,6 +57,12 @@ app = FastAPI(
     description="BaliBlissed Backend API",
     version="1.0.0",
     lifespan=lifespan,
+    swagger_ui_parameters={
+        "docExpansion": "none",
+        # "defaultModelsExpandDepth": -1,
+        # "tagsSorter": "alpha",
+        "operationsSorter": "method",
+    },
 )
 
 configure_cors(app)
@@ -66,10 +73,10 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Middleware to tell FastAPI it is behind a proxy (Zuplo) or Render
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
-app.include_router(cache_router)
+app.include_router(ai_router)
 app.include_router(email_router)
 app.include_router(items_router)
-app.include_router(ai_router)
+app.include_router(cache_router)
 app.include_router(limiter_router)
 
 
@@ -111,29 +118,56 @@ limiter: Limiter = app.state.limiter
 
 
 @app.get(
-    "/",
-    tags=["root"],
-    summary="Root access",
-    response_model=dict[str, str],
-    response_class=JSONResponse,
-)
-@limiter.limit("5/minute")
-async def root(request: Request, response: Response) -> JSONResponse:
-    """Root endpoint."""
-    response.headers["X-Frame-Options"] = "DENY"
-    return JSONResponse(content={"message": "Welcome to BaliBlissed Backend"})
-
-
-@app.get(
     "/health",
-    tags=["health"],
+    tags=["🩺 Health"],
     summary="Health check endpoint",
     response_model=HealthCheckResponse,
     response_class=ORJSONResponse,
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "version": "1.0.0",
+                        "status": "ok",
+                        "timestamp": "2025-01-01",
+                        "services": {
+                            "ai_client": "initialized",
+                            "email_client": "available",
+                            "ai_circuit_breaker": "closed",
+                            "email_circuit_breaker": "closed",
+                        },
+                        "cache": {"status": "healthy"},
+                    },
+                },
+            },
+        },
+    },
+    operation_id="health_check",
 )
 @limiter.exempt
 async def health_check(request: Request) -> ORJSONResponse:
-    """Health check endpoint with comprehensive status."""
+    """
+    Health check endpoint with comprehensive status.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+
+    Returns
+    -------
+    ORJSONResponse
+        Health status including services and cache information.
+
+    Examples
+    --------
+    Request
+        GET /health
+    Response
+        200 OK
+        {"version": "1.0.0", "status": "ok", "timestamp": "2025-01-01", "services": { ... }, "cache": { ... }}
+    """
     # Get cache health info
     cache_health_data = await cache_manager.health_check()
 
@@ -172,7 +206,7 @@ async def health_check(request: Request) -> ORJSONResponse:
     return ORJSONResponse(response_data)
 
 
-@app.get("/favicon.ico", include_in_schema=False)
+@app.get("/favicon.ico", tags=["🖼️ Assets"], include_in_schema=False)
 async def get_favicon() -> FileResponse:
     """Get favicon."""
 
@@ -181,18 +215,57 @@ async def get_favicon() -> FileResponse:
 
 @app.get(
     "/metrics",
-    tags=["metrics"],
+    tags=["📈 Metrics"],
     response_class=ORJSONResponse,
     summary="Get metrics",
     description="Get API performance metrics.",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "timestamp": "2025-01-01",
+                        "api_metrics": {"requests": 100, "latency_ms_avg": 12.3},
+                        "system_metrics": {"cpu": 0.42, "mem": 0.58},
+                    },
+                },
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
+        },
+    },
+    operation_id="get_metrics",
 )
 @limiter.limit("5/minute")
 async def get_metrics(request: Request, response: Response) -> ORJSONResponse:
     """
     Get API performance metrics.
 
-    Returns:
-        Dictionary containing performance metrics
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Current response context.
+
+    Returns
+    -------
+    ORJSONResponse
+        Dictionary containing performance metrics.
+
+    Notes
+    -----
+    Rate limited to 5 requests per minute.
+
+    Examples
+    --------
+    Request
+        GET /metrics
+    Response
+        200 OK
+        {"timestamp": "2025-01-01", "api_metrics": { ... }, "system_metrics": { ... }}
     """
 
     api_metrics = metrics_manager.get_metrics()
@@ -205,6 +278,66 @@ async def get_metrics(request: Request, response: Response) -> ORJSONResponse:
             "system_metrics": system_metrics,
         },
     )
+
+
+@app.get(
+    "/",
+    tags=["🏠 Root"],
+    summary="Root access",
+    response_model=dict[str, str],
+    response_class=JSONResponse,
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {"message": "Welcome to BaliBlissed Backend"},
+                },
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
+        },
+    },
+    operation_id="root_access",
+)
+@limiter.limit("5/minute")
+async def root(request: Request, response: Response) -> JSONResponse:
+    """
+    Root endpoint.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Current response context.
+
+    Returns
+    -------
+    JSONResponse
+        Welcome message payload.
+
+    Notes
+    -----
+    Rate limited to 5 requests per minute.
+
+    Examples
+    --------
+    Request
+        GET /
+    Response
+        200 OK
+        {"message": "Welcome to BaliBlissed Backend"}
+
+    Response schema
+    ---------------
+    {
+      "message": str
+    }
+    """
+    response.headers["X-Frame-Options"] = "DENY"
+    return JSONResponse(content={"message": "Welcome to BaliBlissed Backend"})
 
 
 if __name__ == "__main__":

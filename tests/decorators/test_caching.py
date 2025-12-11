@@ -128,6 +128,40 @@ class TestCachedDecorator:
         assert call_count == 1  # Should only be called once
 
     @pytest.mark.asyncio
+    async def test_caches_list_of_models_inferred(
+        self,
+        test_cache_manager: CacheManager,
+    ) -> None:
+        items = [SampleModel(id=1, name="a"), SampleModel(id=2, name="b")]
+
+        @cached(test_cache_manager, ttl=300)
+        async def get_list() -> list[SampleModel]:
+            return items
+
+        r1 = await get_list()
+        r2 = await get_list()
+        assert isinstance(r1, list) and isinstance(r1[0], SampleModel)
+        assert isinstance(r2, list) and isinstance(r2[0], SampleModel)
+        assert r1 == r2
+
+    @pytest.mark.asyncio
+    async def test_caches_dict_of_models_with_response_type(
+        self,
+        test_cache_manager: CacheManager,
+    ) -> None:
+        mapping = {"x": SampleModel(id=1, name="x")}
+
+        @cached(test_cache_manager, ttl=300, response_model=dict[str, SampleModel])
+        async def get_dict() -> dict[str, SampleModel]:
+            return mapping
+
+        r1 = await get_dict()
+        r2 = await get_dict()
+        assert isinstance(r1, dict) and isinstance(next(iter(r1.values())), SampleModel)
+        assert isinstance(r2, dict) and isinstance(next(iter(r2.values())), SampleModel)
+        assert r1 == r2
+
+    @pytest.mark.asyncio
     async def test_custom_key_builder(
         self,
         test_cache_manager: CacheManager,
