@@ -138,7 +138,6 @@ uv run pytest
 
 # Lint code
 uv run ruff check --fix
-uv run ruff format
 
 # Type checking
 uv run pyrefly check .

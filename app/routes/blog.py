@@ -41,12 +41,14 @@ from starlette.status import (
     HTTP_400_BAD_REQUEST,
     HTTP_403_FORBIDDEN,
     HTTP_404_NOT_FOUND,
+    HTTP_409_CONFLICT,
 )
 
 from app.configs import file_logger
 from app.db import get_session
 from app.decorators import cache_busting, cached, timed
 from app.errors.base import host
+from app.errors.database import DatabaseError, DuplicateEntryError
 from app.managers import cache_manager, limiter
 from app.models import BlogDB
 from app.repositories import BlogRepository
@@ -335,6 +337,10 @@ async def create_blog(
         blog_full = BlogSchema.model_validate(blog.model_dump())
         db_blog = await repo.create(blog_full, author_id=blog.author_id)
         return db_blog_to_response(db_blog)
+    except DuplicateEntryError as e:
+        raise HTTPException(status_code=HTTP_409_CONFLICT, detail=e.detail) from e
+    except DatabaseError as e:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail) from e
     except ValueError as e:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(e)) from e
 

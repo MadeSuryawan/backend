@@ -1,8 +1,10 @@
 """Database engine and session management."""
 
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from logging import getLogger
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -16,8 +18,29 @@ from app.configs import file_logger, settings
 
 logger = file_logger(getLogger(__name__))
 
+STATEMENT_TIMEOUT_MS = 30000
 
-# Create async engine with connection pooling
+
+def _configure_engine_events(engine: AsyncEngine) -> None:
+    """Configure connection pool events for monitoring."""
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def on_connect(dbapi_connection: object, connection_record: object) -> None:
+        logger.debug("New database connection established")
+
+    @event.listens_for(engine.sync_engine, "checkout")
+    def on_checkout(
+        dbapi_connection: object,
+        connection_record: object,
+        connection_proxy: object,
+    ) -> None:
+        logger.debug("Connection checked out from pool")
+
+    @event.listens_for(engine.sync_engine, "checkin")
+    def on_checkin(dbapi_connection: object, connection_record: object) -> None:
+        logger.debug("Connection returned to pool")
+
+
 engine: AsyncEngine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DATABASE_ECHO,
@@ -25,10 +48,19 @@ engine: AsyncEngine = create_async_engine(
     max_overflow=settings.MAX_OVERFLOW,
     pool_timeout=settings.POOL_TIMEOUT,
     pool_recycle=settings.POOL_RECYCLE,
-    pool_pre_ping=True,  # Verify connections before using them
+    pool_pre_ping=True,
+    connect_args={
+        "command_timeout": STATEMENT_TIMEOUT_MS / 1000,
+        "server_settings": {
+            "statement_timeout": str(STATEMENT_TIMEOUT_MS),
+            "lock_timeout": str(STATEMENT_TIMEOUT_MS),
+        },
+    },
 )
 
-# Create async session factory
+if settings.DEBUG:
+    _configure_engine_events(engine)
+
 async_session_maker: async_sessionmaker[SQLModelAsyncSession] = async_sessionmaker(
     engine,
     class_=SQLModelAsyncSession,
@@ -62,6 +94,37 @@ async def get_session() -> AsyncGenerator[AsyncSession]:
             await session.commit()
         except Exception:
             await session.rollback()
+            logger.exception("Database session error")
+            raise
+        finally:
+            await session.close()
+
+
+@asynccontextmanager
+async def transaction() -> AsyncGenerator[AsyncSession]:
+    """
+    Context manager for explicit transaction management.
+
+    Use this for operations that need explicit transaction control.
+
+    Yields:
+        AsyncSession: Database session within a transaction
+
+    Example:
+        ```python
+        async with transaction() as session:
+            user = UserDB(username="test", ...)
+            session.add(user)
+            # Commits on successful exit, rolls back on exception
+        ```
+    """
+    async with async_session_maker() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            logger.exception("Transaction error")
             raise
         finally:
             await session.close()

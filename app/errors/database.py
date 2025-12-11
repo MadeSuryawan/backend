@@ -1,6 +1,10 @@
 from logging import getLogger
 
-from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
+from starlette.status import (
+    HTTP_404_NOT_FOUND,
+    HTTP_409_CONFLICT,
+    HTTP_500_INTERNAL_SERVER_ERROR,
+)
 
 from app.configs import file_logger
 from app.errors.base import BaseAppError, create_exception_handler
@@ -45,6 +49,36 @@ class DatabaseInitializationError(DatabaseError):
     def __init__(
         self,
         detail: str = "Failed to initialize database",
+    ) -> None:
+        super().__init__(detail, HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class DuplicateEntryError(DatabaseError):
+    """Exception raised when attempting to create a duplicate entry."""
+
+    def __init__(
+        self,
+        detail: str = "A record with this value already exists",
+    ) -> None:
+        super().__init__(detail, HTTP_409_CONFLICT)
+
+
+class RecordNotFoundError(DatabaseError):
+    """Exception raised when a record is not found."""
+
+    def __init__(
+        self,
+        detail: str = "Record not found",
+    ) -> None:
+        super().__init__(detail, HTTP_404_NOT_FOUND)
+
+
+class TransactionError(DatabaseError):
+    """Exception raised when a transaction fails."""
+
+    def __init__(
+        self,
+        detail: str = "Transaction failed",
     ) -> None:
         super().__init__(detail, HTTP_500_INTERNAL_SERVER_ERROR)
 

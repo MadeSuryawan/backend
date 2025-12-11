@@ -5,10 +5,13 @@ from logging import getLogger
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.configs import file_logger
+from app.errors.database import DatabaseError, DuplicateEntryError
 from app.models.blog import BlogDB
 from app.schemas.blog import Blog, BlogUpdate
 
@@ -73,26 +76,19 @@ class BlogRepository:
             BlogDB: Created blog database model
 
         Raises:
-            ValueError: If slug already exists
+            DuplicateEntryError: If slug already exists
+            DatabaseError: For other database errors
         """
-        # Check if slug already exists
-        existing_blog = await self.get_by_slug(blog.slug)
-        if existing_blog:
-            msg = f"Slug '{blog.slug}' already exists"
-            raise ValueError(msg)
-
-        # Calculate word count and reading time
         word_count = calculate_word_count(blog.content)
         reading_time = calculate_reading_time(word_count)
 
-        # Create database model
         db_blog = BlogDB(
             author_id=author_id,
             title=blog.title,
             slug=blog.slug,
             content=blog.content,
             summary=blog.summary,
-            view_count=0,  # Default for new blogs
+            view_count=0,
             word_count=word_count,
             reading_time_minutes=reading_time,
             status=blog.status if hasattr(blog, "status") and blog.status else "draft",
@@ -102,11 +98,19 @@ class BlogRepository:
             updated_at=datetime.now(tz=UTC).replace(second=0, microsecond=0),
         )
 
-        self.session.add(db_blog)
-        await self.session.flush()
-        await self.session.refresh(db_blog)
-
-        return db_blog
+        try:
+            self.session.add(db_blog)
+            await self.session.flush()
+            await self.session.refresh(db_blog)
+            return db_blog
+        except IntegrityError as e:
+            await self.session.rollback()
+            error_msg = str(e.orig) if e.orig else str(e)
+            if "slug" in error_msg.lower():
+                raise DuplicateEntryError(
+                    detail=f"Blog with slug '{blog.slug}' already exists",
+                ) from e
+            raise DatabaseError(detail=f"Database integrity error: {error_msg}") from e
 
     async def get_by_id(self, blog_id: UUID) -> BlogDB | None:
         """
@@ -294,7 +298,10 @@ class BlogRepository:
         limit: int = 10,
     ) -> list[BlogDB]:
         """
-        Search blogs by tags.
+        Search blogs by tags using PostgreSQL JSONB operators.
+
+        Uses GIN index for efficient tag searching. Returns blogs that match
+        any of the provided tags.
 
         Args:
             tags: List of tags to search for
@@ -304,15 +311,56 @@ class BlogRepository:
         Returns:
             list[BlogDB]: List of blogs matching any of the tags
         """
-        # Note: This is a simple implementation that checks if any tag matches
-        # For production, consider using PostgreSQL's array operators or full-text search
-        all_blogs = await self.get_all(
-            skip=0,
-            limit=1000,
-        )  # Get more blogs for filtering
+        if not tags:
+            return []
 
-        matching_blogs = [blog for blog in all_blogs if any(tag in blog.tags for tag in tags)]
-        logger.info(f"Found {len(matching_blogs)} blogs matching tags {tags}")
+        # pyrefly: ignore [missing-attribute]
+        tag_conditions = [func.jsonb_exists(BlogDB.tags.cast(JSONB), tag) for tag in tags]
+        query = (
+            select(BlogDB)
+            .where(or_(*tag_conditions))
+            # pyrefly: ignore [bad-argument-type]
+            .order_by(desc(BlogDB.created_at))
+            .offset(skip)
+            .limit(limit)
+        )
 
-        # Apply pagination
-        return matching_blogs[skip : skip + limit]
+        result = await self.session.execute(query)
+        blogs = list(result.scalars().all())
+        logger.info(f"Found {len(blogs)} blogs matching tags {tags}")
+        return blogs
+
+    async def search_by_tags_all(
+        self,
+        tags: list[str],
+        skip: int = 0,
+        limit: int = 10,
+    ) -> list[BlogDB]:
+        """
+        Search blogs that contain ALL provided tags.
+
+        Uses GIN index with containment operator for efficient searching.
+
+        Args:
+            tags: List of tags that must all be present
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+
+        Returns:
+            list[BlogDB]: List of blogs containing all specified tags
+        """
+        if not tags:
+            return []
+
+        query = (
+            select(BlogDB)
+            # pyrefly: ignore [missing-attribute]
+            .where(BlogDB.tags.cast(JSONB).contains(tags))
+            # pyrefly: ignore [bad-argument-type]
+            .order_by(desc(BlogDB.created_at))
+            .offset(skip)
+            .limit(limit)
+        )
+
+        result = await self.session.execute(query)
+        return list(result.scalars().all())

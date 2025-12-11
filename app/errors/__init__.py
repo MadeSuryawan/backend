@@ -27,6 +27,9 @@ from app.errors.database import (
     DatabaseConnectionError,
     DatabaseError,
     DatabaseInitializationError,
+    DuplicateEntryError,
+    RecordNotFoundError,
+    TransactionError,
     database_exception_handler,
 )
 from app.errors.email import (
@@ -68,6 +71,9 @@ __all__ = [
     "DatabaseConnectionError",
     "DatabaseConfigurationError",
     "DatabaseInitializationError",
+    "DuplicateEntryError",
+    "RecordNotFoundError",
+    "TransactionError",
     "database_exception_handler",
     "AiError",
     "AiAuthenticationError",

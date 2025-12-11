@@ -6,6 +6,7 @@ from app.db.database import (
     engine,
     get_session,
     init_db,
+    transaction,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "get_session",
     "init_db",
     "close_db",
+    "transaction",
 ]

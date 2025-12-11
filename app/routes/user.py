@@ -39,12 +39,14 @@ from starlette.status import (
     HTTP_400_BAD_REQUEST,
     HTTP_403_FORBIDDEN,
     HTTP_404_NOT_FOUND,
+    HTTP_409_CONFLICT,
 )
 
 from app.configs import file_logger
 from app.db import get_session
 from app.decorators import cache_busting, cached, timed
 from app.errors.base import host
+from app.errors.database import DatabaseError, DuplicateEntryError
 from app.managers import cache_manager, limiter
 from app.models import UserDB
 from app.repositories import UserRepository
@@ -234,8 +236,10 @@ async def create_user(
             namespace="users",
         )
         return db_user_to_response(db_user)
-    except ValueError as e:
-        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except DuplicateEntryError as e:
+        raise HTTPException(status_code=HTTP_409_CONFLICT, detail=e.detail) from e
+    except DatabaseError as e:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail) from e
 
 
 @router.get(
@@ -597,8 +601,10 @@ async def update_user(
         )
         await cache_manager.delete(*keys, namespace="users")
         return db_user_to_response(db_user)
-    except ValueError as e:
-        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except DuplicateEntryError as e:
+        raise HTTPException(status_code=HTTP_409_CONFLICT, detail=e.detail) from e
+    except DatabaseError as e:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail) from e
 
 
 @router.delete(

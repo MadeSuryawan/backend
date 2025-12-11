@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import ClassVar
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime
+from sqlalchemy import DateTime, Index
 from sqlmodel import JSON, Column, Field, ForeignKey, SQLModel, String
 
 
@@ -19,6 +19,11 @@ class BlogDB(SQLModel, table=True):
 
     # pyrefly: ignore [bad-override]
     __tablename__: ClassVar[str] = "blogs"
+    __table_args__ = (
+        Index("ix_blogs_tags_gin", "tags", postgresql_using="gin"),
+        Index("ix_blogs_status_created", "status", "created_at"),
+        Index("ix_blogs_author_status", "author_id", "status"),
+    )
 
     # Primary key
     id: UUID = Field(

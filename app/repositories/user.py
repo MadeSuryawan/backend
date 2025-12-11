@@ -4,8 +4,10 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.errors.database import DatabaseError, DuplicateEntryError
 from app.managers import hash_password, verify_password
 from app.models.user import UserDB
 from app.schemas.user import UserCreate, UserUpdate
@@ -39,24 +41,11 @@ class UserRepository:
             UserDB: Created user database model
 
         Raises:
-            ValueError: If username or email already exists
+            DuplicateEntryError: If username or email already exists
+            DatabaseError: For other database errors
         """
-        # Check if username already exists
-        existing_user = await self.get_by_username(user.username)
-        if existing_user:
-            msg = f"Username '{user.username}' already exists"
-            raise ValueError(msg)
-
-        # Check if email already exists
-        existing_email = await self.get_by_email(user.email)
-        if existing_email:
-            msg = f"Email '{user.email}' already exists"
-            raise ValueError(msg)
-
-        # Hash password
         password_hash = hash_password(user.password.get_secret_value())
 
-        # Create database model
         db_user = UserDB(
             username=user.username,
             email=user.email,
@@ -72,11 +61,23 @@ class UserRepository:
             country=user.country,
         )
 
-        self.session.add(db_user)
-        await self.session.flush()
-        await self.session.refresh(db_user)
-
-        return db_user
+        try:
+            self.session.add(db_user)
+            await self.session.flush()
+            await self.session.refresh(db_user)
+            return db_user
+        except IntegrityError as e:
+            await self.session.rollback()
+            error_msg = str(e.orig) if e.orig else str(e)
+            if "username" in error_msg.lower():
+                raise DuplicateEntryError(
+                    detail=f"Username '{user.username}' already exists",
+                ) from e
+            if "email" in error_msg.lower():
+                raise DuplicateEntryError(
+                    detail=f"Email '{user.email}' already exists",
+                ) from e
+            raise DatabaseError(detail=f"Database integrity error: {error_msg}") from e
 
     async def get_by_id(self, user_id: UUID) -> UserDB | None:
         """
@@ -158,47 +159,43 @@ class UserRepository:
             UserDB | None: Updated user if found, None otherwise
 
         Raises:
-            ValueError: If email already exists for another user
+            DuplicateEntryError: If email already exists for another user
+            DatabaseError: For other database errors
         """
         db_user = await self.get_by_id(user_id)
         if not db_user:
             return None
 
-        # Check if email is being updated and already exists
-        if user_update.email:
-            existing_email = await self.get_by_email(user_update.email)
-            if existing_email and existing_email.uuid != user_id:
-                msg = f"Email '{user_update.email}' already exists"
-                raise ValueError(msg)
-
-        # Update fields
         update_data = user_update.model_dump(exclude_unset=True, exclude_none=True)
 
-        # Handle password update
         if user_update.password:
             password_hash = hash_password(user_update.password.get_secret_value())
             update_data["password_hash"] = password_hash
-            # Remove password and confirmed_password from update_data
             update_data.pop("password", None)
             update_data.pop("confirmed_password", None)
 
-        # Convert URLs to strings
         if "profile_picture" in update_data and update_data["profile_picture"]:
             update_data["profile_picture"] = str(update_data["profile_picture"])
         if "website" in update_data and update_data["website"]:
             update_data["website"] = str(update_data["website"])
 
-        # Update timestamp
         update_data["updated_at"] = datetime.now(tz=UTC)
 
-        # Apply updates
         for key, value in update_data.items():
             setattr(db_user, key, value)
 
-        await self.session.flush()
-        await self.session.refresh(db_user)
-
-        return db_user
+        try:
+            await self.session.flush()
+            await self.session.refresh(db_user)
+            return db_user
+        except IntegrityError as e:
+            await self.session.rollback()
+            error_msg = str(e.orig) if e.orig else str(e)
+            if "email" in error_msg.lower():
+                raise DuplicateEntryError(
+                    detail=f"Email '{user_update.email}' already exists",
+                ) from e
+            raise DatabaseError(detail=f"Database integrity error: {error_msg}") from e
 
     async def delete(self, user_id: UUID) -> bool:
         """
