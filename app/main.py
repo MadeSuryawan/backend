@@ -42,11 +42,13 @@ from app.middleware import (
 )
 from app.routes import (
     ai_router,
+    blog_router,
     cache_router,
     email_router,
     get_email_client,
     items_router,
     limiter_router,
+    user_router,
 )
 from app.schemas import HealthCheckResponse
 from app.schemas.cache import CacheHealthResponse, ServicesStatus
@@ -75,6 +77,8 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 app.include_router(ai_router)
 app.include_router(email_router)
+app.include_router(user_router)
+app.include_router(blog_router)
 app.include_router(items_router)
 app.include_router(cache_router)
 app.include_router(limiter_router)
