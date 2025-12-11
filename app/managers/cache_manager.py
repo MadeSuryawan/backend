@@ -168,14 +168,15 @@ class CacheManager:
         """Delete keys from cache."""
         try:
             full_keys = [self._build_key(key, namespace) for key in keys]
-            if deleted_count := await self._client.delete(*full_keys):
+            deleted_count = await self._client.delete(*full_keys)
+            if deleted_count:
                 self.statistics.record_delete()
         except BASE_EXCEPTION as e:
             logger.exception("Cache delete failed for keys: %s", keys)
             self.statistics.record_error()
             mssg = "Cache delete failed"
             raise CacheKeyError(mssg) from e
-        return deleted_count  # type: ignore
+        return deleted_count
 
     async def exists(self, *keys: str, namespace: str | None = None) -> int:
         """Check if keys exist."""

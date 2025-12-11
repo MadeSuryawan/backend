@@ -2,13 +2,14 @@
 
 from datetime import UTC, datetime
 from logging import getLogger
-from typing import Literal
+from typing import Literal, cast
 from uuid import UUID
 
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.expression import ColumnElement
 
 from app.configs import file_logger
 from app.errors.database import DatabaseError, DuplicateEntryError
@@ -123,8 +124,7 @@ class BlogRepository:
             BlogDB | None: Blog if found, None otherwise
         """
         result = await self.session.execute(
-            # pyrefly: ignore [bad-argument-type]
-            select(BlogDB).where(BlogDB.id == blog_id),
+            select(BlogDB).where(cast(ColumnElement[bool], BlogDB.id == blog_id)),
         )
         return result.scalar_one_or_none()
 
@@ -139,8 +139,7 @@ class BlogRepository:
             BlogDB | None: Blog if found, None otherwise
         """
         result = await self.session.execute(
-            # pyrefly: ignore [bad-argument-type]
-            select(BlogDB).where(BlogDB.slug == slug),
+            select(BlogDB).where(cast(ColumnElement[bool], BlogDB.slug == slug)),
         )
         return result.scalar_one_or_none()
 
@@ -167,15 +166,16 @@ class BlogRepository:
 
         # Apply filters
         if status:
-            # pyrefly: ignore [bad-argument-type]
-            query = query.where(BlogDB.status == status)
+            query = query.where(cast(ColumnElement[bool], BlogDB.status == status))
         if author_id:
-            # pyrefly: ignore [bad-argument-type]
-            query = query.where(BlogDB.author_id == author_id)
+            query = query.where(cast(ColumnElement[bool], BlogDB.author_id == author_id))
 
         # Apply pagination and ordering
-        # pyrefly: ignore [bad-argument-type]
-        query = query.order_by(desc(BlogDB.created_at)).offset(skip).limit(limit)
+        query = (
+            query.order_by(desc(cast(ColumnElement[datetime], BlogDB.created_at)))
+            .offset(skip)
+            .limit(limit)
+        )
 
         result = await self.session.execute(query)
         return list(result.scalars().all())
@@ -314,13 +314,13 @@ class BlogRepository:
         if not tags:
             return []
 
-        # pyrefly: ignore [missing-attribute]
-        tag_conditions = [func.jsonb_exists(BlogDB.tags.cast(JSONB), tag) for tag in tags]
+        tag_conditions = [
+            func.jsonb_exists(cast(ColumnElement, BlogDB.tags).cast(JSONB), tag) for tag in tags
+        ]
         query = (
             select(BlogDB)
             .where(or_(*tag_conditions))
-            # pyrefly: ignore [bad-argument-type]
-            .order_by(desc(BlogDB.created_at))
+            .order_by(desc(cast(ColumnElement[datetime], BlogDB.created_at)))
             .offset(skip)
             .limit(limit)
         )
@@ -354,10 +354,8 @@ class BlogRepository:
 
         query = (
             select(BlogDB)
-            # pyrefly: ignore [missing-attribute]
-            .where(BlogDB.tags.cast(JSONB).contains(tags))
-            # pyrefly: ignore [bad-argument-type]
-            .order_by(desc(BlogDB.created_at))
+            .where(cast(ColumnElement, BlogDB.tags).cast(JSONB).contains(tags))
+            .order_by(desc(cast(ColumnElement[datetime], BlogDB.created_at)))
             .offset(skip)
             .limit(limit)
         )

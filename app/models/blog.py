@@ -1,9 +1,10 @@
 """Blog database model using SQLModel."""
 
 from datetime import UTC, datetime
-from typing import ClassVar
+from typing import Any, cast
 from uuid import UUID, uuid4
 
+from pydantic import ConfigDict
 from sqlalchemy import DateTime, Index
 from sqlmodel import JSON, Column, Field, ForeignKey, SQLModel, String
 
@@ -17,8 +18,7 @@ class BlogDB(SQLModel, table=True):
     and a foreign key relationship to the User model.
     """
 
-    # pyrefly: ignore [bad-override]
-    __tablename__: ClassVar[str] = "blogs"
+    __tablename__ = cast(Any, "blogs")
     __table_args__ = (
         Index("ix_blogs_tags_gin", "tags", postgresql_using="gin"),
         Index("ix_blogs_status_created", "status", "created_at"),
@@ -111,11 +111,8 @@ class BlogDB(SQLModel, table=True):
         description="Last update timestamp",
     )
 
-    # pyrefly: ignore [bad-override]
-    class Config:
-        """Pydantic configuration."""
-
-        json_schema_extra: dict[str, dict[str, int | list[str] | str]] = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "550e8400-e29b-41d4-a716-446655440000",
                 "author_id": "123e4567-e89b-12d3-a456-426614174000",
@@ -128,4 +125,5 @@ class BlogDB(SQLModel, table=True):
                 "tags": ["travel", "bali", "guide"],
                 "images_url": ["https://example.com/bali1.jpg"],
             },
-        }
+        },
+    )

@@ -1,9 +1,10 @@
 """User database model using SQLModel."""
 
 from datetime import UTC, datetime
-from typing import ClassVar
+from typing import Any, cast
 from uuid import UUID, uuid4
 
+from pydantic import ConfigDict
 from sqlalchemy import DateTime
 from sqlmodel import Column, Field, SQLModel, String
 
@@ -16,8 +17,7 @@ class UserDB(SQLModel, table=True):
     It includes all fields from the User schema with proper database types.
     """
 
-    # pyrefly: ignore [bad-override]
-    __tablename__: ClassVar[str] = "users"
+    __tablename__ = cast(Any, "users")
 
     # Primary key
     uuid: UUID = Field(
@@ -112,11 +112,8 @@ class UserDB(SQLModel, table=True):
         description="Last update timestamp",
     )
 
-    # pyrefly: ignore [bad-override]
-    class Config:
-        """Pydantic configuration."""
-
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "uuid": "123e4567-e89b-12d3-a456-426614174000",
                 "username": "johndoe",
@@ -126,4 +123,5 @@ class UserDB(SQLModel, table=True):
                 "is_active": True,
                 "is_verified": False,
             },
-        }
+        },
+    )

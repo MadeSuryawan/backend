@@ -1,11 +1,13 @@
 """User repository for database operations."""
 
 from datetime import UTC, datetime
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.expression import ColumnElement
 
 from app.errors.database import DatabaseError, DuplicateEntryError
 from app.managers import hash_password, verify_password
@@ -90,8 +92,7 @@ class UserRepository:
             UserDB | None: User if found, None otherwise
         """
         result = await self.session.execute(
-            # pyrefly: ignore [bad-argument-type]
-            select(UserDB).where(UserDB.uuid == user_id),
+            select(UserDB).where(cast(ColumnElement[bool], UserDB.uuid == user_id)),
         )
         return result.scalar_one_or_none()
 
@@ -106,8 +107,7 @@ class UserRepository:
             UserDB | None: User if found, None otherwise
         """
         result = await self.session.execute(
-            # pyrefly: ignore [bad-argument-type]
-            select(UserDB).where(UserDB.username == username),
+            select(UserDB).where(cast(ColumnElement[bool], UserDB.username == username)),
         )
         return result.scalar_one_or_none()
 
@@ -122,8 +122,7 @@ class UserRepository:
             UserDB | None: User if found, None otherwise
         """
         result = await self.session.execute(
-            # pyrefly: ignore [bad-argument-type]
-            select(UserDB).where(UserDB.email == email),
+            select(UserDB).where(cast(ColumnElement[bool], UserDB.email == email)),
         )
         return result.scalar_one_or_none()
 
