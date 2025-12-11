@@ -1,3 +1,5 @@
+# app/routes/blog.py
+
 """
 Blog Routes.
 
@@ -25,7 +27,7 @@ authenticated/identified clients.
 
 from dataclasses import dataclass
 from logging import getLogger
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
@@ -37,12 +39,14 @@ from starlette.status import (
     HTTP_201_CREATED,
     HTTP_204_NO_CONTENT,
     HTTP_400_BAD_REQUEST,
+    HTTP_403_FORBIDDEN,
     HTTP_404_NOT_FOUND,
 )
 
 from app.configs import file_logger
 from app.db import get_session
 from app.decorators import cache_busting, cached, timed
+from app.errors.base import host
 from app.managers import cache_manager, limiter
 from app.models import BlogDB
 from app.repositories import BlogRepository
@@ -272,6 +276,7 @@ def blogs_search_tags_key(tags: list[str], pagination: PaginationQuery) -> str:
 @cache_busting(
     cache_manager,
     key_builder=lambda blog, **kw: [
+        blog_slug_key(blog.slug),
         blogs_list_key(
             BlogListQuery(skip=0, limit=10, status_filter=blog.status, author_id=blog.author_id),
         ),
@@ -833,12 +838,51 @@ async def update_blog(
         If blog not found or invalid update.
     """
     try:
+        existing = await repo.get_by_id(blog_id)
         db_blog = await repo.update(blog_id, blog_update)
         if not db_blog:
             raise HTTPException(
                 status_code=HTTP_404_NOT_FOUND,
                 detail=f"Blog with ID {blog_id} not found",
             )
+        keys: list[str] = []
+        if existing:
+            keys.extend(
+                [
+                    blog_slug_key(existing.slug),
+                    blogs_by_author_key(existing.author_id, PaginationQuery(skip=0, limit=10)),
+                    blogs_list_key(
+                        BlogListQuery(
+                            skip=0,
+                            limit=10,
+                            status_filter=cast(
+                                Literal["draft", "published", "archived"] | None,
+                                existing.status,
+                            ),
+                        ),
+                    ),
+                    blogs_search_tags_key(existing.tags, PaginationQuery(skip=0, limit=10)),
+                ],
+            )
+        keys.extend(
+            [
+                blog_slug_key(db_blog.slug),
+                blogs_by_author_key(db_blog.author_id, PaginationQuery(skip=0, limit=10)),
+                blogs_list_key(
+                    BlogListQuery(
+                        skip=0,
+                        limit=10,
+                        status_filter=cast(
+                            Literal["draft", "published", "archived"] | None,
+                            db_blog.status,
+                        ),
+                    ),
+                ),
+                blogs_search_tags_key(db_blog.tags, PaginationQuery(skip=0, limit=10)),
+            ],
+        )
+        if keys:
+            await cache_manager.delete(*keys, namespace="blogs")
         return db_blog_to_response(db_blog)
     except ValueError as e:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(e)) from e
@@ -899,12 +943,30 @@ async def delete_blog(
     HTTPException
         If blog not found.
     """
+    existing = await repo.get_by_id(blog_id)
     deleted = await repo.delete(blog_id)
     if not deleted:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
             detail=f"Blog with ID {blog_id} not found",
         )
+    if existing:
+        keys = [
+            blog_slug_key(existing.slug),
+            blogs_by_author_key(existing.author_id, PaginationQuery(skip=0, limit=10)),
+            blogs_list_key(
+                BlogListQuery(
+                    skip=0,
+                    limit=10,
+                    status_filter=cast(
+                        Literal["draft", "published", "archived"] | None,
+                        existing.status,
+                    ),
+                ),
+            ),
+            blogs_search_tags_key(existing.tags, PaginationQuery(skip=0, limit=10)),
+        ]
+        await cache_manager.delete(*keys, namespace="blogs")
 
 
 @router.post(
@@ -953,3 +1015,277 @@ async def bust_blogs_list(
         Status message indicating success.
     """
     return ORJSONResponse(content={"status": "success"})
+
+
+@router.post(
+    "/bust-by-slug",
+    response_class=ORJSONResponse,
+    summary="Bust cached blog by slug",
+    description="Invalidate cached blog detail for a given slug.",
+    responses={
+        200: {"content": {"application/json": {"example": {"status": "success"}}}},
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required (localhost only)"},
+                },
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
+        },
+    },
+    operation_id="blogs_bust_by_slug",
+)
+@timed("/blogs/bust-by-slug")
+@limiter.limit("10/minute")
+@cache_busting(
+    cache_manager,
+    key_builder=lambda slug, **kw: [blog_slug_key(slug)],
+    namespace="blogs",
+)
+async def bust_blog_by_slug(
+    request: Request,
+    response: Response,
+    slug: str,
+) -> ORJSONResponse:
+    if host(request) not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Admin access required (localhost only)",
+        )
+    return ORJSONResponse(content={"status": "success"})
+
+
+@router.post(
+    "/bust-by-author",
+    response_class=ORJSONResponse,
+    summary="Bust cached blogs by author",
+    description="Invalidate cached blogs listing for a given author and pagination.",
+    responses={
+        200: {"content": {"application/json": {"example": {"status": "success"}}}},
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required (localhost only)"},
+                },
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
+        },
+    },
+    operation_id="blogs_bust_by_author",
+)
+@timed("/blogs/bust-by-author")
+@limiter.limit("10/minute")
+@cache_busting(
+    cache_manager,
+    key_builder=lambda author_id, pagination, **kw: [
+        blogs_by_author_key(author_id, pagination),
+    ],
+    namespace="blogs",
+)
+async def bust_blogs_by_author(
+    request: Request,
+    response: Response,
+    author_id: UUID,
+    pagination: Annotated[PaginationQuery, Depends(get_pagination_query)],
+) -> ORJSONResponse:
+    if host(request) not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Admin access required (localhost only)",
+        )
+    return ORJSONResponse(content={"status": "success"})
+
+
+@router.post(
+    "/bust-by-tags",
+    response_class=ORJSONResponse,
+    summary="Bust cached blogs by tags",
+    description="Invalidate cached blogs search results for given tags and pagination.",
+    responses={
+        200: {"content": {"application/json": {"example": {"status": "success"}}}},
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required (localhost only)"},
+                },
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
+        },
+    },
+    operation_id="blogs_bust_by_tags",
+)
+@timed("/blogs/bust-by-tags")
+@limiter.limit("10/minute")
+@cache_busting(
+    cache_manager,
+    key_builder=lambda tags, pagination, **kw: [
+        blogs_search_tags_key(tags, pagination),
+    ],
+    namespace="blogs",
+)
+async def bust_blogs_by_tags(
+    request: Request,
+    response: Response,
+    tags: Annotated[list[str], Query(description="Tags to match (any)")],
+    pagination: Annotated[PaginationQuery, Depends(get_pagination_query)],
+) -> ORJSONResponse:
+    if host(request) not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Admin access required (localhost only)",
+        )
+    return ORJSONResponse(content={"status": "success"})
+
+
+@router.post(
+    "/bust-list-multi",
+    response_class=ORJSONResponse,
+    summary="Bust multiple blogs list cache pages",
+    description="Invalidate cached blogs list pages across multiple `limit` values.",
+    responses={
+        200: {"content": {"application/json": {"example": {"status": "success"}}}},
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required (localhost only)"},
+                },
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
+        },
+    },
+    operation_id="blogs_bust_list_multi",
+)
+@timed("/blogs/bust-list-multi")
+@limiter.limit("10/minute")
+@cache_busting(
+    cache_manager,
+    key_builder=lambda query, limits, **kw: [
+        blogs_list_key(
+            BlogListQuery(
+                skip=query.skip,
+                limit=limit,
+                status_filter=query.status_filter,
+                author_id=query.author_id,
+            ),
+        )
+        for limit in limits
+    ],
+    namespace="blogs",
+)
+async def bust_blogs_list_multi(
+    request: Request,
+    response: Response,
+    query: Annotated[BlogListQuery, Depends(get_blog_list_query)],
+    limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
+) -> ORJSONResponse:
+    if host(request) not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Admin access required (localhost only)",
+        )
+    return ORJSONResponse(content={"status": "success"})
+
+
+@router.post(
+    "/bust-list-grid",
+    response_class=ORJSONResponse,
+    summary="Bust blogs list pages across limits and skips",
+    description="Invalidate cached blogs list pages across multiple `limit` and `skip` values.",
+    responses={
+        200: {"content": {"application/json": {"example": {"status": "success"}}}},
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required (localhost only)"},
+                },
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
+        },
+    },
+    operation_id="blogs_bust_list_grid",
+)
+@timed("/blogs/bust-list-grid")
+@limiter.limit("10/minute")
+@cache_busting(
+    cache_manager,
+    key_builder=lambda query, limits, skips, **kw: [
+        blogs_list_key(
+            BlogListQuery(
+                skip=s,
+                limit=limit_value,
+                status_filter=query.status_filter,
+                author_id=query.author_id,
+            ),
+        )
+        for limit_value in limits
+        for s in skips
+    ],
+    namespace="blogs",
+)
+async def bust_blogs_list_grid(
+    request: Request,
+    response: Response,
+    query: Annotated[BlogListQuery, Depends(get_blog_list_query)],
+    limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
+    skips: Annotated[list[int], Query(description="List of skip values to invalidate.")],
+) -> ORJSONResponse:
+    if host(request) not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Admin access required (localhost only)",
+        )
+    return ORJSONResponse(content={"status": "success"})
+
+
+@router.delete(
+    "/bust-all",
+    response_class=ORJSONResponse,
+    summary="Clear blogs cache namespace",
+    description="Clear all cached keys in the blogs namespace.",
+    responses={
+        200: {"content": {"application/json": {"example": {"status": "cleared"}}}},
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required (localhost only)"},
+                },
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
+        },
+    },
+    operation_id="blogs_bust_all",
+)
+@timed("/blogs/bust-all")
+@limiter.limit("5/minute")
+async def bust_blogs_all(request: Request, response: Response) -> ORJSONResponse:
+    if host(request) not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Admin access required (localhost only)",
+        )
+    await cache_manager.clear(namespace="blogs")
+    return ORJSONResponse(content={"status": "cleared"})

@@ -1,4 +1,5 @@
 # app/routes/user.py
+
 """
 User Routes.
 
@@ -22,6 +23,7 @@ limits apply when `X-API-Key` is present, offering higher throughput for
 authenticated/identified clients.
 """
 
+from dataclasses import dataclass
 from logging import getLogger
 from typing import Annotated
 from uuid import UUID
@@ -35,12 +37,14 @@ from starlette.status import (
     HTTP_201_CREATED,
     HTTP_204_NO_CONTENT,
     HTTP_400_BAD_REQUEST,
+    HTTP_403_FORBIDDEN,
     HTTP_404_NOT_FOUND,
 )
 
 from app.configs import file_logger
 from app.db import get_session
 from app.decorators import cache_busting, cached, timed
+from app.errors.base import host
 from app.managers import cache_manager, limiter
 from app.models import UserDB
 from app.repositories import UserRepository
@@ -88,6 +92,22 @@ def username_key(username: str) -> str:
 
 def users_list_key(skip: int, limit: int) -> str:
     return f"users_all_{skip}_{limit}"
+
+
+@dataclass(frozen=True)
+class UserListQuery:
+    skip: int = 0
+    limit: int = 10
+
+
+def get_user_list_query(
+    skip: Annotated[int, Query(ge=0, description="Number of records to skip")] = 0,
+    limit: Annotated[
+        int,
+        Query(ge=1, le=100, description="Maximum number of records to return"),
+    ] = 10,
+) -> UserListQuery:
+    return UserListQuery(skip=skip, limit=limit)
 
 
 def get_user_repository(
@@ -208,6 +228,11 @@ async def create_user(
     """
     try:
         db_user = await repo.create(user)
+        await cache_manager.delete(
+            user_id_key(db_user.uuid),
+            username_key(db_user.username),
+            namespace="users",
+        )
         return db_user_to_response(db_user)
     except ValueError as e:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(e)) from e
@@ -547,12 +572,30 @@ async def update_user(
         If user not found or invalid update.
     """
     try:
+        existing = await repo.get_by_id(user_id)
         db_user = await repo.update(user_id, user_update)
         if not db_user:
             raise HTTPException(
                 status_code=HTTP_404_NOT_FOUND,
                 detail=f"User with ID {user_id} not found",
             )
+        keys: list[str] = []
+        if existing:
+            keys.extend(
+                [
+                    user_id_key(existing.uuid),
+                    username_key(existing.username),
+                    users_list_key(0, 10),
+                ],
+            )
+        keys.extend(
+            [
+                user_id_key(db_user.uuid),
+                username_key(db_user.username),
+                users_list_key(0, 10),
+            ],
+        )
+        await cache_manager.delete(*keys, namespace="users")
         return db_user_to_response(db_user)
     except ValueError as e:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(e)) from e
@@ -611,11 +654,19 @@ async def delete_user(
     HTTPException
         If user not found.
     """
+    existing = await repo.get_by_id(user_id)
     deleted = await repo.delete(user_id)
     if not deleted:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
             detail=f"User with ID {user_id} not found",
+        )
+    if existing:
+        await cache_manager.delete(
+            user_id_key(existing.uuid),
+            username_key(existing.username),
+            users_list_key(0, 10),
+            namespace="users",
         )
 
 
@@ -669,3 +720,212 @@ async def bust_users_list(
         Status message indicating success.
     """
     return ORJSONResponse(content={"status": "success"})
+
+
+@router.post(
+    "/bust-by-id",
+    response_class=ORJSONResponse,
+    summary="Bust cached user by ID",
+    description="Invalidate cached user detail for a given UUID.",
+    responses={
+        200: {"content": {"application/json": {"example": {"status": "success"}}}},
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required (localhost only)"},
+                },
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
+        },
+    },
+    operation_id="users_bust_by_id",
+)
+@timed("/users/bust-by-id")
+@limiter.limit("10/minute")
+@cache_busting(
+    cache_manager,
+    key_builder=lambda user_id, **kw: [user_id_key(user_id)],
+    namespace="users",
+)
+async def bust_user_by_id(
+    request: Request,
+    response: Response,
+    user_id: UUID,
+) -> ORJSONResponse:
+    if host(request) not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Admin access required (localhost only)",
+        )
+    return ORJSONResponse(content={"status": "success"})
+
+
+@router.post(
+    "/bust-by-username",
+    response_class=ORJSONResponse,
+    summary="Bust cached user by username",
+    description="Invalidate cached user detail for a given username.",
+    responses={
+        200: {"content": {"application/json": {"example": {"status": "success"}}}},
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required (localhost only)"},
+                },
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
+        },
+    },
+    operation_id="users_bust_by_username",
+)
+@timed("/users/bust-by-username")
+@limiter.limit("10/minute")
+@cache_busting(
+    cache_manager,
+    key_builder=lambda username, **kw: [username_key(username)],
+    namespace="users",
+)
+async def bust_user_by_username(
+    request: Request,
+    response: Response,
+    username: str,
+) -> ORJSONResponse:
+    if host(request) not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Admin access required (localhost only)",
+        )
+    return ORJSONResponse(content={"status": "success"})
+
+
+@router.post(
+    "/bust-list-multi",
+    response_class=ORJSONResponse,
+    summary="Bust multiple users list cache pages",
+    description="Invalidate cached users list pages across multiple `limit` values.",
+    responses={
+        200: {"content": {"application/json": {"example": {"status": "success"}}}},
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required (localhost only)"},
+                },
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
+        },
+    },
+    operation_id="users_bust_list_multi",
+)
+@timed("/users/bust-list-multi")
+@limiter.limit("10/minute")
+@cache_busting(
+    cache_manager,
+    key_builder=lambda query, limits, **kw: [
+        users_list_key(query.skip, limit_value) for limit_value in limits
+    ],
+    namespace="users",
+)
+async def bust_users_list_multi(
+    request: Request,
+    response: Response,
+    query: Annotated[UserListQuery, Depends(get_user_list_query)],
+    limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
+) -> ORJSONResponse:
+    if host(request) not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Admin access required (localhost only)",
+        )
+    return ORJSONResponse(content={"status": "success"})
+
+
+@router.post(
+    "/bust-list-grid",
+    response_class=ORJSONResponse,
+    summary="Bust users list pages across limits and skips",
+    description="Invalidate cached users list pages across multiple `limit` and `skip` values.",
+    responses={
+        200: {"content": {"application/json": {"example": {"status": "success"}}}},
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required (localhost only)"},
+                },
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
+        },
+    },
+    operation_id="users_bust_list_grid",
+)
+@timed("/users/bust-list-grid")
+@limiter.limit("10/minute")
+@cache_busting(
+    cache_manager,
+    key_builder=lambda query, limits, skips, **kw: [
+        users_list_key(skip_value, limit_value) for limit_value in limits for skip_value in skips
+    ],
+    namespace="users",
+)
+async def bust_users_list_grid(
+    request: Request,
+    response: Response,
+    query: Annotated[UserListQuery, Depends(get_user_list_query)],
+    limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
+    skips: Annotated[list[int], Query(description="List of skip values to invalidate.")],
+) -> ORJSONResponse:
+    if host(request) not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Admin access required (localhost only)",
+        )
+    return ORJSONResponse(content={"status": "success"})
+
+
+@router.delete(
+    "/bust-all",
+    response_class=ORJSONResponse,
+    summary="Clear users cache namespace",
+    description="Clear all cached keys in the users namespace.",
+    responses={
+        200: {"content": {"application/json": {"example": {"status": "cleared"}}}},
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required (localhost only)"},
+                },
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
+        },
+    },
+    operation_id="users_bust_all",
+)
+@timed("/users/bust-all")
+@limiter.limit("5/minute")
+async def bust_users_all(request: Request, response: Response) -> ORJSONResponse:
+    if host(request) not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Admin access required (localhost only)",
+        )
+    await cache_manager.clear(namespace="users")
+    return ORJSONResponse(content={"status": "cleared"})
