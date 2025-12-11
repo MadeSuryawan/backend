@@ -20,7 +20,8 @@ from app.errors import (
     CacheDeserializationError,
     CacheSerializationError,
 )
-from app.schemas.items import Item
+
+# from app.schemas.items import Item
 
 # Try to use orjson for better performance, fallback to standard json
 try:
@@ -40,7 +41,7 @@ logger = file_logger(getLogger(__name__))
 COMPRESSION_MARKER = b"\x00GZIP\x00"
 
 
-def serialize(value: Item | dict[str, Any]) -> str:
+def serialize(value: dict[str, Any]) -> str:
     """
     Serialize value to JSON string.
 
@@ -56,8 +57,8 @@ def serialize(value: Item | dict[str, Any]) -> str:
         CacheSerializationError: If serialization fails.
     """
     try:
-        if isinstance(value, Item):
-            return value.model_dump_json()
+        # if isinstance(value, Item):
+        #     return value.model_dump_json()
 
         if _HAS_ORJSON:
             # orjson returns bytes, decode to string

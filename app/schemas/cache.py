@@ -3,7 +3,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class CacheStatistics(BaseModel):
+class CacheStatisticsData(BaseModel):
     """Cache statistics model."""
 
     model_config = ConfigDict(ser_json_timedelta="iso8601", ser_json_bytes="utf8")
@@ -69,7 +69,7 @@ class CacheHealthResponse(BaseModel):
     model_config = ConfigDict(ser_json_timedelta="iso8601", ser_json_bytes="utf8")
 
     backend: str
-    statistics: CacheStatistics
+    statistics: CacheStatisticsData
     status: str
     # Redis-specific fields (optional)
     latency_ms: float | None = None
@@ -89,7 +89,7 @@ class CacheStatsResponse(BaseModel):
     model_config = ConfigDict(ser_json_timedelta="iso8601", ser_json_bytes="utf8")
 
     status: str
-    data: dict[str, Any]
+    data: CacheStatisticsData
 
 
 class CacheClearResponse(BaseModel):

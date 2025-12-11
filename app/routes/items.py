@@ -2,6 +2,7 @@ from logging import getLogger
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import ORJSONResponse
+from pydantic.main import BaseModel
 from starlette.status import HTTP_404_NOT_FOUND
 
 from app.configs import file_logger
@@ -17,6 +18,10 @@ router = APIRouter(prefix="/items", tags=["items"])
 
 # In-memory database (for demo purposes)
 items_db: dict[int, Item] = {}
+
+
+class AllItemsResponse(BaseModel):
+    items: list[Item]
 
 
 # --- Routes ---
@@ -38,12 +43,23 @@ async def create_item(item: Item, request: Request, response: Response) -> Item:
     """
     logger.info(f"Creating item: {item.name}")
     items_db[item.id] = item
+
+    # Proactively set the cache (Write-Through)
+    # This prevents the subsequent "Miss" when the user fetches it for the first time
+
+    await cache_manager.set(
+        f"item_{item.id}",
+        item.model_dump(),
+        ttl=3600,
+        namespace="items",
+    )
+
     return item
 
 
 @router.get(
     "/get-item/{item_id}",
-    summary="Get specific item",
+    summary="Get item by ID",
     response_class=ORJSONResponse,
     response_model=Item,
 )
@@ -51,7 +67,7 @@ async def create_item(item: Item, request: Request, response: Response) -> Item:
 @limiter.limit("10/minute")
 @cached(
     cache_manager,
-    ttl=5,
+    ttl=3600,
     namespace="items",
     key_builder=lambda item_id, **kw: f"item_{item_id}",
     response_model=Item,
@@ -73,12 +89,18 @@ async def get_item(item_id: int, request: Request, response: Response) -> Item:
     "/all-items",
     summary="Get all items",
     response_class=ORJSONResponse,
-    response_model=dict[str, list[Item]],
+    response_model=AllItemsResponse,
 )
 @timed("/items/all")
 @limiter.limit("10/minute")
-@cached(cache_manager, ttl=3600, namespace="items", key_builder=lambda **kw: "get_all_items")
-async def get_all_items(request: Request, response: Response) -> ORJSONResponse:
+@cached(
+    cache_manager,
+    ttl=3600,
+    namespace="items",
+    key_builder=lambda **kw: "get_all_items",
+    response_model=AllItemsResponse,
+)
+async def get_all_items(request: Request, response: Response) -> AllItemsResponse:
     """
     Get all items with caching.
 
@@ -86,12 +108,12 @@ async def get_all_items(request: Request, response: Response) -> ORJSONResponse:
     Results cached for 1 hour.
     """
     logger.info("Fetching all items")
-    return ORJSONResponse(content={"items": list(items_db.values())})
+    return AllItemsResponse(items=list(items_db.values()))
 
 
 @router.put(
     "/update-item/{item_id}",
-    summary="Update specific item",
+    summary="Update item by ID",
     response_class=ORJSONResponse,
     response_model=Item,
 )
@@ -127,7 +149,7 @@ async def update_item(
 
 @router.delete(
     "/delete-item/{item_id}",
-    summary="Delete specific item",
+    summary="Delete item by ID",
     response_class=ORJSONResponse,
     response_model=dict[str, str],
 )

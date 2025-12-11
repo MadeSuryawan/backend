@@ -4,12 +4,12 @@
 from logging import getLogger
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import ORJSONResponse
 
 from app.configs import file_logger
 from app.decorators import timed
-from app.managers import cache_manager
+from app.managers import cache_manager, limiter
 from app.managers.cache_manager import CacheManager
 from app.schemas import (
     CacheClearResponse,
@@ -42,7 +42,8 @@ CacheDep = Annotated[CacheManager, Depends(get_cache_manager)]
     response_class=ORJSONResponse,
 )
 @timed("/cache/stats")
-async def get_cache_stats(manager: CacheDep) -> ORJSONResponse:
+@limiter.limit("10/minute")
+async def get_cache_stats(request: Request, manager: CacheDep) -> ORJSONResponse:
     """
     Get cache statistics.
 
@@ -61,7 +62,8 @@ async def get_cache_stats(manager: CacheDep) -> ORJSONResponse:
     response_class=ORJSONResponse,
 )
 @timed("/cache/ping")
-async def ping_cache(manager: CacheDep) -> ORJSONResponse:
+@limiter.limit("20/minute")
+async def ping_cache(request: Request, manager: CacheDep) -> ORJSONResponse:
     """
     Ping cache server.
 
@@ -88,7 +90,8 @@ async def ping_cache(manager: CacheDep) -> ORJSONResponse:
     response_class=ORJSONResponse,
 )
 @timed("/cache/reset-stats")
-async def reset_stats(manager: CacheDep) -> ORJSONResponse:
+@limiter.limit("5/hour")
+async def reset_stats(request: Request, manager: CacheDep) -> ORJSONResponse:
     """
     Reset cache statistics.
 
@@ -107,7 +110,8 @@ async def reset_stats(manager: CacheDep) -> ORJSONResponse:
     response_class=ORJSONResponse,
 )
 @timed("/cache/clear")
-async def clear_cache(manager: CacheDep) -> ORJSONResponse:
+@limiter.limit("2/hour")
+async def clear_cache(request: Request, manager: CacheDep) -> ORJSONResponse:
     """
     Clear all cache entries.
 
@@ -126,7 +130,8 @@ async def clear_cache(manager: CacheDep) -> ORJSONResponse:
     response_class=ORJSONResponse,
 )
 @timed("/cache/redis/disable")
-async def disable_redis(manager: CacheDep) -> ORJSONResponse:
+@limiter.limit("1/hour")
+async def disable_redis(request: Request, manager: CacheDep) -> ORJSONResponse:
     """
     Disable Redis and switch to in-memory cache.
 
@@ -144,7 +149,8 @@ async def disable_redis(manager: CacheDep) -> ORJSONResponse:
     response_class=ORJSONResponse,
 )
 @timed("/cache/redis/enable")
-async def enable_redis(manager: CacheDep) -> ORJSONResponse:
+@limiter.limit("1/hour")
+async def enable_redis(request: Request, manager: CacheDep) -> ORJSONResponse:
     """
     Enable Redis and switch from in-memory cache.
 

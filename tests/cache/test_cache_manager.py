@@ -110,9 +110,9 @@ async def test_cache_statistics(cache_manager: CacheManager) -> None:
 
     # Check statistics
     stats = cache_manager.get_statistics()
-    assert stats["hits"] == 1
-    assert stats["misses"] == 1
-    assert stats["sets"] == 1
+    assert stats.hits == 1
+    assert stats.misses == 1
+    assert stats.sets == 1
 
 
 @pytest.mark.asyncio
@@ -154,9 +154,9 @@ async def test_cache_clear_with_statistics_reset(cache_manager: CacheManager) ->
 
     # Check statistics before clear
     stats_before = cache_manager.get_statistics()
-    assert stats_before["sets"] == 3
-    assert stats_before["hits"] == 1
-    assert stats_before["misses"] == 1
+    assert stats_before.sets == 3
+    assert stats_before.hits == 1
+    assert stats_before.misses == 1
 
     # Clear cache (which also resets statistics)
     await cache_manager.clear()
@@ -171,9 +171,9 @@ async def test_cache_clear_with_statistics_reset(cache_manager: CacheManager) ->
 
     # Check statistics after clear (should be reset and count 3 misses from the get calls)
     stats_after = cache_manager.get_statistics()
-    assert stats_after["hits"] == 0
-    assert stats_after["misses"] == 3  # Three get calls after clear all miss
-    assert stats_after["sets"] == 0
+    assert stats_after.hits == 0
+    assert stats_after.misses == 3  # Three get calls after clear all miss
+    assert stats_after.sets == 0
 
 
 @pytest.mark.asyncio

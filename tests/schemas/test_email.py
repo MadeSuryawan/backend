@@ -96,7 +96,7 @@ class TestEmailRequest:
             EmailInquiry(
                 name="John Doe",
                 subject="Test",
-                message="Message",
+                message=" Test Message ",
                 email="user@MAILINATOR.COM",
             )
 
@@ -106,8 +106,8 @@ class TestEmailRequest:
             EmailInquiry(
                 name="John Doe",
                 subject="Test",
-                message="Message",
-                email=12345,
+                message=" Test Message ",
+                email=12345,  # type: ignore
             )
 
 

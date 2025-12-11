@@ -9,7 +9,7 @@ from logging import getLogger
 from typing import TYPE_CHECKING, Any
 
 from fastapi.exceptions import ResponseValidationError
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from redis.exceptions import RedisError
 
 from app.configs import file_logger
@@ -30,19 +30,32 @@ exceptions = (
 )
 
 
-def validate_response(value: object, response_type: Any) -> object | None:  # noqa: ANN401
+def _infer_response_model_from_callable(func: Callable[..., Any]) -> type[BaseModel] | None:
     """
-    Validate response against Pydantic models or types.
+    Infer the response model type from a callable's return annotation.
+
+    Returns a BaseModel subclass if present, otherwise None.
+    """
+    return_type = func.__annotations__.get("return")
+    if isinstance(return_type, type) and issubclass(return_type, BaseModel):
+        return return_type
+    return None
+
+
+def validate_cache(value: dict[str, Any], response_model: type[BaseModel]) -> BaseModel | None:
+    """
+    Validate cache value against Pydantic models or types.
 
     Uses TypeAdapter to handle Pydantic Models, lists, dicts, etc.
     """
-    logger.info(f"Validating Value against {response_type}")
+
+    logger.info(f"Validating Value against {response_model.__name__}")
     try:
-        adapter = TypeAdapter(response_type)
+        adapter = TypeAdapter(response_model)
         valid = adapter.validate_python(value)
     except exceptions as e:
         logger.warning(f"Validation failed: {e}")
-        mssg = f"Could not validate cache against {response_type}"
+        mssg = f"Could not validate cache against {response_model.__name__}"
         raise ValidationError(mssg) from e
     return valid
 
@@ -52,7 +65,7 @@ def cached(
     ttl: int | None = None,
     namespace: str | None = None,
     key_builder: Callable[..., str] | None = None,
-    response_model: Any = None,  # noqa: ANN401
+    response_model: type[BaseModel] | None = None,
 ) -> Callable:
     """
     FastAPI endpoint result caching decorator.
@@ -90,23 +103,23 @@ def cached(
                 if cached_value := await cache_manager.get(cache_key, namespace):
                     logger.debug(f"Cache hit for key: {cache_key}")
 
-                    # Validate and convert if a model is provided
-                    if response_model:
-                        return validate_response(cached_value, response_model)
+                    model_type = response_model or _infer_response_model_from_callable(func)
+                    if model_type:
+                        return validate_cache(cached_value, model_type)
 
-                    # Otherwise return raw data (dict/json)
                     return cached_value
             except exceptions as e:
                 logger.warning(f"Cache retrieval failed: {e}")
 
             # Execute function and cache result
-            result = await func(*args, **kwargs)
+            result: BaseModel = await func(*args, **kwargs)
             # logger.debug(f"{result=}, {type(result)=}")
 
             try:
                 if await cache_manager.set(
                     cache_key,
-                    result,
+                    result.model_dump(),
+                    # result,
                     ttl=ttl,
                     namespace=namespace,
                 ):
@@ -155,8 +168,8 @@ def cache_busting(
             # Bust cache
             if keys_to_bust:
                 try:
-                    deleted = await cache_manager.delete(*keys_to_bust, namespace=namespace)
-                    logger.debug(f"Cache busted {deleted} keys: {keys_to_bust}")
+                    if deleted := await cache_manager.delete(*keys_to_bust, namespace=namespace):
+                        logger.debug(f"Cache busted {deleted} keys: {keys_to_bust}")
                 except exceptions as e:
                     logger.warning(f"Cache busting failed: {e}")
 

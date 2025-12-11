@@ -37,7 +37,7 @@ class TestSerialize:
     def test_serialize_item_model(self) -> None:
         """Test serializing an Item Pydantic model."""
         item = Item(id=1, name="Test Item", price=9.99)
-        result = serialize(item)
+        result = serialize(item.model_dump())
         assert isinstance(result, str)
         assert "Test Item" in result
         assert "9.99" in result

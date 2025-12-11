@@ -261,7 +261,7 @@ class CacheConfig(BaseSettings):
 
     default_ttl: int = 3600  # 1 hour
     max_ttl: int = 86400  # 24 hours
-    key_prefix: str = "cache:"
+    key_prefix: str = "cache"
     compression_enabled: bool = True
     compression_threshold: int = 1024  # bytes
     strategy: Literal["LRU", "FIFO"] = "LRU"

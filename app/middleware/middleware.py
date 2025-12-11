@@ -26,7 +26,8 @@ from uvloop import Loop
 from app.clients import AiClient
 from app.configs import file_logger, settings
 from app.db import close_db, init_db
-from app.managers import cache_manager, close_limiter, limiter
+from app.errors.base import host
+from app.managers import cache_manager, close_limiter
 from app.utils.helpers import get_summary
 
 if log_to_file := settings.LOG_TO_FILE:
@@ -63,11 +64,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
         await cache_manager.initialize()
         app.state.cache_manager = cache_manager
-
-        if limiter.enabled:
-            # SlowAPI rate limiter
-            app.state.limiter = limiter
-            logger.info("Rate limiter enabled.")
 
         logger.info(f"is uvloop: {type(get_event_loop()) is Loop}")
 
@@ -138,12 +134,10 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         """Log request summary and timing information."""
 
         start_time = perf_counter()
-        client_ip: str = request.client.host if request.client else "unknown"
-
         summary = get_summary(request)
 
         route_info = summary or f"{request.method} {request.url.path}"
-        logger.info(f"Request: {route_info} from {client_ip}")
+        logger.info(f"Request: {route_info}, from ip: {host(request)}")
 
         response = await call_next(request)
         duration = perf_counter() - start_time

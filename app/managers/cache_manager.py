@@ -17,6 +17,7 @@ from app.configs import CacheConfig, file_logger, settings
 from app.data import CacheStatistics
 from app.errors import BASE_EXCEPTION, CacheDeserializationError, CacheKeyError
 from app.schemas import CacheToggleResponse
+from app.schemas.cache import CacheStatisticsData
 from app.utils import (
     compress,
     decompress,
@@ -103,7 +104,7 @@ class CacheManager:
         self,
         key: str,
         namespace: str | None = None,
-    ) -> object | None:
+    ) -> dict[str, Any] | None:
         """Get value from cache."""
         try:
             full_key = self._build_key(key, namespace)
@@ -167,14 +168,14 @@ class CacheManager:
         """Delete keys from cache."""
         try:
             full_keys = [self._build_key(key, namespace) for key in keys]
-            deleted_count = await self._client.delete(*full_keys)
-            self.statistics.record_delete()
+            if deleted_count := await self._client.delete(*full_keys):
+                self.statistics.record_delete()
         except BASE_EXCEPTION as e:
             logger.exception("Cache delete failed for keys: %s", keys)
             self.statistics.record_error()
             mssg = "Cache delete failed"
             raise CacheKeyError(mssg) from e
-        return deleted_count
+        return deleted_count  # type: ignore
 
     async def exists(self, *keys: str, namespace: str | None = None) -> int:
         """Check if keys exist."""
@@ -460,7 +461,7 @@ class CacheManager:
 
         return result
 
-    def get_statistics(self) -> dict[str, Any]:
+    def get_statistics(self) -> CacheStatisticsData:
         """Get cache statistics."""
         return self.statistics.to_dict()
 

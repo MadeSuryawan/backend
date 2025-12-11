@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, ORJSONResponse, Response
+from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from starlette.responses import JSONResponse
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
@@ -104,6 +105,9 @@ app.add_exception_handler(
     RequestValidationError,
     validation_exception_handler,
 )
+
+app.state.limiter = limiter
+limiter: Limiter = app.state.limiter
 
 
 @app.get(

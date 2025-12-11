@@ -5,6 +5,7 @@ from logging import getLogger
 from threading import Lock
 
 from app.configs import file_logger
+from app.schemas.cache import CacheStatisticsData
 from app.utils import today_str
 
 logger = file_logger(getLogger(__name__))
@@ -114,7 +115,7 @@ class CacheStatistics:
             self.created_at = today_str()
             self.last_updated_at = today_str()
 
-    def to_dict(self) -> dict[str, int | float | str]:
+    def to_dict(self) -> CacheStatisticsData:
         """
         Convert statistics to dictionary.
 
@@ -122,17 +123,17 @@ class CacheStatistics:
             Dictionary representation of statistics.
         """
         with self._lock:
-            return {
-                "hits": self.hits,
-                "misses": self.misses,
-                "sets": self.sets,
-                "deletes": self.deletes,
-                "evictions": self.evictions,
-                "errors": self.errors,
-                "total_bytes_written": self.total_bytes_written,
-                "total_bytes_read": self.total_bytes_read,
-                "hit_rate": f"{self.hit_rate:.2f}%",
-                "total_requests": self.total_requests,
-                "created_at": self.created_at,
-                "last_updated_at": self.last_updated_at,
-            }
+            return CacheStatisticsData(
+                hits=self.hits,
+                misses=self.misses,
+                sets=self.sets,
+                deletes=self.deletes,
+                evictions=self.evictions,
+                errors=self.errors,
+                total_bytes_written=self.total_bytes_written,
+                total_bytes_read=self.total_bytes_read,
+                hit_rate=f"{self.hit_rate:.2f}%",
+                total_requests=self.total_requests,
+                created_at=self.created_at,
+                last_updated_at=self.last_updated_at,
+            )

@@ -110,12 +110,12 @@ async def email_inquiry_confirmation_message(
 
 @router.post(
     "/itinerary-md",
-    response_class=ORJSONResponse,
     summary="Generate an itinerary",
     response_model=ItineraryMD,
+    response_class=ORJSONResponse,
 )
 @timed("/ai/itinerary-md")
-# @limiter.limit("5/hour")
+@limiter.limit("5/hour")
 @cached(
     cache_manager,
     ttl=3600,
@@ -129,14 +129,13 @@ async def itinerary(
     itinerary_req: ItineraryRequestMD,
     # user: User = Depends(get_current_user), # auth logic
     ai_client: AiDep,
-) -> ORJSONResponse:
+) -> ItineraryMD:
     """
     Generate an itinerary based on the itinerary request.
 
     Rate Limited: 5 requests per hour for fair usage.
     """
-    itinerary = await generate_itinerary(request, itinerary_req, ai_client)
-    return ORJSONResponse(content=itinerary.model_dump())
+    return await generate_itinerary(request, itinerary_req, ai_client)
 
 
 # this endpoint needs database implementation.
@@ -162,12 +161,11 @@ async def itinerary_txt(
     itinerary_md: ItineraryRequestTXT,
     # user: User = Depends(get_current_user), # auth logic
     ai_client: AiDep,
-) -> ORJSONResponse:
+) -> ItineraryTXT:
     """
     Convert an itinerary markdown to a text file.
 
     Rate Limited: 5 requests per hour for fair usage.
 
     """
-    itinerary = await ai_convert_txt(request, itinerary_md, ai_client)
-    return ORJSONResponse(content=itinerary.model_dump())
+    return await ai_convert_txt(request, itinerary_md, ai_client)

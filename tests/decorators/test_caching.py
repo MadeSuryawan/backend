@@ -11,7 +11,7 @@ from app.decorators.caching import (
     _generate_cache_key,
     cache_busting,
     cached,
-    validate_response,
+    validate_cache,
 )
 from app.managers.cache_manager import CacheManager
 
@@ -82,23 +82,25 @@ class TestValidateResponse:
     def test_validate_dict_response(self) -> None:
         """Test validating dict against dict type."""
         data = {"id": 1, "name": "test"}
-        result = validate_response(data, dict[str, Any])
-        assert result == data
+        result = validate_cache(data, SampleModel)
+        assert isinstance(result, SampleModel)
+        assert result.id == 1
 
     def test_validate_pydantic_model(self) -> None:
         """Test validating dict against Pydantic model."""
         data = {"id": 1, "name": "test"}
-        result = validate_response(data, SampleModel)
+        result = validate_cache(data, SampleModel)
         assert isinstance(result, SampleModel)
         assert result.id == 1
 
     def test_validate_list_of_models(self) -> None:
         """Test validating list of dicts against list of models."""
-        data = [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}]
-        result = validate_response(data, list[SampleModel])
-        assert isinstance(result, list)
-        assert len(result) == 2
-        assert all(isinstance(item, SampleModel) for item in result)
+        data = {"id": 1, "name": "a"}
+        data2 = {"id": 2, "name": "b"}
+        result = validate_cache(data, SampleModel)
+        result2 = validate_cache(data2, SampleModel)
+        assert isinstance(result, SampleModel)
+        assert isinstance(result2, SampleModel)
 
 
 class TestCachedDecorator:
@@ -113,16 +115,16 @@ class TestCachedDecorator:
         call_count = 0
 
         @cached(test_cache_manager, ttl=300)
-        async def get_data() -> dict[str, str]:
+        async def get_data() -> SampleModel:
             nonlocal call_count
             call_count += 1
-            return {"data": "value"}
+            return SampleModel(id=1, name="test")
 
         result1 = await get_data()
         result2 = await get_data()
 
-        assert result1 == {"data": "value"}
-        assert result2 == {"data": "value"}
+        assert result1 == SampleModel(id=1, name="test")  # .model_dump()
+        assert result2 == SampleModel(id=1, name="test")  # .model_dump()
         assert call_count == 1  # Should only be called once
 
     @pytest.mark.asyncio
@@ -136,11 +138,11 @@ class TestCachedDecorator:
             return f"custom_key_{kwargs.get('item_id', 'default')}"
 
         @cached(test_cache_manager, key_builder=my_key_builder)
-        async def get_item(item_id: int) -> dict[str, int]:
-            return {"id": item_id}
+        async def get_item(item_id: int) -> SampleModel:
+            return SampleModel(id=item_id, name="test")
 
         result = await get_item(item_id=42)
-        assert result == {"id": 42}
+        assert result == SampleModel(id=42, name="test")
 
     @pytest.mark.asyncio
     async def test_with_namespace(
@@ -150,11 +152,11 @@ class TestCachedDecorator:
         """Test caching with namespace."""
 
         @cached(test_cache_manager, namespace="items")
-        async def get_item() -> dict[str, str]:
-            return {"name": "item"}
+        async def get_item() -> SampleModel:
+            return SampleModel(id=1, name="item")
 
         result = await get_item()
-        assert result == {"name": "item"}
+        assert result == SampleModel(id=1, name="item")
 
     @pytest.mark.asyncio
     async def test_with_response_model(
@@ -164,8 +166,8 @@ class TestCachedDecorator:
         """Test caching with response model validation."""
 
         @cached(test_cache_manager, response_model=SampleModel)
-        async def get_sample() -> dict[str, Any]:
-            return {"id": 1, "name": "test"}
+        async def get_sample() -> SampleModel:
+            return SampleModel(id=1, name="test")
 
         # First call - caches result
         _ = await get_sample()
@@ -188,11 +190,11 @@ class TestCacheBustingDecorator:
         await test_cache_manager.set("item_1", {"data": "old"})
 
         @cache_busting(test_cache_manager, keys=["item_1"])
-        async def update_item() -> dict[str, str]:
-            return {"status": "updated"}
+        async def update_item() -> SampleModel:
+            return SampleModel(id=1, name="updated")
 
         result = await update_item()
-        assert result == {"status": "updated"}
+        assert result == SampleModel(id=1, name="updated")
 
         # Verify cache was busted
         cached = await test_cache_manager.get("item_1")
@@ -211,11 +213,11 @@ class TestCacheBustingDecorator:
             return [f"user_{kwargs.get('user_id')}"]
 
         @cache_busting(test_cache_manager, key_builder=bust_key_builder)
-        async def delete_user(user_id: int) -> dict[str, str]:
-            return {"deleted": str(user_id)}
+        async def delete_user(user_id: int) -> SampleModel:
+            return SampleModel(id=user_id, name="deleted")
 
         result = await delete_user(user_id=42)
-        assert result == {"deleted": "42"}
+        assert result == SampleModel(id=42, name="deleted")
 
     @pytest.mark.asyncio
     async def test_with_namespace(
@@ -227,8 +229,8 @@ class TestCacheBustingDecorator:
         await test_cache_manager.set("user_1", {"name": "test"}, namespace=namespace)
 
         @cache_busting(test_cache_manager, keys=["user_1"], namespace=namespace)
-        async def remove_user() -> dict[str, str]:
-            return {"removed": "true"}
+        async def remove_user() -> SampleModel:
+            return SampleModel(id=1, name="removed")
 
         await remove_user()
 
@@ -243,8 +245,8 @@ class TestCacheBustingDecorator:
         """Test cache busting when no keys are specified."""
 
         @cache_busting(test_cache_manager)
-        async def do_nothing() -> dict[str, str]:
-            return {"done": "true"}
+        async def do_nothing() -> SampleModel:
+            return SampleModel(id=1, name="done")
 
         result = await do_nothing()
-        assert result == {"done": "true"}
+        assert result == SampleModel(id=1, name="done")

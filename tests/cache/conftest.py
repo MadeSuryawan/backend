@@ -4,6 +4,7 @@
 from collections.abc import AsyncGenerator
 
 import pytest
+from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
 from app.clients import MemoryClient
@@ -46,10 +47,13 @@ async def client(cache_manager: CacheManager) -> AsyncGenerator[AsyncClient]:
     # instead of the global one defined in app/managers/__init__.py
     app.dependency_overrides[get_cache_manager] = lambda: cache_manager
 
-    async with AsyncClient(
-        base_url="http://test",
-        transport=ASGITransport(app=app),
-    ) as ac:
+    async with (
+        LifespanManager(app),
+        AsyncClient(
+            base_url="http://test",
+            transport=ASGITransport(app=app),
+        ) as ac,
+    ):
         yield ac
 
     # Clean up overrides after test
