@@ -1,11 +1,12 @@
 """Blog database model using SQLModel."""
 
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import cast
 from uuid import UUID, uuid4
 
 from pydantic import ConfigDict
 from sqlalchemy import DateTime, Index
+from sqlalchemy.orm import declared_attr
 from sqlmodel import JSON, Column, Field, ForeignKey, SQLModel, String
 
 
@@ -18,7 +19,8 @@ class BlogDB(SQLModel, table=True):
     and a foreign key relationship to the User model.
     """
 
-    __tablename__ = cast(Any, "blogs")
+    __tablename__ = cast("declared_attr[str]", "blogs")
+
     __table_args__ = (
         Index("ix_blogs_tags_gin", "tags", postgresql_using="gin"),
         Index("ix_blogs_status_created", "status", "created_at"),

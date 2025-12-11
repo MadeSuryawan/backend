@@ -51,7 +51,7 @@ from app.routes import (
     user_router,
 )
 from app.schemas import HealthCheckResponse
-from app.schemas.cache import CacheHealthResponse, ServicesStatus
+from app.schemas.cache import CacheHealthResponse, CircuitBreakerStatus, ServicesStatus
 from app.utils.helpers import today_str
 
 app = FastAPI(
@@ -74,6 +74,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Middleware to tell FastAPI it is behind a proxy (Zuplo) or Render
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
 
 routes = [
     ai_router,
@@ -177,13 +178,13 @@ async def health_check(request: Request) -> ORJSONResponse:
     services = ServicesStatus(
         ai_client=ai_client_status,
         email_client=email_client_status,
-        ai_circuit_breaker=ai_circuit_breaker.get_state(),
-        email_circuit_breaker=email_circuit_breaker.get_state(),
+        ai_circuit_breaker=CircuitBreakerStatus(**ai_circuit_breaker.get_state()),
+        email_circuit_breaker=CircuitBreakerStatus(**email_circuit_breaker.get_state()),
     )
 
     # Build response
     response_data = {
-        "version": request.app.version,
+        "version": app.version,
         "status": "ok",
         "timestamp": today_str(),
         "services": services.model_dump(),

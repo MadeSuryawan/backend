@@ -46,7 +46,7 @@ class UserRepository:
             DuplicateEntryError: If username or email already exists
             DatabaseError: For other database errors
         """
-        password_hash = hash_password(user.password.get_secret_value())
+        password_hash = await hash_password(user.password.get_secret_value())
 
         db_user = UserDB(
             username=user.username,

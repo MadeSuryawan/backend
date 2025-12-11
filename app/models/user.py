@@ -1,11 +1,12 @@
 """User database model using SQLModel."""
 
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import cast
 from uuid import UUID, uuid4
 
 from pydantic import ConfigDict
 from sqlalchemy import DateTime
+from sqlalchemy.orm import declared_attr
 from sqlmodel import Column, Field, SQLModel, String
 
 
@@ -17,7 +18,7 @@ class UserDB(SQLModel, table=True):
     It includes all fields from the User schema with proper database types.
     """
 
-    __tablename__ = cast(Any, "users")
+    __tablename__ = cast("declared_attr[str]", "users")
 
     # Primary key
     uuid: UUID = Field(
