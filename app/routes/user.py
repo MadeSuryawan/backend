@@ -175,7 +175,7 @@ RepoDep = Annotated[UserRepository, Depends(get_user_repository)]
     operation_id="users_create",
 )
 @timed("/users/create")
-@limiter.limit(lambda request: "15/hour" if request.headers.get("X-API-Key") else "3/hour")
+@limiter.limit(lambda key: "15/hour" if "apikey" in key else "3/hour")
 @cache_busting(
     cache_manager,
     key_builder=lambda **kw: [users_list_key(0, 10)],
@@ -276,7 +276,7 @@ async def create_user(
     operation_id="users_get_all",
 )
 @timed("/users/all")
-@limiter.limit(lambda request: "30/minute" if request.headers.get("X-API-Key") else "10/minute")
+@limiter.limit(lambda key: "30/minute" if "apikey" in key else "10/minute")
 @cached(
     cache_manager,
     ttl=3600,
@@ -354,7 +354,7 @@ async def get_users(
     operation_id="users_get_by_id",
 )
 @timed("/users/by-id")
-@limiter.limit(lambda request: "60/minute" if request.headers.get("X-API-Key") else "20/minute")
+@limiter.limit(lambda key: "60/minute" if "apikey" in key else "20/minute")
 @cached(
     cache_manager,
     ttl=1800,
@@ -437,7 +437,7 @@ async def get_user(
     operation_id="users_get_by_username",
 )
 @timed("/users/by-username")
-@limiter.limit(lambda request: "60/minute" if request.headers.get("X-API-Key") else "20/minute")
+@limiter.limit(lambda key: "60/minute" if "apikey" in key else "20/minute")
 @cached(
     cache_manager,
     ttl=1800,
@@ -522,7 +522,7 @@ async def get_user_by_username(
     operation_id="users_update",
 )
 @timed("/users/update")
-@limiter.limit(lambda request: "20/minute" if request.headers.get("X-API-Key") else "5/minute")
+@limiter.limit(lambda key: "20/minute" if "apikey" in key else "5/minute")
 @cache_busting(
     cache_manager,
     key_builder=lambda user_id, **kw: [user_id_key(user_id), users_list_key(0, 10)],
@@ -629,7 +629,7 @@ async def update_user(
     operation_id="users_delete",
 )
 @timed("/users/delete")
-@limiter.limit(lambda request: "10/minute" if request.headers.get("X-API-Key") else "2/minute")
+@limiter.limit(lambda key: "10/minute" if "apikey" in key else "2/minute")
 @cache_busting(
     cache_manager,
     key_builder=lambda user_id, **kw: [user_id_key(user_id), users_list_key(0, 10)],

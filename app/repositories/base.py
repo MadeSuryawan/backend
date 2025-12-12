@@ -1,8 +1,10 @@
 """Base repository for database operations."""
 
-from abc import ABC, abstractmethod
+from datetime import datetime
+from typing import Any
 from uuid import UUID
 
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,18 +17,20 @@ from app.errors.database import (
     RecordNotFoundError,
 )
 
+type FilterValue = str | int | float | bool | UUID | datetime | None
 
-class BaseRepository[ModelT: SQLModel, CreateSchemaT, UpdateSchemaT](ABC):
+
+class BaseRepository[ModelT: SQLModel, CreateSchemaT: BaseModel, UpdateSchemaT: BaseModel]:
     """
-    Abstract base repository implementing common CRUD operations.
+    Base repository implementing common CRUD operations.
 
     This class provides a generic implementation of database operations
-    that can be extended by specific entity repositories.
+    that can be extended by specific entity repositories. It abstracts
+    common patterns for creating, reading, updating, and deleting records.
 
-    Type Parameters:
-        ModelT: The SQLModel database model type
-        CreateSchemaT: The Pydantic schema for creation
-        UpdateSchemaT: The Pydantic schema for updates
+    Attributes:
+        model: The SQLModel database model type.
+        id_field: The name of the primary key field (default: "id").
     """
 
     model: type[ModelT]
@@ -41,18 +45,22 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT, UpdateSchemaT](ABC):
         """
         self.session = session
 
-    @abstractmethod
-    async def create(self, schema: CreateSchemaT) -> ModelT:
+    async def create(self, schema: CreateSchemaT, **kwargs: dict[str, Any]) -> ModelT:
         """
         Create a new record in the database.
 
         Args:
             schema: Creation schema with data
+            **kwargs: Additional arguments for creation
 
         Returns:
             ModelT: Created database model
         """
-        ...
+        # Convert Pydantic schema to dict, excluding unset fields
+        data = schema.model_dump(exclude_unset=True)
+        # Create database model instance
+        db_obj = self.model.model_validate(data)
+        return await self._add_and_refresh(db_obj)
 
     async def get_by_id(self, record_id: UUID) -> ModelT | None:
         """
@@ -65,10 +73,49 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT, UpdateSchemaT](ABC):
             ModelT | None: Record if found, None otherwise
         """
         id_column = getattr(self.model, self.id_field)
-        result = await self.session.execute(
-            select(self.model).where(id_column == record_id),
-        )
+        statement = select(self.model).where(id_column == record_id)
+        result = await self.session.execute(statement)
         return result.scalar_one_or_none()
+
+    async def get_by_field(
+        self,
+        field_name: str,
+        value: FilterValue,
+    ) -> ModelT | None:
+        """
+        Get a record by a specific field value.
+
+        Args:
+            field_name: Name of the field to search
+            value: Value to search for
+
+        Returns:
+            ModelT | None: Record if found, None otherwise
+        """
+        field = getattr(self.model, field_name)
+        statement = select(self.model).where(field == value)
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
+    async def get_or_raise(self, record_id: UUID) -> ModelT:
+        """
+        Get a record by ID or raise an exception if not found.
+
+        Args:
+            record_id: Record UUID
+
+        Returns:
+            ModelT: Record if found
+
+        Raises:
+            RecordNotFoundError: If record is not found
+        """
+        record = await self.get_by_id(record_id)
+        if not record:
+            raise RecordNotFoundError(
+                detail=f"{self.model.__name__} with ID {record_id} not found",
+            )
+        return record
 
     async def get_all(
         self,
@@ -85,12 +132,10 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT, UpdateSchemaT](ABC):
         Returns:
             list[ModelT]: List of records
         """
-        result = await self.session.execute(
-            select(self.model).offset(skip).limit(limit),
-        )
+        statement = select(self.model).offset(skip).limit(limit)
+        result = await self.session.execute(statement)
         return list(result.scalars().all())
 
-    @abstractmethod
     async def update(
         self,
         record_id: UUID,
@@ -106,7 +151,15 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT, UpdateSchemaT](ABC):
         Returns:
             ModelT | None: Updated record if found, None otherwise
         """
-        ...
+        db_obj = await self.get_by_id(record_id)
+        if not db_obj:
+            return None
+
+        obj_data = schema.model_dump(exclude_unset=True)
+        for key, value in obj_data.items():
+            setattr(db_obj, key, value)
+
+        return await self._add_and_refresh(db_obj)
 
     async def delete(self, record_id: UUID) -> bool:
         """
@@ -124,7 +177,6 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT, UpdateSchemaT](ABC):
 
         await self.session.delete(record)
         await self.session.flush()
-
         return True
 
     async def exists(self, record_id: UUID) -> bool:
@@ -137,8 +189,11 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT, UpdateSchemaT](ABC):
         Returns:
             bool: True if record exists, False otherwise
         """
-        record = await self.get_by_id(record_id)
-        return record is not None
+        # Optimized existence check without loading the full object
+        id_column = getattr(self.model, self.id_field)
+        statement = select(1).where(id_column == record_id).limit(1)
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none() is not None
 
     async def count(self) -> int:
         """
@@ -147,15 +202,14 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT, UpdateSchemaT](ABC):
         Returns:
             int: Total number of records
         """
-        result = await self.session.execute(
-            select(func.count()).select_from(self.model),
-        )
+        statement = select(func.count()).select_from(self.model)
+        result = await self.session.execute(statement)
         count = result.scalar()
         return count if count is not None else 0
 
     async def _add_and_refresh(self, record: ModelT) -> ModelT:
         """
-        Add a record and refresh it from the database.
+        Add a record and refresh it from the database with error handling.
 
         Args:
             record: Record to add
@@ -187,7 +241,7 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT, UpdateSchemaT](ABC):
     async def _check_exists_by_field(
         self,
         field_name: str,
-        value: str | UUID,
+        value: FilterValue,
         exclude_id: UUID | None = None,
     ) -> bool:
         """
@@ -202,52 +256,12 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT, UpdateSchemaT](ABC):
             bool: True if record exists, False otherwise
         """
         field = getattr(self.model, field_name)
-        query = select(self.model).where(field == value)
+        statement = select(1).where(field == value)
 
         if exclude_id is not None:
             id_column = getattr(self.model, self.id_field)
-            query = query.where(id_column != exclude_id)
+            statement = statement.where(id_column != exclude_id)
 
-        result = await self.session.execute(query)
+        statement = statement.limit(1)
+        result = await self.session.execute(statement)
         return result.scalar_one_or_none() is not None
-
-    async def get_by_field(
-        self,
-        field_name: str,
-        value: str | UUID,
-    ) -> ModelT | None:
-        """
-        Get a record by a specific field value.
-
-        Args:
-            field_name: Name of the field to search
-            value: Value to search for
-
-        Returns:
-            ModelT | None: Record if found, None otherwise
-        """
-        field = getattr(self.model, field_name)
-        result = await self.session.execute(
-            select(self.model).where(field == value),
-        )
-        return result.scalar_one_or_none()
-
-    async def get_or_raise(self, record_id: UUID) -> ModelT:
-        """
-        Get a record by ID or raise an exception if not found.
-
-        Args:
-            record_id: Record UUID
-
-        Returns:
-            ModelT: Record if found
-
-        Raises:
-            RecordNotFoundError: If record is not found
-        """
-        record = await self.get_by_id(record_id)
-        if not record:
-            raise RecordNotFoundError(
-                detail=f"{self.model.__name__} with ID {record_id} not found",
-            )
-        return record

@@ -2,18 +2,18 @@
 
 from datetime import UTC, datetime
 from logging import getLogger
-from typing import Literal, cast
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.expression import ColumnElement
 
 from app.configs import file_logger
-from app.errors.database import DatabaseError, DuplicateEntryError
+from app.errors.database import DuplicateEntryError
 from app.models.blog import BlogDB
+from app.repositories.base import BaseRepository
 from app.schemas.blog import Blog, BlogUpdate
 
 logger = file_logger(getLogger(__name__))
@@ -48,13 +48,15 @@ def calculate_reading_time(word_count: int) -> int:
     return max(1, round(reading_time))
 
 
-class BlogRepository:
+class BlogRepository(BaseRepository[BlogDB, Blog, BlogUpdate]):
     """
     Repository for Blog database operations.
 
     This class implements the repository pattern for Blog entities,
     providing CRUD operations and business logic.
     """
+
+    model = BlogDB
 
     def __init__(self, session: AsyncSession) -> None:
         """
@@ -63,15 +65,21 @@ class BlogRepository:
         Args:
             session: Async database session
         """
-        self.session = session
+        super().__init__(session)
 
-    async def create(self, blog: Blog, author_id: UUID) -> BlogDB:
+    async def create(
+        self,
+        schema: Blog,
+        author_id: UUID | None = None,
+        **kwargs: dict[str, Any],
+    ) -> BlogDB:
         """
         Create a new blog post in the database.
 
         Args:
-            blog: Blog schema with blog data
-            author_id: UUID of the blog author
+            schema: Blog schema with blog data
+            author_id: UUID of the blog author (required, but optional in signature to match base)
+            **kwargs: Additional arguments
 
         Returns:
             BlogDB: Created blog database model
@@ -79,54 +87,40 @@ class BlogRepository:
         Raises:
             DuplicateEntryError: If slug already exists
             DatabaseError: For other database errors
+            ValueError: If author_id is missing
         """
-        word_count = calculate_word_count(blog.content)
+        if author_id is None:
+            detail = "author_id is required for creating a blog"
+            raise ValueError(detail)
+
+        word_count = calculate_word_count(schema.content)
         reading_time = calculate_reading_time(word_count)
 
         db_blog = BlogDB(
             author_id=author_id,
-            title=blog.title,
-            slug=blog.slug,
-            content=blog.content,
-            summary=blog.summary,
+            title=schema.title,
+            slug=schema.slug,
+            content=schema.content,
+            summary=schema.summary,
             view_count=0,
             word_count=word_count,
             reading_time_minutes=reading_time,
-            status=blog.status if hasattr(blog, "status") and blog.status else "draft",
-            tags=blog.tags,
-            images_url=[str(url) for url in blog.images_url] if blog.images_url else None,
+            status=schema.status if hasattr(schema, "status") and schema.status else "draft",
+            tags=schema.tags,
+            images_url=[str(url) for url in schema.images_url] if schema.images_url else None,
             created_at=datetime.now(tz=UTC).replace(second=0, microsecond=0),
             updated_at=datetime.now(tz=UTC).replace(second=0, microsecond=0),
         )
 
         try:
-            self.session.add(db_blog)
-            await self.session.flush()
-            await self.session.refresh(db_blog)
-            return db_blog
-        except IntegrityError as e:
-            await self.session.rollback()
-            error_msg = str(e.orig) if e.orig else str(e)
-            if "slug" in error_msg.lower():
+            return await self._add_and_refresh(db_blog)
+        except DuplicateEntryError as e:
+            # Re-raise with friendlier message if it's a slug conflict
+            if "slug" in str(e):
                 raise DuplicateEntryError(
-                    detail=f"Blog with slug '{blog.slug}' already exists",
+                    detail=f"Blog with slug '{schema.slug}' already exists",
                 ) from e
-            raise DatabaseError(detail=f"Database integrity error: {error_msg}") from e
-
-    async def get_by_id(self, blog_id: UUID) -> BlogDB | None:
-        """
-        Get blog by ID.
-
-        Args:
-            blog_id: Blog UUID
-
-        Returns:
-            BlogDB | None: Blog if found, None otherwise
-        """
-        result = await self.session.execute(
-            select(BlogDB).where(cast(ColumnElement[bool], BlogDB.id == blog_id)),
-        )
-        return result.scalar_one_or_none()
+            raise
 
     async def get_by_slug(self, slug: str) -> BlogDB | None:
         """
@@ -138,10 +132,7 @@ class BlogRepository:
         Returns:
             BlogDB | None: Blog if found, None otherwise
         """
-        result = await self.session.execute(
-            select(BlogDB).where(cast(ColumnElement[bool], BlogDB.slug == slug)),
-        )
-        return result.scalar_one_or_none()
+        return await self.get_by_field("slug", slug)
 
     async def get_all(
         self,
@@ -199,13 +190,13 @@ class BlogRepository:
         """
         return await self.get_all(skip=skip, limit=limit, author_id=author_id)
 
-    async def update(self, blog_id: UUID, blog_update: BlogUpdate) -> BlogDB | None:
+    async def update(self, record_id: UUID, schema: BlogUpdate) -> BlogDB | None:
         """
         Update blog information.
 
         Args:
-            blog_id: Blog UUID
-            blog_update: Blog update schema with fields to update
+            record_id: Blog UUID
+            schema: Blog update schema with fields to update
 
         Returns:
             BlogDB | None: Updated blog if found, None otherwise
@@ -213,19 +204,19 @@ class BlogRepository:
         Raises:
             ValueError: If slug already exists for another blog
         """
-        db_blog = await self.get_by_id(blog_id)
+        db_blog = await self.get_by_id(record_id)
         if not db_blog:
             return None
 
         # Check if slug is being updated and already exists
-        if blog_update.slug:
-            existing_blog = await self.get_by_slug(blog_update.slug)
-            if existing_blog and existing_blog.id != blog_id:
-                msg = f"Slug '{blog_update.slug}' already exists"
+        if schema.slug:
+            existing_blog = await self.get_by_slug(schema.slug)
+            if existing_blog and existing_blog.id != record_id:
+                msg = f"Slug '{schema.slug}' already exists"
                 raise ValueError(msg)
 
         # Update fields
-        update_data = blog_update.model_dump(exclude_unset=True, exclude_none=True)
+        update_data = schema.model_dump(exclude_unset=True, exclude_none=True)
 
         # Convert image URLs to strings
         if "images_url" in update_data and update_data["images_url"]:
@@ -243,33 +234,10 @@ class BlogRepository:
             microsecond=0,
         )
 
-        # Apply updates
         for key, value in update_data.items():
             setattr(db_blog, key, value)
 
-        await self.session.flush()
-        await self.session.refresh(db_blog)
-
-        return db_blog
-
-    async def delete(self, blog_id: UUID) -> bool:
-        """
-        Delete blog by ID.
-
-        Args:
-            blog_id: Blog UUID
-
-        Returns:
-            bool: True if blog was deleted, False if not found
-        """
-        db_blog = await self.get_by_id(blog_id)
-        if not db_blog:
-            return False
-
-        await self.session.delete(db_blog)
-        await self.session.flush()
-
-        return True
+        return await self._add_and_refresh(db_blog)
 
     async def increment_view_count(self, blog_id: UUID) -> BlogDB | None:
         """
@@ -286,10 +254,7 @@ class BlogRepository:
             return None
 
         db_blog.view_count += 1
-        await self.session.flush()
-        await self.session.refresh(db_blog)
-
-        return db_blog
+        return await self._add_and_refresh(db_blog)
 
     async def search_by_tags(
         self,

@@ -274,7 +274,7 @@ def blogs_search_tags_key(tags: list[str], pagination: PaginationQuery) -> str:
     operation_id="blogs_create",
 )
 @timed("/blogs/create")
-@limiter.limit(lambda request: "10/minute" if request.headers.get("X-API-Key") else "2/minute")
+@limiter.limit(lambda key: "10/minute" if "apikey" in key else "2/minute")
 @cache_busting(
     cache_manager,
     key_builder=lambda blog, **kw: [
@@ -380,7 +380,7 @@ async def create_blog(
     operation_id="blogs_get_by_id",
 )
 @timed("/blogs/by-id")
-@limiter.limit(lambda request: "60/minute" if request.headers.get("X-API-Key") else "20/minute")
+@limiter.limit(lambda key: "60/minute" if "apikey" in key else "20/minute")
 async def get_blog(
     request: Request,
     response: Response,
@@ -455,7 +455,7 @@ async def get_blog(
     operation_id="blogs_get_by_slug",
 )
 @timed("/blogs/by-slug")
-@limiter.limit(lambda request: "60/minute" if request.headers.get("X-API-Key") else "20/minute")
+@limiter.limit(lambda key: "60/minute" if "apikey" in key else "20/minute")
 @cached(
     cache_manager,
     ttl=3600,
@@ -537,7 +537,7 @@ async def get_blog_by_slug(
     operation_id="blogs_get_all",
 )
 @timed("/blogs/all")
-@limiter.limit(lambda request: "30/minute" if request.headers.get("X-API-Key") else "10/minute")
+@limiter.limit(lambda key: "30/minute" if "apikey" in key else "10/minute")
 @cached(
     cache_manager,
     ttl=3600,
@@ -621,7 +621,7 @@ async def get_blogs(
     operation_id="blogs_get_by_author",
 )
 @timed("/blogs/by-author-id")
-@limiter.limit(lambda request: "30/minute" if request.headers.get("X-API-Key") else "10/minute")
+@limiter.limit(lambda key: "30/minute" if "apikey" in key else "10/minute")
 @cached(
     cache_manager,
     ttl=3600,
@@ -703,7 +703,7 @@ async def get_blogs_by_author(
     operation_id="blogs_search_tags",
 )
 @timed("/blogs/search/tags")
-@limiter.limit(lambda request: "30/minute" if request.headers.get("X-API-Key") else "10/minute")
+@limiter.limit(lambda key: "30/minute" if "apikey" in key else "10/minute")
 @cached(
     cache_manager,
     ttl=3600,
@@ -789,7 +789,7 @@ async def search_blogs_by_tags(
     operation_id="blogs_update",
 )
 @timed("/blogs/update")
-@limiter.limit(lambda request: "20/minute" if request.headers.get("X-API-Key") else "5/minute")
+@limiter.limit(lambda key: "20/minute" if "apikey" in key else "5/minute")
 @cache_busting(
     cache_manager,
     key_builder=lambda blog_id, blog_update, **kw: [
@@ -916,7 +916,7 @@ async def update_blog(
     operation_id="blogs_delete",
 )
 @timed("/blogs/delete")
-@limiter.limit(lambda request: "10/minute" if request.headers.get("X-API-Key") else "2/minute")
+@limiter.limit(lambda key: "10/minute" if "apikey" in key else "2/minute")
 @cache_busting(
     cache_manager,
     key_builder=lambda blog_id, **kw: [

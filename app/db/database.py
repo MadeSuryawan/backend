@@ -88,16 +88,8 @@ async def get_session() -> AsyncGenerator[AsyncSession]:
             return result.scalars().all()
         ```
     """
-    async with async_session_maker() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            logger.exception("Database session error")
-            raise
-        finally:
-            await session.close()
+    async with transaction() as session:
+        yield session
 
 
 @asynccontextmanager

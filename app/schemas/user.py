@@ -60,7 +60,7 @@ class UserCreate(BaseModel):
         ...,
         description="Password",
         min_length=8,
-        examples=["password123"],
+        examples=["Password123"],
     )
     profile_picture: HttpUrl | None = Field(
         alias="profilePicture",
