@@ -6,8 +6,9 @@ from uuid import UUID, uuid4
 
 from pydantic import ConfigDict
 from sqlalchemy import DateTime, Index
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declared_attr
-from sqlmodel import JSON, Column, Field, ForeignKey, SQLModel, String
+from sqlmodel import Column, Field, ForeignKey, SQLModel, String
 
 
 class BlogDB(SQLModel, table=True):
@@ -92,12 +93,12 @@ class BlogDB(SQLModel, table=True):
     # Array fields (stored as JSON in PostgreSQL)
     tags: list[str] = Field(
         default_factory=list,
-        sa_column=Column(JSON, nullable=False),
+        sa_column=Column(JSONB, nullable=False),
         description="Blog tags for categorization",
     )
     images_url: list[str] | None = Field(
         default=None,
-        sa_column=Column(JSON),
+        sa_column=Column(JSONB),
         description="List of image URLs",
     )
 
