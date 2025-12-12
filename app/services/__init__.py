@@ -1,1 +1,3 @@
-# app/services/__init__.py
+from app.services.auth import AuthService
+
+__all__ = ["AuthService"]

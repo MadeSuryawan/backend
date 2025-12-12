@@ -245,7 +245,7 @@ class MemoryClient:
     async def scan_iter(
         self,
         pattern: str,
-        count: int = 100,  # noqa: ARG002 - kept for API compatibility with RedisClient
+        count: int = 100,
     ) -> AsyncGenerator[str]:
         """
         Yield keys matching the pattern.

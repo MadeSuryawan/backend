@@ -16,6 +16,10 @@ Endpoints include:
   - Update user
   - Delete user
 
+Dependencies
+------------
+  - `UserOpsDeps`: Bundles repository and current user for authenticated operations.
+
 Rate Limiting
 -------------
 All endpoints define explicit limits and include `429` response examples. Tiered
@@ -45,6 +49,7 @@ from starlette.status import (
 from app.configs import file_logger
 from app.db import get_session
 from app.decorators import cache_busting, cached, timed
+from app.dependencies import get_current_user
 from app.errors.base import host
 from app.errors.database import DatabaseError, DuplicateEntryError
 from app.managers import cache_manager, limiter
@@ -52,6 +57,7 @@ from app.models import UserDB
 from app.repositories import UserRepository
 from app.schemas import UserCreate, UserResponse, UserUpdate
 from app.utils import response_datetime
+from app.utils.cache_keys import user_id_key, username_key, users_list_key
 
 router = APIRouter(prefix="/users", tags=["👤 Users"])
 
@@ -82,18 +88,6 @@ def db_user_to_response(db_user: UserDB) -> UserResponse:
         raise ValueError(mssg) from e
 
     return response
-
-
-def user_id_key(user_id: UUID) -> str:
-    return f"user_by_id_{user_id}"
-
-
-def username_key(username: str) -> str:
-    return f"user_by_username_{username}"
-
-
-def users_list_key(skip: int, limit: int) -> str:
-    return f"users_all_{skip}_{limit}"
 
 
 @dataclass(frozen=True)
@@ -132,6 +126,14 @@ def get_user_repository(
 
 
 RepoDep = Annotated[UserRepository, Depends(get_user_repository)]
+
+
+@dataclass(frozen=True)
+class UserOpsDeps:
+    """Dependencies for authenticated user operations."""
+
+    repo: RepoDep
+    current_user: Annotated[UserDB, Depends(get_current_user)]
 
 
 @router.post(
@@ -547,7 +549,7 @@ async def update_user(
             },
         ),
     ],
-    repo: RepoDep,
+    deps: Annotated[UserOpsDeps, Depends()],
 ) -> UserResponse:
     """
     Update user information and return the safe response model.
@@ -562,8 +564,8 @@ async def update_user(
         User identifier.
     user_update : UserUpdate
         Update payload (partial updates accepted).
-    repo : UserRepository
-        Repository dependency.
+    deps : UserOpsDeps
+        Operation dependencies (repo + current_user).
 
     Returns
     -------
@@ -575,9 +577,14 @@ async def update_user(
     HTTPException
         If user not found or invalid update.
     """
+    if deps.current_user.uuid != user_id:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="You can only update your own profile",
+        )
     try:
-        existing = await repo.get_by_id(user_id)
-        db_user = await repo.update(user_id, user_update)
+        existing = await deps.repo.get_by_id(user_id)
+        db_user = await deps.repo.update(user_id, user_update)
         if not db_user:
             raise HTTPException(
                 status_code=HTTP_404_NOT_FOUND,
@@ -640,6 +647,7 @@ async def delete_user(
     response: Response,
     user_id: UUID,
     repo: RepoDep,
+    current_user: Annotated[UserDB, Depends(get_current_user)],
 ) -> None:
     """
     Delete user by ID.
@@ -654,12 +662,19 @@ async def delete_user(
         User identifier.
     repo : UserRepository
         Repository dependency.
+    current_user : UserDB
+        Authenticated user.
 
     Raises
     ------
     HTTPException
         If user not found.
     """
+    if current_user.uuid != user_id:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="You can only delete your own profile",
+        )
     existing = await repo.get_by_id(user_id)
     deleted = await repo.delete(user_id)
     if not deleted:

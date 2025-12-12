@@ -1,5 +1,6 @@
 from app.routes.ai import get_email_client
 from app.routes.ai import router as ai_router
+from app.routes.auth import router as auth_router
 from app.routes.blog import router as blog_router
 from app.routes.cache import get_cache_manager
 from app.routes.cache import router as cache_router
@@ -16,6 +17,7 @@ __all__ = [
     "ai_router",
     "get_email_client",
     "limiter_router",
+    "auth_router",
     "blog_router",
     "user_router",
 ]

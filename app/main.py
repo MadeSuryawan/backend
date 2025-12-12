@@ -8,9 +8,11 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, ORJSONResponse, Response
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import JSONResponse
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
+from app.configs import settings
 from app.errors import (
     AiError,
     CacheExceptionError,
@@ -18,7 +20,9 @@ from app.errors import (
     DatabaseError,
     EmailServiceError,
     PasswordHashingError,
+    UserAuthenticationError,
     ai_exception_handler,
+    auth_exception_handler,
     cache_exception_handler,
     circuit_breaker_exception_handler,
     database_exception_handler,
@@ -42,6 +46,7 @@ from app.middleware import (
 )
 from app.routes import (
     ai_router,
+    auth_router,
     blog_router,
     cache_router,
     email_router,
@@ -71,6 +76,7 @@ configure_cors(app)
 
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Middleware to tell FastAPI it is behind a proxy (Zuplo) or Render
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
@@ -78,6 +84,7 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 routes = [
     ai_router,
+    auth_router,
     email_router,
     user_router,
     blog_router,
@@ -94,6 +101,7 @@ errors = [
     (EmailServiceError, email_client_exception_handler),
     (CircuitBreakerError, circuit_breaker_exception_handler),
     (PasswordHashingError, password_hashing_exception_handler),
+    (UserAuthenticationError, auth_exception_handler),
     (DatabaseError, database_exception_handler),
     (AiError, ai_exception_handler),
     (RequestValidationError, validation_exception_handler),

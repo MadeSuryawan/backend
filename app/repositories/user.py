@@ -32,7 +32,7 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
         """
         super().__init__(session)
 
-    async def create(self, schema: UserCreate, **kwargs: dict[str, Any]) -> UserDB:
+    async def create(self, schema: UserCreate, **kwargs: Any) -> UserDB:  # noqa: ANN401
         """
         Create a new user in the database.
 
@@ -47,7 +47,9 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
             DuplicateEntryError: If username or email already exists
             DatabaseError: For other database errors
         """
-        password_hash = await hash_password(schema.password.get_secret_value())
+        password_hash = None
+        if schema.password:
+            password_hash = await hash_password(schema.password.get_secret_value())
 
         db_user = UserDB(
             username=schema.username,
@@ -62,6 +64,8 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
             gender=schema.gender,
             phone_number=schema.phone_number,
             country=schema.country,
+            auth_provider=kwargs.get("auth_provider", "email"),
+            provider_id=kwargs.get("provider_id"),
         )
 
         # Use the base class helper method for consistent error handling
@@ -145,7 +149,10 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
         if not db_user:
             return None
 
-        if not verify_password(password, db_user.password_hash):
+        if not db_user.password_hash:
+            return None
+
+        if not await verify_password(password, db_user.password_hash):
             return None
 
         return db_user

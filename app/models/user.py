@@ -37,9 +37,20 @@ class UserDB(SQLModel, table=True):
         sa_column=Column(String(255), unique=True, nullable=False, index=True),
         description="Email address (unique)",
     )
-    password_hash: str = Field(
-        sa_column=Column(String(255), nullable=False),
-        description="Hashed password",
+    password_hash: str | None = Field(
+        default=None,
+        sa_column=Column(String(255), nullable=True),
+        description="Hashed password (null for OAuth users)",
+    )
+    auth_provider: str = Field(
+        default="email",
+        sa_column=Column(String(50), nullable=False, server_default="email"),
+        description="Auth provider (email, google, wechat)",
+    )
+    provider_id: str | None = Field(
+        default=None,
+        sa_column=Column(String(255), nullable=True, index=True),
+        description="Provider specific ID",
     )
 
     # Optional profile fields

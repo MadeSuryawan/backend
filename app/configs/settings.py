@@ -147,6 +147,12 @@ class Settings(BaseSettings):
     LOG_FILE: str = "logs/app.log"
     PRODUCTION_FRONTEND_URL: str | None = None
 
+    # OAuth Settings
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
+    WECHAT_APP_ID: str | None = None
+    WECHAT_APP_SECRET: str | None = None
+
     # Password Security
     PASSWORD_SECURITY_LEVEL: str = "standard"
     PASSWORD_HASHER_DEBUG: bool = False

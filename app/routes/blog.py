@@ -18,6 +18,10 @@ Endpoints include:
   - Update blog
   - Delete blog
 
+Dependencies
+------------
+  - `BlogOpsDeps`: Bundles repository and current user for authenticated operations.
+
 Rate Limiting
 -------------
 All endpoints define explicit limits and include `429` response examples. Tiered
@@ -47,10 +51,11 @@ from starlette.status import (
 from app.configs import file_logger
 from app.db import get_session
 from app.decorators import cache_busting, cached, timed
+from app.dependencies import get_current_user
 from app.errors.base import host
 from app.errors.database import DatabaseError, DuplicateEntryError
 from app.managers import cache_manager, limiter
-from app.models import BlogDB
+from app.models import BlogDB, UserDB
 from app.repositories import BlogRepository
 from app.schemas import BlogCreate, BlogListResponse, BlogResponse, BlogUpdate
 from app.schemas.blog import Blog as BlogSchema
@@ -128,6 +133,14 @@ def get_blog_repository(
 
 
 RepoDep = Annotated[BlogRepository, Depends(get_blog_repository)]
+
+
+@dataclass(frozen=True)
+class BlogOpsDeps:
+    """Dependencies for authenticated blog operations."""
+
+    repo: RepoDep
+    current_user: Annotated[UserDB, Depends(get_current_user)]
 
 
 @dataclass(frozen=True)
@@ -792,7 +805,7 @@ async def search_blogs_by_tags(
 @limiter.limit(lambda key: "20/minute" if "apikey" in key else "5/minute")
 @cache_busting(
     cache_manager,
-    key_builder=lambda blog_id, blog_update, **kw: [
+    key_builder=lambda blog_id, blog_update, deps, **kw: [
         blogs_list_key(BlogListQuery(skip=0, limit=10)),
     ],
     namespace="blogs",
@@ -815,7 +828,7 @@ async def update_blog(
             },
         ),
     ],
-    repo: RepoDep,
+    deps: Annotated[BlogOpsDeps, Depends()],
 ) -> BlogResponse:
     """
     Update blog information.
@@ -830,8 +843,8 @@ async def update_blog(
         Blog identifier.
     blog_update : BlogUpdate
         Partial update payload.
-    repo : BlogRepository
-        Repository dependency.
+    deps : BlogOpsDeps
+        Operation dependencies (repo + current_user).
 
     Returns
     -------
@@ -844,8 +857,13 @@ async def update_blog(
         If blog not found or invalid update.
     """
     try:
-        existing = await repo.get_by_id(blog_id)
-        db_blog = await repo.update(blog_id, blog_update)
+        existing = await deps.repo.get_by_id(blog_id)
+        if existing and existing.author_id != deps.current_user.uuid:
+            raise HTTPException(
+                status_code=HTTP_403_FORBIDDEN,
+                detail="You can only update your own blogs",
+            )
+        db_blog = await deps.repo.update(blog_id, blog_update)
         if not db_blog:
             raise HTTPException(
                 status_code=HTTP_404_NOT_FOUND,
@@ -929,6 +947,7 @@ async def delete_blog(
     response: Response,
     blog_id: UUID,
     repo: RepoDep,
+    current_user: Annotated[UserDB, Depends(get_current_user)],
 ) -> None:
     """
     Delete blog by ID.
@@ -943,6 +962,8 @@ async def delete_blog(
         Blog identifier.
     repo : BlogRepository
         Repository dependency.
+    current_user : UserDB
+        Authenticated user.
 
     Raises
     ------
@@ -950,6 +971,11 @@ async def delete_blog(
         If blog not found.
     """
     existing = await repo.get_by_id(blog_id)
+    if existing and existing.author_id != current_user.uuid:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="You can only delete your own blogs",
+        )
     deleted = await repo.delete(blog_id)
     if not deleted:
         raise HTTPException(
