@@ -49,14 +49,13 @@ from app.configs import file_logger
 from app.decorators.caching import cache_busting, cached
 from app.decorators.metrics import timed
 from app.dependencies import UserDBDep, UserQueryListDep, UserRepoDep
-from app.errors.base import host
 from app.errors.database import DatabaseError, DuplicateEntryError
 from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import limiter
 from app.models import UserDB
 from app.schemas import UserCreate, UserResponse, UserUpdate
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
-from app.utils.helpers import response_datetime
+from app.utils.helpers import host, response_datetime
 
 router = APIRouter(prefix="/users", tags=["👤 Users"])
 

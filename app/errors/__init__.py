@@ -15,7 +15,7 @@ from app.errors.auth import (
     UserAuthenticationError,
     auth_exception_handler,
 )
-from app.errors.base import BASE_EXCEPTION, BaseAppError, create_exception_handler, host
+from app.errors.base import BASE_EXCEPTION, BaseAppError, create_exception_handler
 from app.errors.cache import (
     CacheCompressionError,
     CacheDecompressionError,
@@ -94,5 +94,4 @@ __all__ = [
     "QueryProcessingError",
     "ValidationError",
     "validation_exception_handler",
-    "host",
 ]

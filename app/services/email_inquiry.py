@@ -6,8 +6,8 @@ from pydantic import ValidationError
 
 from app.clients.ai_client import AiClient
 from app.configs import file_logger
-from app.errors import host
 from app.schemas.email import AnalysisFormat, ContactAnalysisResponse, EmailInquiry
+from app.utils.helpers import host
 
 logger = file_logger(getLogger(__name__))
 
