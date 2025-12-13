@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from httpx import AsyncClient
 
+from app.dependencies.dependencies import get_cache_manager
 from app.main import app
-from app.routes.cache import get_cache_manager
 from app.schemas.cache import CacheToggleResponse
 
 

@@ -8,10 +8,10 @@ from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
 from app.clients import MemoryClient
+from app.dependencies import get_cache_manager
 from app.main import app
 from app.managers.cache_manager import CacheManager
 from app.managers.rate_limiter import limiter
-from app.routes import get_cache_manager  # <--- Import the dependency
 
 
 @pytest.fixture

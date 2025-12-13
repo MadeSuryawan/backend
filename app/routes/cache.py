@@ -11,15 +11,14 @@ All endpoints include explicit rate limits and `429` responses.
 """
 
 from logging import getLogger
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import ORJSONResponse
 
 from app.configs import file_logger
 from app.decorators import timed
-from app.managers import cache_manager, limiter
-from app.managers.cache_manager import CacheManager
+from app.dependencies import CacheDep
+from app.managers import limiter
 from app.schemas import (
     CacheClearResponse,
     CachePingResponse,
@@ -31,16 +30,6 @@ from app.schemas import (
 logger = file_logger(getLogger(__name__))
 
 router = APIRouter(prefix="/cache", tags=["🧰 Cache"])
-
-
-# --- Dependency Injection ---
-def get_cache_manager() -> CacheManager:
-    """Dependency to get the global cache manager instance."""
-    return cache_manager
-
-
-# Type alias for cleaner signatures
-CacheDep = Annotated[CacheManager, Depends(get_cache_manager)]
 
 
 # --- Routes ---

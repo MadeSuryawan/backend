@@ -14,7 +14,7 @@ from app.configs import file_logger
 from app.errors.database import DuplicateEntryError
 from app.models.blog import BlogDB
 from app.repositories.base import BaseRepository
-from app.schemas.blog import Blog, BlogUpdate
+from app.schemas.blog import BlogSchema, BlogUpdate
 
 logger = file_logger(getLogger(__name__))
 
@@ -48,7 +48,7 @@ def calculate_reading_time(word_count: int) -> int:
     return max(1, round(reading_time))
 
 
-class BlogRepository(BaseRepository[BlogDB, Blog, BlogUpdate]):
+class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
     """
     Repository for Blog database operations.
 
@@ -69,7 +69,7 @@ class BlogRepository(BaseRepository[BlogDB, Blog, BlogUpdate]):
 
     async def create(
         self,
-        schema: Blog,
+        schema: BlogSchema,
         author_id: UUID | None = None,
         **kwargs: dict[str, Any],
     ) -> BlogDB:

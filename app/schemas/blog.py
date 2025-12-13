@@ -123,7 +123,7 @@ class BlogCreate(BaseModel):
         return data
 
 
-class Blog(BaseModel):
+class BlogSchema(BaseModel):
     """Blog model for representing blog posts (includes auto-generated fields)."""
 
     model_config = ConfigDict(populate_by_name=True)
@@ -261,7 +261,7 @@ class Blog(BaseModel):
         return list(set(v))
 
     @model_validator(mode="after")
-    def validate_status_transition(self) -> "Blog":
+    def validate_status_transition(self) -> "BlogSchema":
         """Validate status is valid (can be extended for transition logic)."""
         valid_statuses = {"draft", "published", "archived"}
         if self.status not in valid_statuses:

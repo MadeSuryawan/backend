@@ -6,7 +6,6 @@ from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import ORJSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import RedirectResponse, Response
 from starlette.status import (
     HTTP_201_CREATED,
@@ -15,14 +14,11 @@ from starlette.status import (
 )
 
 from app.configs import settings
-from app.db import get_session
 from app.decorators import timed
-from app.dependencies import get_current_user
+from app.dependencies import AuthServiceDep, UserRepoDep, UserRespDep
 from app.managers import cache_manager, limiter
-from app.repositories import UserRepository
 from app.schemas.auth import Token
 from app.schemas.user import UserCreate, UserResponse
-from app.services.auth import AuthService
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
 
 router = APIRouter(prefix="/auth", tags=["🔐 Auth"])
@@ -50,15 +46,6 @@ if settings.WECHAT_APP_ID:
         access_token_url="https://api.weixin.qq.com/sns/oauth2/access_token",
         client_kwargs={"scope": "snsapi_login"},
     )
-
-
-def get_auth_service(session: Annotated[AsyncSession, Depends(get_session)]) -> AuthService:
-    """Dependency to get AuthService."""
-    repo = UserRepository(session)
-    return AuthService(repo)
-
-
-AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 
 
 @router.post(
@@ -127,11 +114,6 @@ async def login_for_access_token(
     return auth_service.create_token_for_user(user)
 
 
-def get_user_repository(session: Annotated[AsyncSession, Depends(get_session)]) -> UserRepository:
-    """Dependency to get UserRepository."""
-    return UserRepository(session)
-
-
 @router.post(
     "/register",
     response_class=ORJSONResponse,
@@ -178,7 +160,7 @@ async def register_user(
     request: Request,
     response: Response,
     user_create: UserCreate,
-    repo: Annotated[UserRepository, Depends(get_user_repository)],
+    repo: UserRepoDep,
 ) -> UserResponse:
     """
     Register a new user.
@@ -366,7 +348,7 @@ async def auth_callback(
 async def read_users_me(
     request: Request,
     response: Response,
-    current_user: Annotated[UserResponse, Depends(get_current_user)],
+    user_resp: UserRespDep,
 ) -> UserResponse:
     """
     Get current logged in user.
@@ -377,7 +359,7 @@ async def read_users_me(
         Current request context.
     response : Response
         Response object for middleware/decorators.
-    current_user : UserResponse
+    user_resp : UserResponse
         Authenticated user (resolved by dependency).
 
     Returns
@@ -385,4 +367,4 @@ async def read_users_me(
     UserResponse
         Current user's profile information.
     """
-    return UserResponse.model_validate(current_user, from_attributes=True)
+    return UserResponse.model_validate(user_resp, from_attributes=True)

@@ -18,14 +18,13 @@ All endpoints define explicit rate limits and include `429` response examples.
 from logging import getLogger
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, Request
+from fastapi import APIRouter, Body, Request
 from fastapi.responses import ORJSONResponse
 from starlette.responses import Response
 
-from app.clients.ai_client import AiClient
-from app.clients.email_client import EmailClient
 from app.configs import file_logger
 from app.decorators import cached, timed
+from app.dependencies import AiDep, EmailDep
 from app.managers import cache_manager, limiter
 from app.schemas.ai.chatbot import ChatRequest, ChatResponse
 from app.schemas.ai.itinerary import (
@@ -42,20 +41,6 @@ from app.services.itinerary import ai_convert_txt, generate_itinerary
 logger = file_logger(getLogger(__name__))
 
 router = APIRouter(prefix="/ai", tags=["🤖 Ai"])
-
-
-def get_ai_client_state(request: Request) -> AiClient:
-    return request.app.state.ai_client
-
-
-AiDep = Annotated[AiClient, Depends(get_ai_client_state)]
-
-
-def get_email_client() -> EmailClient:
-    return EmailClient()
-
-
-EmailDep = Annotated[EmailClient, Depends(get_email_client)]
 
 
 def itinerary_md_key(itinerary_req: ItineraryRequestMD) -> str:

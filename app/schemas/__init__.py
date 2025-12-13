@@ -1,4 +1,4 @@
-from app.schemas.blog import BlogCreate, BlogListResponse, BlogResponse, BlogUpdate
+from app.schemas.blog import BlogCreate, BlogListResponse, BlogResponse, BlogSchema, BlogUpdate
 from app.schemas.cache import (
     CacheClearResponse,
     CachePingResponse,
@@ -18,6 +18,7 @@ from app.schemas.limiter import (
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 
 __all__ = [
+    "BlogSchema",
     "CacheClearResponse",
     "CachePingResponse",
     "CacheResetStatsResponse",

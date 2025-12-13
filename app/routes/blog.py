@@ -37,7 +37,6 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import ORJSONResponse
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 from starlette.status import (
     HTTP_201_CREATED,
@@ -49,21 +48,43 @@ from starlette.status import (
 )
 
 from app.configs import file_logger
-from app.db import get_session
 from app.decorators import cache_busting, cached, timed
-from app.dependencies import get_current_user
+from app.dependencies import BlogListQuery, BlogQueryListDep, BlogRepoDep, UserDBDep
 from app.errors.base import host
 from app.errors.database import DatabaseError, DuplicateEntryError
 from app.managers import cache_manager, limiter
-from app.models import BlogDB, UserDB
-from app.repositories import BlogRepository
-from app.schemas import BlogCreate, BlogListResponse, BlogResponse, BlogUpdate
-from app.schemas.blog import Blog as BlogSchema
+from app.models import BlogDB
+from app.schemas import BlogCreate, BlogListResponse, BlogResponse, BlogSchema, BlogUpdate
 from app.utils import response_datetime
 
 router = APIRouter(prefix="/blogs", tags=["📝 Blogs"])
 
 logger = file_logger(getLogger(__name__))
+
+
+@dataclass(frozen=True)
+class BlogOpsDeps:
+    """Dependencies for authenticated blog operations."""
+
+    repo: BlogRepoDep
+    current_user: UserDBDep
+
+
+@dataclass(frozen=True)
+class PaginationQuery:
+    """
+    Query container for pagination.
+
+    Parameters
+    ----------
+    skip : int
+        Number of records to skip.
+    limit : int
+        Maximum number of records to return.
+    """
+
+    skip: int = 0
+    limit: int = 10
 
 
 def db_blog_to_response(db_blog: BlogDB) -> BlogResponse:
@@ -113,104 +134,6 @@ def db_blog_to_list_response(db_blog: BlogDB) -> BlogListResponse:
     return BlogListResponse.model_validate(blog_dict)
 
 
-def get_blog_repository(
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> BlogRepository:
-    """
-    Resolve the `BlogRepository` dependency.
-
-    Parameters
-    ----------
-    session : AsyncSession
-        Database session.
-
-    Returns
-    -------
-    BlogRepository
-        Repository instance bound to the session.
-    """
-    return BlogRepository(session)
-
-
-RepoDep = Annotated[BlogRepository, Depends(get_blog_repository)]
-
-
-@dataclass(frozen=True)
-class BlogOpsDeps:
-    """Dependencies for authenticated blog operations."""
-
-    repo: RepoDep
-    current_user: Annotated[UserDB, Depends(get_current_user)]
-
-
-@dataclass(frozen=True)
-class BlogListQuery:
-    """
-    Query container for blog listing and filters.
-
-    Parameters
-    ----------
-    skip : int
-        Number of records to skip.
-    limit : int
-        Maximum number of records to return.
-    status_filter : Literal | None
-        Optional status filter.
-    author_id : UUID | None
-        Optional author filter.
-    """
-
-    skip: int = 0
-    limit: int = 10
-    status_filter: Literal["draft", "published", "archived"] | None = None
-    author_id: UUID | None = None
-
-
-def get_blog_list_query(
-    skip: Annotated[int, Query(ge=0, description="Number of records to skip")] = 0,
-    limit: Annotated[
-        int,
-        Query(ge=1, le=100, description="Maximum number of records to return"),
-    ] = 10,
-    status_filter: Annotated[
-        Literal["draft", "published", "archived"] | None,
-        Query(alias="status", description="Optional status filter"),
-    ] = None,
-    author_id: Annotated[UUID | None, Query(description="Optional author ID filter")] = None,
-) -> BlogListQuery:
-    """
-    Dependency to construct `BlogListQuery` from query parameters.
-
-    Returns
-    -------
-    BlogListQuery
-        Aggregated query parameters object.
-    """
-    return BlogListQuery(
-        skip=skip,
-        limit=limit,
-        status_filter=status_filter,
-        author_id=author_id,
-    )
-
-
-@dataclass(frozen=True)
-class PaginationQuery:
-    """
-    Query container for pagination.
-
-    Parameters
-    ----------
-    skip : int
-        Number of records to skip.
-    limit : int
-        Maximum number of records to return.
-    """
-
-    skip: int = 0
-    limit: int = 10
-
-
 def get_pagination_query(
     skip: Annotated[int, Query(ge=0, description="Number of records to skip")] = 0,
     limit: Annotated[
@@ -230,20 +153,76 @@ def get_pagination_query(
 
 
 def blog_slug_key(slug: str) -> str:
+    """
+    Generate cache key for blog by slug.
+
+    Parameters
+    ----------
+    slug : str
+        Blog slug.
+
+    Returns
+    -------
+    str
+        Cache key for blog by slug.
+    """
     return f"blog_by_slug_{slug}"
 
 
 def blogs_list_key(query: BlogListQuery) -> str:
+    """
+    Generate cache key for blogs list.
+
+    Parameters
+    ----------
+    query : BlogListQuery
+        Blog list query parameters.
+
+    Returns
+    -------
+    str
+        Cache key for blogs list.
+    """
     status_part = query.status_filter or "any"
     author_part = str(query.author_id) if query.author_id else "any"
     return f"blogs_all_{query.skip}_{query.limit}_{status_part}_{author_part}"
 
 
 def blogs_by_author_key(author_id: UUID, pagination: PaginationQuery) -> str:
+    """
+    Generate cache key for blogs by author.
+
+    Parameters
+    ----------
+    author_id : UUID
+        Author ID.
+    pagination : PaginationQuery
+        Pagination parameters.
+
+    Returns
+    -------
+    str
+        Cache key for blogs by author.
+    """
     return f"blogs_by_author_{author_id}_{pagination.skip}_{pagination.limit}"
 
 
 def blogs_search_tags_key(tags: list[str], pagination: PaginationQuery) -> str:
+    """
+    Generate cache key for blogs search by tags.
+
+    Parameters
+    ----------
+    tags : list[str]
+        List of tags to search for.
+    pagination : PaginationQuery
+        Pagination parameters.
+
+    Returns
+    -------
+    str
+        Cache key for blogs search by tags.
+    """
     tags_part = "-".join(sorted(tags)) or "none"
     return f"blogs_search_{tags_part}_{pagination.skip}_{pagination.limit}"
 
@@ -320,7 +299,7 @@ async def create_blog(
             },
         ),
     ],
-    repo: RepoDep,
+    repo: BlogRepoDep,
 ) -> BlogResponse:
     """
     Create a new blog post.
@@ -398,7 +377,7 @@ async def get_blog(
     request: Request,
     response: Response,
     blog_id: UUID,
-    repo: RepoDep,
+    repo: BlogRepoDep,
 ) -> BlogResponse:
     """
     Get blog by ID and increment view count.
@@ -480,7 +459,7 @@ async def get_blog_by_slug(
     request: Request,
     response: Response,
     slug: str,
-    repo: RepoDep,
+    repo: BlogRepoDep,
 ) -> BlogResponse:
     """
     Get blog by slug.
@@ -560,8 +539,8 @@ async def get_blog_by_slug(
 async def get_blogs(
     request: Request,
     response: Response,
-    repo: RepoDep,
-    query: Annotated[BlogListQuery, Depends(get_blog_list_query)],
+    repo: BlogRepoDep,
+    query: BlogQueryListDep,
 ) -> list[BlogListResponse]:
     """
     Get all blogs with pagination and optional filtering.
@@ -645,7 +624,7 @@ async def get_blogs_by_author(
     request: Request,
     response: Response,
     author_id: UUID,
-    repo: RepoDep,
+    repo: BlogRepoDep,
     pagination: Annotated[PaginationQuery, Depends(get_pagination_query)],
 ) -> list[BlogListResponse]:
     """
@@ -727,7 +706,7 @@ async def search_blogs_by_tags(
     request: Request,
     response: Response,
     tags: Annotated[list[str], Query(description="Tags to match (any)")],
-    repo: RepoDep,
+    repo: BlogRepoDep,
     pagination: Annotated[PaginationQuery, Depends(get_pagination_query)],
 ) -> list[BlogListResponse]:
     """
@@ -946,8 +925,8 @@ async def delete_blog(
     request: Request,
     response: Response,
     blog_id: UUID,
-    repo: RepoDep,
-    current_user: Annotated[UserDB, Depends(get_current_user)],
+    repo: BlogRepoDep,
+    current_user: UserDBDep,
 ) -> None:
     """
     Delete blog by ID.
@@ -1027,7 +1006,7 @@ async def delete_blog(
 async def bust_blogs_list(
     request: Request,
     response: Response,
-    query: Annotated[BlogListQuery, Depends(get_blog_list_query)],
+    query: BlogQueryListDep,
 ) -> ORJSONResponse:
     """
     Bust blogs list cache page.
@@ -1223,7 +1202,7 @@ async def bust_blogs_by_tags(
 async def bust_blogs_list_multi(
     request: Request,
     response: Response,
-    query: Annotated[BlogListQuery, Depends(get_blog_list_query)],
+    query: BlogQueryListDep,
     limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
 ) -> ORJSONResponse:
     if host(request) not in ("127.0.0.1", "::1", "localhost"):
@@ -1277,7 +1256,7 @@ async def bust_blogs_list_multi(
 async def bust_blogs_list_grid(
     request: Request,
     response: Response,
-    query: Annotated[BlogListQuery, Depends(get_blog_list_query)],
+    query: BlogQueryListDep,
     limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
     skips: Annotated[list[int], Query(description="List of skip values to invalidate.")],
 ) -> ORJSONResponse:

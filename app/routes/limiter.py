@@ -5,11 +5,9 @@ Endpoints to inspect limiter health and reset rate limits with clear error respo
 """
 
 from logging import getLogger
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import ORJSONResponse
-from slowapi.extension import Limiter
 from starlette.status import HTTP_403_FORBIDDEN
 
 from app.configs import file_logger
@@ -21,14 +19,6 @@ from app.schemas import LimiterHealthResponse, LimiterResetRequest, LimiterReset
 logger = file_logger(getLogger(__name__))
 
 router = APIRouter(prefix="/limiter", tags=["🚦 Limiter"])
-
-
-def get_limiter(app: FastAPI) -> Limiter:
-    """Get limiter instance."""
-    return app.state.limiter
-
-
-LimiterDep = Annotated[Limiter, Depends(get_limiter)]
 
 
 async def _perform_limiter_reset(

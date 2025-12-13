@@ -35,7 +35,6 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import ORJSONResponse
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 from starlette.status import (
     HTTP_201_CREATED,
@@ -47,14 +46,12 @@ from starlette.status import (
 )
 
 from app.configs import file_logger
-from app.db import get_session
 from app.decorators import cache_busting, cached, timed
-from app.dependencies import get_current_user
+from app.dependencies import UserDBDep, UserQueryListDep, UserRepoDep
 from app.errors.base import host
 from app.errors.database import DatabaseError, DuplicateEntryError
 from app.managers import cache_manager, limiter
 from app.models import UserDB
-from app.repositories import UserRepository
 from app.schemas import UserCreate, UserResponse, UserUpdate
 from app.utils import response_datetime
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
@@ -91,49 +88,11 @@ def db_user_to_response(db_user: UserDB) -> UserResponse:
 
 
 @dataclass(frozen=True)
-class UserListQuery:
-    skip: int = 0
-    limit: int = 10
-
-
-def get_user_list_query(
-    skip: Annotated[int, Query(ge=0, description="Number of records to skip")] = 0,
-    limit: Annotated[
-        int,
-        Query(ge=1, le=100, description="Maximum number of records to return"),
-    ] = 10,
-) -> UserListQuery:
-    return UserListQuery(skip=skip, limit=limit)
-
-
-def get_user_repository(
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> UserRepository:
-    """
-    Resolve the `UserRepository` dependency.
-
-    Parameters
-    ----------
-    session : AsyncSession
-        Database session.
-
-    Returns
-    -------
-    UserRepository
-        Repository instance bound to the session.
-    """
-    return UserRepository(session)
-
-
-RepoDep = Annotated[UserRepository, Depends(get_user_repository)]
-
-
-@dataclass(frozen=True)
 class UserOpsDeps:
     """Dependencies for authenticated user operations."""
 
-    repo: RepoDep
-    current_user: Annotated[UserDB, Depends(get_current_user)]
+    repo: UserRepoDep
+    current_user: UserDBDep
 
 
 @router.post(
@@ -204,7 +163,7 @@ async def create_user(
             },
         ),
     ],
-    repo: RepoDep,
+    repo: UserRepoDep,
 ) -> UserResponse:
     """
     Create a new user and return the safe response model.
@@ -288,7 +247,7 @@ async def create_user(
 async def get_users(
     request: Request,
     response: Response,
-    repo: RepoDep,
+    repo: UserRepoDep,
     skip: Annotated[int, Query(ge=0, description="Number of records to skip")] = 0,
     limit: Annotated[
         int,
@@ -368,7 +327,7 @@ async def get_user(
     request: Request,
     response: Response,
     user_id: UUID,
-    repo: RepoDep,
+    repo: UserRepoDep,
 ) -> UserResponse:
     """
     Get user by ID.
@@ -451,7 +410,7 @@ async def get_user_by_username(
     request: Request,
     response: Response,
     username: str,
-    repo: RepoDep,
+    repo: UserRepoDep,
 ) -> UserResponse:
     """
     Get user by username.
@@ -646,8 +605,8 @@ async def delete_user(
     request: Request,
     response: Response,
     user_id: UUID,
-    repo: RepoDep,
-    current_user: Annotated[UserDB, Depends(get_current_user)],
+    repo: UserRepoDep,
+    current_user: UserDBDep,
 ) -> None:
     """
     Delete user by ID.
@@ -861,7 +820,7 @@ async def bust_user_by_username(
 async def bust_users_list_multi(
     request: Request,
     response: Response,
-    query: Annotated[UserListQuery, Depends(get_user_list_query)],
+    query: UserQueryListDep,
     limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
 ) -> ORJSONResponse:
     if host(request) not in ("127.0.0.1", "::1", "localhost"):
@@ -906,7 +865,7 @@ async def bust_users_list_multi(
 async def bust_users_list_grid(
     request: Request,
     response: Response,
-    query: Annotated[UserListQuery, Depends(get_user_list_query)],
+    query: UserQueryListDep,
     limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
     skips: Annotated[list[int], Query(description="List of skip values to invalidate.")],
 ) -> ORJSONResponse:
