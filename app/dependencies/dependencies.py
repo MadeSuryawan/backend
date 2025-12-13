@@ -11,8 +11,8 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import HTTP_400_BAD_REQUEST, HTTP_401_UNAUTHORIZED
 
-from app.clients import EmailClient
 from app.clients.ai_client import AiClient
+from app.clients.email_client import EmailClient
 from app.db import get_session
 from app.managers.cache_manager import CacheManager
 from app.managers.token_manager import decode_access_token

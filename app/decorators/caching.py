@@ -15,8 +15,8 @@ from redis.exceptions import RedisError
 from app.configs import file_logger
 from app.errors import BASE_EXCEPTION, CacheKeyError
 
-if TYPE_CHECKING:
-    from app.managers.cache_manager import CacheManager
+# if TYPE_CHECKING:
+from app.managers.cache_manager import CacheManager
 
 logger = file_logger(getLogger(__name__))
 

@@ -14,7 +14,7 @@ from starlette.status import (
 )
 
 from app.configs import settings
-from app.decorators import timed
+from app.decorators.metrics import timed
 from app.dependencies import AuthServiceDep, UserRepoDep, UserRespDep
 from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import limiter

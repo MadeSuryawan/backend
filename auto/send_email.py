@@ -8,7 +8,7 @@ from rich import print as rprint
 # Add the project root to sys.path to allow importing 'app'
 path.append(f"{Path(__file__).parent.parent}")
 
-from app.clients import EmailClient
+from app.clients.email_client import EmailClient
 from app.errors import SendingError
 
 # Setup simple logging to see what happens

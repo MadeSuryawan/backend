@@ -48,7 +48,8 @@ from starlette.status import (
 )
 
 from app.configs import file_logger
-from app.decorators import cache_busting, cached, timed
+from app.decorators.caching import cache_busting, cached
+from app.decorators.metrics import timed
 from app.dependencies import BlogListQuery, BlogQueryListDep, BlogRepoDep, UserDBDep
 from app.errors.base import host
 from app.errors.database import DatabaseError, DuplicateEntryError

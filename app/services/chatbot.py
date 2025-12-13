@@ -3,7 +3,7 @@ from typing import cast
 from google.genai.types import Content, Part
 
 from app.clients.ai_client import AiClient
-from app.schemas.ai.chatbot import ChatRequest, ChatResponse
+from app.schemas.ai import ChatRequest, ChatResponse
 
 # System instruction for the chatbot
 CHATBOT_SYSTEM_INSTRUCTION = (

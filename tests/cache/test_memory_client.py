@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from app.clients import MemoryClient
+from app.clients.memory_client import MemoryClient
 
 
 @pytest.mark.asyncio

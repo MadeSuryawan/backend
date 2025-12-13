@@ -16,7 +16,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import ORJSONResponse
 
 from app.configs import file_logger
-from app.decorators import timed
+from app.decorators.metrics import timed
 from app.dependencies import CacheDep
 from app.managers.rate_limiter import limiter
 from app.schemas import (

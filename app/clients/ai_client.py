@@ -20,7 +20,7 @@ from app.configs.settings import (
     file_logger,
     settings,
 )
-from app.decorators import with_retry
+from app.decorators.with_retry import with_retry
 from app.errors import (
     AiAuthenticationError,
     AiError,
@@ -30,8 +30,7 @@ from app.errors import (
 )
 from app.errors.ai import ContactAnalysisError, ItineraryGenerationError
 from app.managers.circuit_breaker import ai_circuit_breaker
-from app.schemas.ai.chatbot import ChatResponse
-from app.schemas.ai.itinerary import ItineraryMD, ItineraryTXT
+from app.schemas.ai import ChatResponse, ItineraryMD, ItineraryTXT
 from app.schemas.email import AnalysisFormat, ContactAnalysisResponse
 
 logger = file_logger(getLogger(__name__))

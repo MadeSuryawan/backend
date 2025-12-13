@@ -11,7 +11,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import RedisError
 
 from app.configs import file_logger, pool_kwargs
-from app.decorators import RETRIABLE_EXCEPTIONS, with_retry
+from app.decorators.with_retry import RETRIABLE_EXCEPTIONS, with_retry
 
 logger = file_logger(getLogger(__name__))
 

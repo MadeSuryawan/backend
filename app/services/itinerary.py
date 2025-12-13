@@ -9,7 +9,7 @@ from fastapi import Request
 from app.clients.ai_client import AiClient
 from app.configs.settings import WHATSAPP_NUMBER, file_logger
 from app.errors import host
-from app.schemas.ai.itinerary import (
+from app.schemas.ai import (
     ItineraryMD,
     ItineraryRequestMD,
     ItineraryRequestTXT,

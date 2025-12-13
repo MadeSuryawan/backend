@@ -5,6 +5,8 @@ from fastapi import Request
 from fastapi.responses import ORJSONResponse
 from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 
+# from app.utils import host
+
 BASE_EXCEPTION = (
     OSError,
     PermissionError,

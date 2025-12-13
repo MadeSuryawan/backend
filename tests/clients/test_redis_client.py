@@ -10,7 +10,7 @@ from app.clients.redis_client import (
     RETRIABLE_EXCEPTIONS,
     RedisClient,
 )
-from app.decorators import _log_before_sleep, with_retry
+from app.decorators.with_retry import _log_before_sleep, with_retry
 
 
 class TestBeforeSleepCallback:

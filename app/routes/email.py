@@ -16,7 +16,7 @@ from fastapi import APIRouter, BackgroundTasks, Body, Request, Response
 from fastapi.responses import ORJSONResponse
 
 from app.configs import file_logger
-from app.decorators import timed
+from app.decorators.metrics import timed
 from app.dependencies import EmailDep
 from app.managers.rate_limiter import limiter
 from app.schemas import EmailInquiry, EmailResponse

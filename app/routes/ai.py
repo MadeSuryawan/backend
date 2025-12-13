@@ -23,12 +23,14 @@ from fastapi.responses import ORJSONResponse
 from starlette.responses import Response
 
 from app.configs import file_logger
-from app.decorators import cached, timed
+from app.decorators.caching import cached
+from app.decorators.metrics import timed
 from app.dependencies import AiDep, EmailDep
 from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import limiter
-from app.schemas.ai.chatbot import ChatRequest, ChatResponse
-from app.schemas.ai.itinerary import (
+from app.schemas.ai import (
+    ChatRequest,
+    ChatResponse,
     ItineraryMD,
     ItineraryRequestMD,
     ItineraryRequestTXT,

@@ -1,6 +1,19 @@
-"""
-Pydantic models for request and response validation.
+# app/schemas/ai/__init__.py
 
-This module defines the Pydantic models used for validating
-request and response data throughout the BaliBlissed application.
-"""
+from app.schemas.ai.chatbot import ChatMessage, ChatRequest, ChatResponse
+from app.schemas.ai.itinerary import (
+    ItineraryMD,
+    ItineraryRequestMD,
+    ItineraryRequestTXT,
+    ItineraryTXT,
+)
+
+__all__ = [
+    "ChatMessage",
+    "ChatRequest",
+    "ChatResponse",
+    "ItineraryMD",
+    "ItineraryRequestMD",
+    "ItineraryRequestTXT",
+    "ItineraryTXT",
+]

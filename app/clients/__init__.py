@@ -1,14 +1,7 @@
-from app.clients.ai_client import AiClient
-from app.clients.email_client import EmailClient
-from app.clients.memory_client import MemoryClient
-from app.clients.protocols import CacheClientProtocol, is_debug_enabled
-from app.clients.redis_client import RedisClient
+# app/clients/__init__.py
 
-__all__ = [
-    "CacheClientProtocol",
-    "EmailClient",
-    "MemoryClient",
-    "RedisClient",
-    "AiClient",
-    "is_debug_enabled",
-]
+"""
+Lazy imports - import directly from specific modules to avoid circular dependencies.
+
+This file should remain minimal to prevent import cycles
+"""

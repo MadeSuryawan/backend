@@ -12,7 +12,9 @@ from pydantic_core import ValidationError
 from redis.exceptions import ConnectionError as RedisConnectionError
 from starlette import status
 
-from app.clients import CacheClientProtocol, MemoryClient, RedisClient
+from app.clients.memory_client import MemoryClient
+from app.clients.protocols import CacheClientProtocol
+from app.clients.redis_client import RedisClient
 from app.configs import CacheConfig, file_logger, settings
 from app.data import CacheStatistics
 from app.errors import BASE_EXCEPTION, CacheDeserializationError, CacheKeyError

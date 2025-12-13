@@ -23,7 +23,7 @@ from rich.traceback import install
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from uvloop import Loop
 
-from app.clients import AiClient
+from app.clients.ai_client import AiClient
 from app.configs import file_logger, settings
 from app.db import close_db, init_db
 from app.errors.base import host

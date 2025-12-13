@@ -26,6 +26,11 @@ def today_str() -> str:
     )
 
 
+def host(request: Request) -> str:
+    """Return the host IP address."""
+    return request.client.host if request.client else "unknown"
+
+
 def time_taken(start_time: float) -> str:
     minutes, seconds = divmod(perf_counter() - start_time, 60)
     formatted_time = f"{int(minutes)}m {int(seconds)}s"

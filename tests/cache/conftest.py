@@ -7,7 +7,7 @@ import pytest
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
-from app.clients import MemoryClient
+from app.clients.memory_client import MemoryClient
 from app.dependencies import get_cache_manager
 from app.main import app
 from app.managers.cache_manager import CacheManager
