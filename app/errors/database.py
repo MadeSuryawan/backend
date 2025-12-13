@@ -6,8 +6,8 @@ from starlette.status import (
     HTTP_500_INTERNAL_SERVER_ERROR,
 )
 
-from app.configs import file_logger
 from app.errors.base import BaseAppError, create_exception_handler
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 

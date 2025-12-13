@@ -10,11 +10,11 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.expression import ColumnElement
 
-from app.configs import file_logger
 from app.errors.database import DuplicateEntryError
 from app.models.blog import BlogDB
 from app.repositories.base import BaseRepository
 from app.schemas.blog import BlogSchema, BlogUpdate
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 

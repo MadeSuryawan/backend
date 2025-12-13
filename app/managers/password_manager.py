@@ -13,9 +13,10 @@ from logging import getLogger
 from passlib.context import CryptContext
 from passlib.exc import InternalBackendError
 
-from app.configs import CONFIG_MAP, file_logger, settings
+from app.configs import CONFIG_MAP, settings
 from app.decorators.with_retry import with_retry
 from app.errors import PasswordHashingError, PasswordRehashError
+from app.utils.helpers import file_logger
 
 executor = ThreadPoolExecutor(max_workers=4)
 logger = file_logger(getLogger(__name__))

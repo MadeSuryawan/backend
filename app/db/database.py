@@ -14,7 +14,8 @@ from sqlalchemy.ext.asyncio import (
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
-from app.configs import file_logger, settings
+from app.configs import settings
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 

@@ -10,7 +10,7 @@ from logging import DEBUG, getLogger
 from sys import getsizeof
 from time import time
 
-from app.configs import file_logger
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 

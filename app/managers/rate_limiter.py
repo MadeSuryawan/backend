@@ -11,7 +11,8 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.status import HTTP_429_TOO_MANY_REQUESTS
 
-from app.configs import LimiterConfig, file_logger
+from app.configs import LimiterConfig
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 

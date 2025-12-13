@@ -8,9 +8,9 @@ or as part of the application startup.
 from asyncio import run as asyncio_run
 from logging import getLogger
 
-from app.configs import file_logger
 from app.db.database import init_db
 from app.errors.database import DatabaseInitializationError
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 

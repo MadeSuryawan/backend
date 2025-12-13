@@ -15,7 +15,7 @@ from starlette import status
 from app.clients.memory_client import MemoryClient
 from app.clients.protocols import CacheClientProtocol
 from app.clients.redis_client import RedisClient
-from app.configs import CacheConfig, file_logger, settings
+from app.configs import CacheConfig, settings
 from app.data import CacheStatistics
 from app.errors import BASE_EXCEPTION, CacheDeserializationError, CacheKeyError
 from app.schemas import CacheToggleResponse
@@ -27,6 +27,7 @@ from app.utils.cache_serializer import (
     do_compress,
     serialize,
 )
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 

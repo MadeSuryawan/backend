@@ -17,7 +17,6 @@ from app.configs.settings import (
     GEMINI_MODEL,
     GENERATION_CONFIG,
     SAFETY_SETTINGS,
-    file_logger,
     settings,
 )
 from app.decorators.with_retry import with_retry
@@ -32,6 +31,7 @@ from app.errors.ai import ContactAnalysisError, ItineraryGenerationError
 from app.managers.circuit_breaker import ai_circuit_breaker
 from app.schemas.ai import ChatResponse, ItineraryMD, ItineraryTXT
 from app.schemas.email import AnalysisFormat, ContactAnalysisResponse
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 

@@ -4,8 +4,8 @@ from logging import getLogger
 
 from starlette.status import HTTP_400_BAD_REQUEST, HTTP_401_UNAUTHORIZED
 
-from app.configs import file_logger
 from app.errors.base import BaseAppError, create_exception_handler
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 

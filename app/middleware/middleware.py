@@ -24,11 +24,11 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from uvloop import Loop
 
 from app.clients.ai_client import AiClient
-from app.configs import file_logger, settings
+from app.configs import settings
 from app.db import close_db, init_db
 from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import close_limiter
-from app.utils.helpers import get_summary, host
+from app.utils.helpers import file_logger, get_summary, host
 
 if log_to_file := settings.LOG_TO_FILE:
     Path("logs").mkdir(parents=True, exist_ok=True)

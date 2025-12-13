@@ -2,8 +2,8 @@ from logging import getLogger
 
 from starlette.status import HTTP_503_SERVICE_UNAVAILABLE
 
-from app.configs import file_logger
 from app.errors import BaseAppError, create_exception_handler
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 

@@ -47,7 +47,6 @@ from starlette.status import (
     HTTP_409_CONFLICT,
 )
 
-from app.configs import file_logger
 from app.decorators.caching import cache_busting, cached
 from app.decorators.metrics import timed
 from app.dependencies import BlogListQuery, BlogQueryListDep, BlogRepoDep, UserDBDep
@@ -56,7 +55,7 @@ from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import limiter
 from app.models import BlogDB
 from app.schemas import BlogCreate, BlogListResponse, BlogResponse, BlogSchema, BlogUpdate
-from app.utils.helpers import host, response_datetime
+from app.utils.helpers import file_logger, host, response_datetime
 
 router = APIRouter(prefix="/blogs", tags=["📝 Blogs"])
 

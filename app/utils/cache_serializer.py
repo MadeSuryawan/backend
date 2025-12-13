@@ -13,13 +13,13 @@ from typing import Any
 
 from pydantic_core import PydanticSerializationError
 
-from app.configs import file_logger
 from app.errors import (
     CacheCompressionError,
     CacheDecompressionError,
     CacheDeserializationError,
     CacheSerializationError,
 )
+from app.utils.helpers import file_logger
 
 # from app.schemas.items import Item
 

@@ -7,7 +7,7 @@ from typing import cast
 from fastapi import Request
 
 from app.clients.ai_client import AiClient
-from app.configs.settings import WHATSAPP_NUMBER, file_logger
+from app.configs.settings import WHATSAPP_NUMBER
 from app.schemas.ai import (
     ItineraryMD,
     ItineraryRequestMD,
@@ -16,7 +16,7 @@ from app.schemas.ai import (
 )
 
 # from app.utils.helpers import md_to_text
-from app.utils.helpers import clean_markdown, host
+from app.utils.helpers import clean_markdown, file_logger, host
 
 # from app.utils.helpers import save_to_file
 

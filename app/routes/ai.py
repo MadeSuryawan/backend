@@ -22,7 +22,6 @@ from fastapi import APIRouter, Body, Request
 from fastapi.responses import ORJSONResponse
 from starlette.responses import Response
 
-from app.configs import file_logger
 from app.decorators.caching import cached
 from app.decorators.metrics import timed
 from app.dependencies import AiDep, EmailDep
@@ -40,6 +39,7 @@ from app.schemas.email import ContactAnalysisResponse, EmailInquiry
 from app.services.chatbot import chat_with_ai
 from app.services.email_inquiry import analyze_contact, confirmation_message
 from app.services.itinerary import ai_convert_txt, generate_itinerary
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 

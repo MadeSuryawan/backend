@@ -31,12 +31,12 @@ from fastapi.responses import ORJSONResponse
 from pydantic.main import BaseModel
 from starlette.status import HTTP_404_NOT_FOUND
 
-from app.configs import file_logger
 from app.decorators.caching import cache_busting, cached
 from app.decorators.metrics import timed
 from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import limiter
 from app.schemas import Item, ItemUpdate
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 

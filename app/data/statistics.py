@@ -4,9 +4,8 @@ from dataclasses import dataclass, field
 from logging import getLogger
 from threading import Lock
 
-from app.configs import file_logger
 from app.schemas.cache import CacheStatisticsData
-from app.utils.helpers import today_str
+from app.utils.helpers import file_logger, today_str
 
 logger = file_logger(getLogger(__name__))
 

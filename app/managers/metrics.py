@@ -23,7 +23,7 @@ from typing import Any, Self, cast
 from psutil import cpu_percent as get_cpu_percent
 from psutil import disk_usage, virtual_memory
 
-from app.configs import file_logger
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 

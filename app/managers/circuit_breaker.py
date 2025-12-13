@@ -22,8 +22,8 @@ from logging import getLogger
 from time import time
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 
-from app.configs import file_logger
 from app.errors import AiError, CircuitBreakerError, EmailServiceError
+from app.utils.helpers import file_logger
 
 if TYPE_CHECKING:
     from app.managers.metrics import MetricsManager

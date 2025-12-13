@@ -12,7 +12,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from app.configs import file_logger
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 

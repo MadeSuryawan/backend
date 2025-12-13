@@ -20,10 +20,11 @@ from googleapiclient.discovery import Resource, build
 from googleapiclient.errors import HttpError
 from httpx import RemoteProtocolError, TimeoutException
 
-from app.configs import file_logger, settings
+from app.configs import settings
 from app.errors import AuthenticationError, ConfigurationError, SendingError
 from app.errors.email import NetworkError
 from app.managers.circuit_breaker import email_circuit_breaker
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 
