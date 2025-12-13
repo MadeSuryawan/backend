@@ -50,7 +50,8 @@ from app.decorators import cache_busting, cached, timed
 from app.dependencies import UserDBDep, UserQueryListDep, UserRepoDep
 from app.errors.base import host
 from app.errors.database import DatabaseError, DuplicateEntryError
-from app.managers import cache_manager, limiter
+from app.managers.cache_manager import cache_manager
+from app.managers.rate_limiter import limiter
 from app.models import UserDB
 from app.schemas import UserCreate, UserResponse, UserUpdate
 from app.utils import response_datetime

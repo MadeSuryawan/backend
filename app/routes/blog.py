@@ -52,7 +52,8 @@ from app.decorators import cache_busting, cached, timed
 from app.dependencies import BlogListQuery, BlogQueryListDep, BlogRepoDep, UserDBDep
 from app.errors.base import host
 from app.errors.database import DatabaseError, DuplicateEntryError
-from app.managers import cache_manager, limiter
+from app.managers.cache_manager import cache_manager
+from app.managers.rate_limiter import limiter
 from app.models import BlogDB
 from app.schemas import BlogCreate, BlogListResponse, BlogResponse, BlogSchema, BlogUpdate
 from app.utils import response_datetime

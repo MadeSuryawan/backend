@@ -27,7 +27,8 @@ from app.clients import AiClient
 from app.configs import file_logger, settings
 from app.db import close_db, init_db
 from app.errors.base import host
-from app.managers import cache_manager, close_limiter
+from app.managers.cache_manager import cache_manager
+from app.managers.rate_limiter import close_limiter
 from app.utils.helpers import get_summary
 
 if log_to_file := settings.LOG_TO_FILE:

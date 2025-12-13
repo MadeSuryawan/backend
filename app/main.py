@@ -13,6 +13,7 @@ from starlette.responses import JSONResponse
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.configs import settings
+from app.dependencies import EmailDep
 from app.errors import (
     AiError,
     CacheExceptionError,
@@ -30,14 +31,10 @@ from app.errors import (
     password_hashing_exception_handler,
     validation_exception_handler,
 )
-from app.managers import (
-    cache_manager,
-    get_system_metrics,
-    limiter,
-    metrics_manager,
-    rate_limit_exceeded_handler,
-)
+from app.managers.cache_manager import cache_manager
 from app.managers.circuit_breaker import ai_circuit_breaker, email_circuit_breaker
+from app.managers.metrics import get_system_metrics, metrics_manager
+from app.managers.rate_limiter import limiter, rate_limit_exceeded_handler
 from app.middleware import (
     LoggingMiddleware,
     SecurityHeadersMiddleware,
@@ -50,7 +47,6 @@ from app.routes import (
     blog_router,
     cache_router,
     email_router,
-    get_email_client,
     items_router,
     limiter_router,
     user_router,
@@ -142,7 +138,7 @@ limiter: Limiter = app.state.limiter
     operation_id="health_check",
 )
 @limiter.exempt
-async def health_check(request: Request) -> ORJSONResponse:
+async def health_check(request: Request, email_client: EmailDep) -> ORJSONResponse:
     """
     Health check endpoint with comprehensive status.
 
@@ -150,6 +146,8 @@ async def health_check(request: Request) -> ORJSONResponse:
     ----------
     request : Request
         Current request context.
+    email_client : EmailDep
+        Email client dependency.
 
     Returns
     -------
@@ -176,7 +174,6 @@ async def health_check(request: Request) -> ORJSONResponse:
 
     # Determine Email client status (check if credentials are configured)
     try:
-        email_client = get_email_client()
         # Check if service can be initialized (credentials available)
         email_client_status = "available" if email_client.service else "not_configured"
     except EmailServiceError:

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.managers import (
+from app.managers.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
     CircuitState,

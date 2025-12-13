@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 # CORRECTED IMPORTS: Point to the new location inside 'app'
 from app import app
 from app.clients.email_client import EmailClient
-from app.managers import limiter
-from app.routes import get_email_client
+from app.dependencies import get_email_client
+from app.managers.rate_limiter import limiter
 
 
 @pytest.fixture

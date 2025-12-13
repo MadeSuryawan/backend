@@ -2,7 +2,6 @@ from app.routes.ai import router as ai_router
 from app.routes.auth import router as auth_router
 from app.routes.blog import router as blog_router
 from app.routes.cache import router as cache_router
-from app.routes.email import get_email_client
 from app.routes.email import router as email_router
 from app.routes.items import router as items_router
 from app.routes.limiter import router as limiter_router
@@ -13,7 +12,6 @@ __all__ = [
     "email_router",
     "items_router",
     "ai_router",
-    "get_email_client",
     "limiter_router",
     "auth_router",
     "blog_router",

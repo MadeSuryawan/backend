@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.managers import hash_password, verify_password
+from app.managers.password_manager import hash_password, verify_password
 from app.models.user import UserDB
 from app.repositories.base import BaseRepository
 from app.schemas.user import UserCreate, UserUpdate

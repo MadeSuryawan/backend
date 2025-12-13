@@ -12,25 +12,18 @@ All endpoints include explicit rate limits and `429` responses.
 from logging import getLogger
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Body, Request, Response
 from fastapi.responses import ORJSONResponse
 
-from app.clients import EmailClient
 from app.configs import file_logger
 from app.decorators import timed
-from app.managers import limiter
+from app.dependencies import EmailDep
+from app.managers.rate_limiter import limiter
 from app.schemas import EmailInquiry, EmailResponse
 
 logger = file_logger(getLogger(__name__))
 
 router = APIRouter(prefix="/email", tags=["✉️ Email"])
-
-
-def get_email_client() -> EmailClient:
-    return EmailClient()
-
-
-EmailDep = Annotated[EmailClient, Depends(get_email_client)]
 
 
 # --- Routes ---

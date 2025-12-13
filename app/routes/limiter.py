@@ -12,7 +12,7 @@ from starlette.status import HTTP_403_FORBIDDEN
 
 from app.configs import file_logger
 from app.errors.base import host
-from app.managers import cache_manager
+from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import get_identifier
 from app.schemas import LimiterHealthResponse, LimiterResetRequest, LimiterResetResponse
 

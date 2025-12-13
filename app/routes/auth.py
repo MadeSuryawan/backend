@@ -16,7 +16,8 @@ from starlette.status import (
 from app.configs import settings
 from app.decorators import timed
 from app.dependencies import AuthServiceDep, UserRepoDep, UserRespDep
-from app.managers import cache_manager, limiter
+from app.managers.cache_manager import cache_manager
+from app.managers.rate_limiter import limiter
 from app.schemas.auth import Token
 from app.schemas.user import UserCreate, UserResponse
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
