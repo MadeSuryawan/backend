@@ -6,7 +6,7 @@ from threading import Lock
 
 from app.configs import file_logger
 from app.schemas.cache import CacheStatisticsData
-from app.utils import today_str
+from app.utils.helpers import today_str
 
 logger = file_logger(getLogger(__name__))
 

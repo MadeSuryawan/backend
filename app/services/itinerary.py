@@ -16,10 +16,10 @@ from app.schemas.ai import (
     ItineraryTXT,
 )
 
-# from app.utils import md_to_text
-from app.utils import clean_markdown
+# from app.utils.helpers import md_to_text
+from app.utils.helpers import clean_markdown
 
-# from app.utils import save_to_file
+# from app.utils.helpers import save_to_file
 
 logger = file_logger(getLogger(__name__))
 

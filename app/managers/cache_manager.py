@@ -20,7 +20,7 @@ from app.data import CacheStatistics
 from app.errors import BASE_EXCEPTION, CacheDeserializationError, CacheKeyError
 from app.schemas import CacheToggleResponse
 from app.schemas.cache import CacheStatisticsData
-from app.utils import (
+from app.utils.cache_serializer import (
     compress,
     decompress,
     deserialize,
