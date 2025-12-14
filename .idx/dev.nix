@@ -6,6 +6,7 @@
     pkgs.python313
     pkgs.postgresql_16
     pkgs.redis
+    pkgs.nodejs
   ];
 
   env = {
@@ -57,6 +58,7 @@
       "ms-azuretools.vscode-containers"
       "docker.docker"
       "bierner.markdown-emoji"
+      "kilocode.kilo-code"
     ];
 
     workspace = {
@@ -70,6 +72,7 @@
         install-ruff = "$HOME/.local/bin/uv tool install ruff";
         install-pyrefly = "$HOME/.local/bin/uv tool install pyrefly";
         install-pytest = "$HOME/.local/bin/uv tool install pytest";
+        tombi-pytest = "$HOME/.local/bin/uv tool install tombi";
         # 4. Setup Database
         # We perform a check to avoid errors if re-run, though onCreate only runs once usually.
         setup-db = ''
