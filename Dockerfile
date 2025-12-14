@@ -1,18 +1,22 @@
 # Use an official Python runtime as a parent image
 FROM python:3.13-slim
 
+EXPOSE 8000
+
 # 1. Install 'uv' directly from the official image
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Set environment variables
+# Keeps Python from generating .pyc files in the container
 ENV PYTHONDONTWRITEBYTECODE=1
+
+# Turns off buffering for easier container logging
 ENV PYTHONUNBUFFERED=1
+
 # Compile bytecode during installation for faster startup
 ENV UV_COMPILE_BYTECODE=1 
+
 # Use copy mode for linking to avoid potential issue with docker mounts
 ENV UV_LINK_MODE=copy 
-
-WORKDIR /app
 
 # 2. Install dependencies first (Caching layer)
 # We copy pyproject.toml and uv.lock to leverage Docker cache.
@@ -26,7 +30,8 @@ COPY pyproject.toml uv.lock* ./
 RUN uv sync --frozen --no-install-project --no-dev
 
 # 3. Copy application code
-COPY . .
+WORKDIR /app
+COPY . /app
 
 # 4. Sync the project itself
 RUN uv sync --frozen --no-dev
@@ -35,11 +40,10 @@ RUN uv sync --frozen --no-dev
 # Add the virtual environment to PATH
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Create a non-root user for security
-RUN adduser --disabled-password --gecos '' appuser
+# Creates a non-root user with an explicit UID and adds permission to access the /app folder
+# For more info, please refer to https://aka.ms/vscode-docker-python-configure-containers
+RUN adduser -u 5678 --disabled-password --gecos "" appuser && chown -R appuser /app
 USER appuser
-
-EXPOSE 8000
 
 # Run the application using the module path 'app.main:app'
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--loop", "uvloop", "--log-level", "info"]

@@ -29,8 +29,10 @@ services:
     networks:
       - baliblissed-network
 
-  web:
-    build: .
+  backend:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
     ports:
       - "8000:8000"
     volumes:
