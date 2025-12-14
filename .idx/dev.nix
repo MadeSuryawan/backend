@@ -7,6 +7,8 @@
     pkgs.postgresql_16
     pkgs.redis
     pkgs.nodejs
+    pkgs.docker
+    pkgs.docker-compose
   ];
 
   env = {
@@ -15,7 +17,7 @@
     VIRTUAL_ENV = "/home/user/backend/.venv";
     
     # Database configuration for the app
-    POSTGRES_DB = "baliblissed";
+    POSTGRE_DB = "baliblissed";
     POSTGRES_USER = "user";
     POSTGRES_PASSWORD = "password";
     POSTGRES_HOST = "localhost";
@@ -32,6 +34,9 @@
       enable = true;
     };
     redis = {
+      enable = true;
+    };
+    docker = {
       enable = true;
     };
   };

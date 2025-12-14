@@ -1,0 +1,76 @@
+{
+  "mcpServers": {
+    "context7": {
+      "type": "streamable-http",
+      "url": "https://mcp.context7.com/mcp",
+      "disabled": false,
+      "alwaysAllow": []
+    },
+    "exa": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.exa.ai/mcp?exaApiKey=b22787a0-18e5-4204-b59d-0ef08a162841"
+      ]
+    },
+    "sequentialthinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/home/user/backend/"
+      ]
+    },
+    "python-refactoring": {
+      "command": "/home/user/.local/bin/uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/slamer59/mcp-python-refactoring.git",
+        "python-refactor",
+        "server"
+      ]
+    }
+  },
+  "enabledTools": {
+    "context7": [
+      "resolve-library-id",
+      "get-library-docs"
+    ],
+    "exa": [
+      "web_search_exa",
+      "get_code_context_exa"
+    ],
+    "sequentialthinking": [
+      "sequentialthinking"
+    ],
+    "filesystem": [
+      "read_text_file",
+      "read_multiple_files",
+      "edit_file",
+      "create_directory",
+      "list_directory",
+      "directory_tree",
+      "search_files",
+      "list_allowed_directories"
+    ],
+    "python-refactoring": [
+      "analyze_python_file",
+      "get_extraction_guidance",
+      "find_long_functions",
+      "analyze_test_coverage",
+      "tdd_refactoring_guidance",
+      "analyze_python_package",
+      "get_package_metrics",
+      "find_package_issues",
+      "analyze_security_and_patterns"
+    ]
+  }
+}

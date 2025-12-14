@@ -10,6 +10,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
+COMPOSE_FILE="docker-compose.yml"
 # Note: In IDX, secrets are often managed differently, but we'll stick to your .env convention
 ENV_FILE="./secrets/.env"
 PROJECT_NAME="baliblissed"
@@ -145,6 +146,16 @@ ask_recreate_db() {
     log_info ""
 }
 
+# Check if Docker is running
+check_docker() {
+    if ! docker info > /dev/null 2>&1; then
+        log_error "Docker is not running. Please start Docker and try again."
+        exit 1
+    else
+        log_success "Docker is running"
+    fi
+}
+
 # Create required directories
 create_directories() {
     log_info "Creating logs directory..."
@@ -163,16 +174,38 @@ start() {
     
     check_postgres
     ask_recreate_db
+
+    # check_docker
+
     create_directories
+    
+    # log_info "Starting Docker..."
+    # # docker-compose --profile development up --build -d
+    # docker-compose up -d
     
     log_info "Starting Uvicorn..."
     # The variables exported in configure_idx_db will be picked up by the app
     uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --workers 4 --loop uvloop --http httptools
+    # log_success "Development environment started successfully!"
+}
+
+# Stop development environment
+stop() {
+    log_info "Stopping BaliBlissed development environment..."
+    # docker-compose --profile development down
+    docker-compose down -v
+    log_success "Development environment stopped successfully!"
 }
 
 case "${1:-start}" in
     start)
         start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        restart
         ;;
     help|--help|-h)
         echo "Usage: ./scripts/run_idx.sh [start]"
