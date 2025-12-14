@@ -59,19 +59,15 @@ class UserValidationMixin:
             )
         return v
 
-    @field_validator("date_of_birth", mode="before", check_fields=False)
     @classmethod
-    def validate_dob(cls, v: str | datetime | None) -> str | None:
-        """Validate date of birth and age constraints."""
-        if v is None:
-            return None
-
-        now = datetime.now(tz=UTC)
+    def _parse_dob(cls, v: str | datetime) -> datetime | None:
+        """Parse date of birth into a UTC datetime object."""
         if isinstance(v, str):
             try:
+                # Swagger often sends "string" as a default value
+                if v == "string":
+                    return None
                 dob = datetime.fromisoformat(v)
-                if dob.tzinfo is None:
-                    dob = dob.replace(tzinfo=UTC)
             except ValueError:
                 raise PydanticCustomError(
                     "dob_format",
@@ -79,11 +75,28 @@ class UserValidationMixin:
                 ) from None
         elif isinstance(v, datetime):
             dob = v
-            if dob.tzinfo is None:
-                dob = dob.replace(tzinfo=UTC)
         else:
             raise PydanticCustomError("dob_type", "Invalid type for date_of_birth")
 
+        if dob and dob.tzinfo is None:
+            dob = dob.replace(tzinfo=UTC)
+        return dob
+
+    @field_validator("date_of_birth", mode="before", check_fields=False)
+    @classmethod
+    def validate_dob(cls, v: str | datetime | None) -> str | None:
+        """Validate date of birth and age constraints."""
+        if v is None:
+            return None
+        # If empty string is passed, treat as None
+        if isinstance(v, str) and not v.strip():
+            return None
+
+        dob = cls._parse_dob(v)
+        if dob is None:
+            return None
+
+        now = datetime.now(tz=UTC)
         if dob > now:
             raise PydanticCustomError("dob_future", "Date of birth cannot be in the future")
 

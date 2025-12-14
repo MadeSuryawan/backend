@@ -191,6 +191,7 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     REDIS_PASSWORD: str | None = None
+    REDIS_URL: str | None = None
     RATE_LIMIT_DEFAULT_LIMITS: str = f"{RATE_LIMIT_REQUESTS}/{RATE_LIMIT_WINDOW}s"
     IN_MEMORY_FALLBACK_ENABLED: bool = True
     HEADERS_ENABLED: bool = True
@@ -205,6 +206,8 @@ class Settings(BaseSettings):
     @property
     def redis_url(self) -> str:
         """Get Redis connection URL."""
+        if self.REDIS_URL:
+            return self.REDIS_URL
         auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
         return f"redis://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
@@ -232,6 +235,7 @@ class RedisConfig(BaseSettings):
     port: int = settings.REDIS_PORT
     db: int = settings.REDIS_DB
     password: str | None = settings.REDIS_PASSWORD
+    url: str | None = settings.REDIS_URL
     ssl: bool = False
     socket_timeout: float = 5.0
     socket_connect_timeout: float = 5.0
@@ -272,7 +276,35 @@ pool_kwargs: dict[str, Any] = {
     "encoding": redis_config.encoding,
     "health_check_interval": redis_config.health_check_interval,
 }
-if redis_config.socket_keepalive:
+
+if redis_config.url:
+    # If a full URL/socket path is provided, we might need to parse it or use from_url
+    # For now, let's just make sure redis-py can handle it.
+    # However, pool_kwargs is passed to ConnectionPool(**pool_kwargs).
+    # ConnectionPool doesn't accept 'url'.
+    # We need to handle Unix socket specifically if it's in the URL or implied.
+    is_unix = redis_config.url.startswith("unix://")
+    is_redis_unix = redis_config.url.startswith("redis+unix://")
+
+    if is_unix or is_redis_unix:
+        pool_kwargs["connection_class"] = __import__(
+            "redis.asyncio",
+        ).asyncio.UnixDomainSocketConnection
+
+        # Extract path
+        if is_unix:
+            pool_kwargs["path"] = redis_config.url.replace("unix://", "")
+        else:
+            pool_kwargs["path"] = redis_config.url.replace("redis+unix://", "")
+
+        # Remove TCP specific args
+        pool_kwargs.pop("host", None)
+        pool_kwargs.pop("port", None)
+        pool_kwargs.pop(
+            "socket_keepalive", None,
+        )  # Unix sockets don't support keepalive the same way
+
+if redis_config.socket_keepalive and "socket_keepalive" in pool_kwargs:
     pool_kwargs["socket_keepalive_options"] = {}
 # Only pass ssl if True to avoid compatibility issues
 if redis_config.ssl:

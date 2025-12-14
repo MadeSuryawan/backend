@@ -77,6 +77,13 @@ def db_user_to_response(db_user: UserDB) -> UserResponse:
     """
 
     user_dict = response_datetime(db_user)
+
+    # Handle updated_at which might be "No updates" string from helpers.response_datetime
+    # But UserResponse expects datetime | None.
+    # If "No updates", we set it to None.
+    if user_dict.get("updated_at") == "No updates":
+        user_dict["updated_at"] = None
+
     try:
         response = UserResponse.model_validate(user_dict, from_attributes=True)
     except ValidationError as e:
