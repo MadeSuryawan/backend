@@ -40,7 +40,6 @@
     extensions = [
       "ms-python.python"
       "charliermarsh.ruff"
-      "tamasfe.even-better-toml"
       "visualstudioexptteam.vscodeintellicode"
       "tombi-toml.tombi"
       "PKief.material-icon-theme"
@@ -59,6 +58,7 @@
       "bierner.markdown-emoji"
       "kilocode.kilo-code"
       "cweijan.vscode-database-client2"
+      "meta.pyrefly"
     ];
 
     workspace = {
@@ -72,7 +72,6 @@
         install-ruff = "$HOME/.local/bin/uv tool install ruff";
         install-pyrefly = "$HOME/.local/bin/uv tool install pyrefly";
         install-pytest = "$HOME/.local/bin/uv tool install pytest";
-        tombi-pytest = "$HOME/.local/bin/uv tool install tombi";
         # 4. Setup Database
         # We perform a check to avoid errors if re-run, though onCreate only runs once usually.
         setup-db = ''
