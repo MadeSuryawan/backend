@@ -21,6 +21,7 @@ dump.rdb
 secrets/
 
 .idx/.data/
+.idx/postgres_data/
 
 .qodo
 .ruff_cache

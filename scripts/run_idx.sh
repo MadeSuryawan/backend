@@ -14,6 +14,7 @@ NC='\033[0m' # No Color
 ENV_FILE="./secrets/.env"
 PROJECT_NAME="baliblissed"
 
+# Default IDX values (overridden by env if present, or fallback logic)
 DB_NAME=""
 DB_USER=""
 
@@ -38,6 +39,7 @@ log_error() {
 load_env() {
     if [ -f "$ENV_FILE" ]; then
         log_info "Loading environment variables from $ENV_FILE"
+        # Export variables, but don't override existing ones if we want to force IDX specific values
         export $(grep -v '^#' "$ENV_FILE" | xargs)
     else
         log_warning "Environment file $ENV_FILE not found."
@@ -45,34 +47,66 @@ load_env() {
     fi
 }
 
-# Extract database name from DATABASE_URL
-get_db_name() {
-    # If DATABASE_URL is set (from .env), use it
-    if [ -n "$DATABASE_URL" ]; then
-        DB_NAME=$(echo $DATABASE_URL | sed -n 's/.*\/\([^?]*\).*/\1/p')
-        DB_USER=$(echo $DATABASE_URL | sed -n 's/.*:\/\/\([^:]*\):.*/\1/p')
-    fi
+# Determine database configuration
+configure_idx_db() {
+    # IDX uses specific environment variables or defaults
+    # We want to use these INSTEAD of what's in .env if running in IDX context,
+    # or at least ensure we are connecting to the IDX postgres instance.
     
-    # Fallback to IDX defaults if empty
-    if [ -z "$DB_NAME" ]; then
-        DB_NAME="${POSTGRES_DB:-baliblissed}"
-    fi
+    # In IDX, POSTGRES_DB and POSTGRES_USER are usually set by dev.nix or the service
+    # If not, we default to what IDX expects (user 'user', db 'baliblissed' or 'postgres')
+    
+    # Check if we are actually in an IDX environment (simple heuristic or assumed since this is run_idx.sh)
+    # We will FORCE the database url for the application runtime in this session
+    
+    IDX_DB_USER="${POSTGRES_USER:-user}"
+    IDX_DB_NAME="${POSTGRES_DB:-baliblissed}"
+    IDX_DB_PASSWORD="${POSTGRES_PASSWORD:-password}"
+    
+    # IDX FIX: Use Unix socket if TCP fails or for consistency if needed.
+    # But usually localhost works if bound correctly. 
+    # Current issue: Server bound to /tmp/postgresql but default psql looks in /tmp or /var/run.
+    # We can force host to be the socket directory if we know it.
+    
+    # If the user manually started postgres with a specific socket dir, we should respect it
+    # or try to detect it. For now, let's stick to TCP localhost if possible, 
+    # OR if we know where the socket is.
+    
+    # Based on the troubleshooting, the process is running on /tmp/postgres
+    IDX_DB_HOST="/tmp/postgres" 
+    # Note: asyncpg (used by SQLAlchemy) needs host to be the path for unix socket
+    
+    IDX_DB_PORT="5432"
 
-    if [ -z "$DB_USER" ]; then
-        DB_USER="${POSTGRES_USER:-user}"
-    fi
+    log_info "Configuring for IDX environment..."
+    log_info "Overriding DATABASE_URL to use IDX defaults: user='$IDX_DB_USER', db='$IDX_DB_NAME', host='$IDX_DB_HOST'"
+
+    # Override the exported DATABASE_URL for the Python process
+    # For Unix socket, host is the directory path
+    # URL encoded path is safer but for local usually just path works if driver supports it.
+    # Asyncpg supports unix sockets by specifying the path as host.
+    export DATABASE_URL="postgresql+asyncpg://$IDX_DB_USER:$IDX_DB_PASSWORD@/$IDX_DB_NAME?host=$IDX_DB_HOST"
+    
+    # Also set env vars for psql helper
+    export PGHOST="$IDX_DB_HOST"
+    export DB_USER="$IDX_DB_USER"
+    export DB_NAME="$IDX_DB_NAME"
+    
+    # Also set Redis URL for IDX (Unix socket)
+    export REDIS_URL="redis+unix:///tmp/redis/redis.sock"
+    log_info "Overriding REDIS_URL to use IDX socket: $REDIS_URL"
 }
 
 # Checking Postgres connection
 check_postgres() {
     log_info "Checking Postgres connection..."
     if command -v psql &> /dev/null; then
-        # Try to connect to PostgreSQL
-        # We use the implicit host/port from env vars
+        # Try to connect to PostgreSQL using the configured variables
+        # PGHOST is set, so it should find the socket
         if psql -U "$DB_USER" -d "$DB_NAME" -c '\q' 2>/dev/null; then
             log_success "✅ Postgres connection successful"
         else
-            log_error "❌ Could not connect to PostgreSQL database '$DB_NAME' as user '$DB_USER'"
+            log_error "❌ Could not connect to PostgreSQL database '$DB_NAME' as user '$DB_USER' on host '$PGHOST'"
             log_error "   Ensure the service is running and the database exists."
             exit 1
         fi
@@ -115,7 +149,6 @@ ask_recreate_db() {
 create_directories() {
     log_info "Creating logs directory..."
     mkdir -p ./logs
-    # Redis data dir in IDX is managed by the service or tmp, usually doesn't need ./data/redis
 }
 
 # Start development environment
@@ -125,12 +158,15 @@ start() {
     log_info ""
     
     load_env
-    get_db_name
+    # Apply IDX specific overrides AFTER loading env
+    configure_idx_db
+    
     check_postgres
     ask_recreate_db
     create_directories
     
     log_info "Starting Uvicorn..."
+    # The variables exported in configure_idx_db will be picked up by the app
     uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --workers 4 --loop uvloop --http httptools
 }
 

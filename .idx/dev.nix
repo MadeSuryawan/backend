@@ -53,12 +53,12 @@
       "ms-python.vscode-python-envs"
       "mgesbert.python-path"
       "mikestead.dotenv"
-      "jinsihou.diff-tool"
       "ms-vscode-remote.remote-containers"
       "ms-azuretools.vscode-containers"
       "docker.docker"
       "bierner.markdown-emoji"
       "kilocode.kilo-code"
+      "cweijan.vscode-database-client2"
     ];
 
     workspace = {
