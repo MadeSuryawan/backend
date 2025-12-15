@@ -1,3 +1,7 @@
+---
+alwaysApply: true
+---
+
 # Python Refactoring Rules/Guidance
 
 When doing codebase refactoring/updates, make sure to always follow:
