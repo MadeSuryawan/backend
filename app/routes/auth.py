@@ -149,7 +149,7 @@ async def refresh_token(
         200: {
             "content": {
                 "application/json": {
-                    "example": {"message": "Successfully logged out", "success": True}
+                    "example": {"message": "Successfully logged out", "success": True},
                 },
             },
         },
@@ -179,14 +179,14 @@ async def logout(
         200: {
             "content": {
                 "application/json": {
-                    "example": {"message": "Email verified successfully", "success": True}
+                    "example": {"message": "Email verified successfully", "success": True},
                 },
             },
         },
         400: {
             "description": "Invalid token",
             "content": {
-                "application/json": {"example": {"detail": "Invalid or expired verification token"}}
+                "application/json": {"example": {"detail": "Invalid or expired verification token"}},
             },
         },
     },
@@ -264,14 +264,14 @@ async def forgot_password(
         200: {
             "content": {
                 "application/json": {
-                    "example": {"message": "Password reset successfully", "success": True}
+                    "example": {"message": "Password reset successfully", "success": True},
                 },
             },
         },
         400: {
             "description": "Invalid token",
             "content": {
-                "application/json": {"example": {"detail": "Invalid or expired reset token"}}
+                "application/json": {"example": {"detail": "Invalid or expired reset token"}},
             },
         },
     },
@@ -368,7 +368,7 @@ async def register_user(
         404: {
             "description": "Provider not configured",
             "content": {
-                "application/json": {"example": {"detail": "Provider google not configured"}}
+                "application/json": {"example": {"detail": "Provider google not configured"}},
             },
         },
     },

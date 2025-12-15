@@ -68,6 +68,7 @@ htmlcov/
 
 # markdown files
 *.md
+docs/
 README*
 
 # Logs

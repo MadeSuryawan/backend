@@ -6,11 +6,8 @@ Endpoints to inspect limiter health and reset rate limits with clear error respo
 
 from logging import getLogger
 
-from typing import Annotated
-
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import ORJSONResponse
-from starlette.status import HTTP_403_FORBIDDEN
 
 from app.auth.permissions import AdminUserDep
 from app.managers.cache_manager import cache_manager

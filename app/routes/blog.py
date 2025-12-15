@@ -42,7 +42,6 @@ from starlette.status import (
     HTTP_201_CREATED,
     HTTP_204_NO_CONTENT,
     HTTP_400_BAD_REQUEST,
-    HTTP_403_FORBIDDEN,
     HTTP_404_NOT_FOUND,
     HTTP_409_CONFLICT,
 )
@@ -86,6 +85,23 @@ class PaginationQuery:
 
     skip: int = 0
     limit: int = 10
+
+
+@dataclass(frozen=True)
+class BustListGridQuery:
+    """
+    Query container for grid cache busting.
+
+    Parameters
+    ----------
+    limits : list[int]
+        List of limit values to invalidate.
+    skips : list[int]
+        List of skip values to invalidate.
+    """
+
+    limits: list[int]
+    skips: list[int]
 
 
 def db_blog_to_response(db_blog: BlogDB) -> BlogResponse:
@@ -151,6 +167,21 @@ def get_pagination_query(
         Aggregated pagination parameters.
     """
     return PaginationQuery(skip=skip, limit=limit)
+
+
+def get_bust_list_grid_query(
+    limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
+    skips: Annotated[list[int], Query(description="List of skip values to invalidate.")],
+) -> BustListGridQuery:
+    """
+    Dependency to construct `BustListGridQuery` from query parameters.
+
+    Returns
+    -------
+    BustListGridQuery
+        Aggregated grid parameters.
+    """
+    return BustListGridQuery(limits=limits, skips=skips)
 
 
 def blog_slug_key(slug: str) -> str:
@@ -1228,7 +1259,7 @@ async def bust_blogs_list_multi(
 @limiter.limit("10/minute")
 @cache_busting(
     cache_manager,
-    key_builder=lambda query, limits, skips, **kw: [
+    key_builder=lambda query, grid_query, **kw: [
         blogs_list_key(
             BlogListQuery(
                 skip=s,
@@ -1237,8 +1268,8 @@ async def bust_blogs_list_multi(
                 author_id=query.author_id,
             ),
         )
-        for limit_value in limits
-        for s in skips
+        for limit_value in grid_query.limits
+        for s in grid_query.skips
     ],
     namespace="blogs",
 )
@@ -1246,8 +1277,7 @@ async def bust_blogs_list_grid(
     request: Request,
     response: Response,
     query: BlogQueryListDep,
-    limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
-    skips: Annotated[list[int], Query(description="List of skip values to invalidate.")],
+    grid_query: Annotated[BustListGridQuery, Depends(get_bust_list_grid_query)],
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
     return ORJSONResponse(content={"status": "success"})

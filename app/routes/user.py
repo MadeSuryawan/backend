@@ -55,7 +55,7 @@ from app.managers.rate_limiter import limiter
 from app.models import UserDB
 from app.schemas import UserCreate, UserResponse, UserUpdate
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
-from app.utils.helpers import file_logger, response_datetime
+from app.utils.helpers import file_logger, host, response_datetime
 
 router = APIRouter(prefix="/users", tags=["👤 Users"])
 
@@ -101,6 +101,43 @@ class UserOpsDeps:
 
     repo: UserRepoDep
     current_user: UserDBDep
+
+
+@dataclass(frozen=True)
+class BustListGridDeps:
+    """Dependencies for bust users list grid operation."""
+
+    query: UserQueryListDep
+    limits: list[int]
+    skips: list[int]
+
+
+def get_bust_list_grid_deps(
+    query: UserQueryListDep,
+    limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
+    skips: Annotated[list[int], Query(description="List of skip values to invalidate.")],
+) -> BustListGridDeps:
+    """
+    Build dependencies for bust users list grid operation.
+
+    Parameters
+    ----------
+    query : UserListQuery
+        Query parameters for pagination.
+    limits : list[int]
+        List of limit values to invalidate.
+    skips : list[int]
+        List of skip values to invalidate.
+
+    Returns
+    -------
+    BustListGridDeps
+        Bundled dependencies.
+    """
+    return BustListGridDeps(query=query, limits=limits, skips=skips)
+
+
+BustListGridDepsDep = Annotated[BustListGridDeps, Depends(get_bust_list_grid_deps)]
 
 
 @router.post(
@@ -851,17 +888,17 @@ async def bust_users_list_multi(
 @limiter.limit("10/minute")
 @cache_busting(
     cache_manager,
-    key_builder=lambda query, limits, skips, **kw: [
-        users_list_key(skip_value, limit_value) for limit_value in limits for skip_value in skips
+    key_builder=lambda deps, **kw: [
+        users_list_key(skip_value, limit_value)
+        for limit_value in deps.limits
+        for skip_value in deps.skips
     ],
     namespace="users",
 )
 async def bust_users_list_grid(
     request: Request,
     response: Response,
-    query: UserQueryListDep,
-    limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
-    skips: Annotated[list[int], Query(description="List of skip values to invalidate.")],
+    deps: BustListGridDepsDep,
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
     return ORJSONResponse(content={"status": "success"})
