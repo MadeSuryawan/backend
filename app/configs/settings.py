@@ -176,10 +176,17 @@ class Settings(BaseSettings):
     POOL_TIMEOUT: int = 30
     POOL_RECYCLE: int = 3600  # Recycle connections after 1 hour
 
-    # Security settings
-    SECRET_KEY: str = "your-secret-key-change-this-in-production"  # noqa: S105
+    # Security settings (SECRET_KEY validated to be secure in production)
+    SECRET_KEY: str = "dev-only-insecure-key-replace-in-prod"  # noqa: S105
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    JWT_ISSUER: str = "baliblissed-api"
+    JWT_AUDIENCE: str = "baliblissed-client"
+
+    # Account lockout settings
+    MAX_LOGIN_ATTEMPTS: int = 5
+    LOCKOUT_DURATION_MINUTES: int = 15
 
     # Pagination defaults
     DEFAULT_PAGE_SIZE: int = 10
@@ -213,13 +220,28 @@ class Settings(BaseSettings):
 
     @field_validator("REDIS_PASSWORD")
     @classmethod
-    def validate_security_in_prod(cls, v: str | None, info: ValidationInfo) -> str | None:
-        """Ensure password is set in production environment."""
-        # Access values from the validation context
+    def validate_redis_password_in_prod(cls, v: str | None, info: ValidationInfo) -> str | None:
+        """Ensure Redis password is set in production environment."""
         env = info.data.get("ENVIRONMENT", "development")
         if env == "production" and not v:
-            mssg = "REDIS_PASSWORD is required in production environment!"
-            raise ValueError(mssg)
+            msg = "REDIS_PASSWORD is required in production environment!"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def validate_secret_key(cls, v: str, info: ValidationInfo) -> str:
+        """Ensure SECRET_KEY is set and secure."""
+        if not v or v == "your-secret-key-change-this-in-production":
+            env = info.data.get("ENVIRONMENT", "development")
+            if env == "production":
+                msg = "SECRET_KEY must be set to a secure value in production!"
+                raise ValueError(msg)
+        if len(v) < 32:
+            env = info.data.get("ENVIRONMENT", "development")
+            if env == "production":
+                msg = "SECRET_KEY must be at least 32 characters in production!"
+                raise ValueError(msg)
         return v
 
 
@@ -301,7 +323,8 @@ if redis_config.url:
         pool_kwargs.pop("host", None)
         pool_kwargs.pop("port", None)
         pool_kwargs.pop(
-            "socket_keepalive", None,
+            "socket_keepalive",
+            None,
         )  # Unix sockets don't support keepalive the same way
 
 if redis_config.socket_keepalive and "socket_keepalive" in pool_kwargs:

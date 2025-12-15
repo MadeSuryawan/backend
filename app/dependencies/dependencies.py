@@ -1,7 +1,8 @@
 # app/dependencies/dependencies.py
 
-"""Application dependencies."""
+"""Application dependencies with enhanced authentication."""
 
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Annotated, Literal
 from uuid import UUID
@@ -9,12 +10,14 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.status import HTTP_400_BAD_REQUEST, HTTP_401_UNAUTHORIZED
+from starlette.status import HTTP_400_BAD_REQUEST, HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
 
 from app.clients.ai_client import AiClient
 from app.clients.email_client import EmailClient
 from app.db import get_session
 from app.managers.cache_manager import CacheManager
+from app.managers.login_attempt_tracker import LoginAttemptTracker, get_login_tracker
+from app.managers.token_blacklist import TokenBlacklist, get_token_blacklist
 from app.managers.token_manager import decode_access_token
 from app.models import UserDB
 from app.repositories import BlogRepository, UserRepository
@@ -24,10 +27,28 @@ from app.services import AuthService
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
-def get_auth_service(session: Annotated[AsyncSession, Depends(get_session)]) -> AuthService:
-    """Dependency to get AuthService."""
+def get_auth_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    request: Request,
+) -> AuthService:
+    """
+    Dependency to get AuthService with optional blacklist and tracker.
+
+    Falls back gracefully if Redis-based managers are not initialized.
+    """
     repo = UserRepository(session)
-    return AuthService(repo)
+
+    # Try to get blacklist and tracker, but don't fail if not available
+    blacklist: TokenBlacklist | None = None
+    tracker: LoginAttemptTracker | None = None
+
+    with suppress(RuntimeError):
+        blacklist = get_token_blacklist()
+
+    with suppress(RuntimeError):
+        tracker = get_login_tracker()
+
+    return AuthService(repo, token_blacklist=blacklist, login_tracker=tracker)
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
@@ -38,7 +59,9 @@ async def get_current_user(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> UserDB:
     """
-    Get current authenticated user.
+    Get current authenticated user using user_id from token claims.
+
+    Enhanced to use user_id for efficient lookup and check token blacklist.
 
     Parameters
     ----------
@@ -53,15 +76,29 @@ async def get_current_user(
         Current authenticated user.
     """
     token_data = decode_access_token(token)
-    if not token_data or not token_data.username:
+    if not token_data:
         raise HTTPException(
             status_code=HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # Check token blacklist if available
+    try:
+        blacklist = get_token_blacklist()
+        is_blacklisted = await blacklist.is_blacklisted(token_data.jti)
+        if is_blacklisted:
+            raise HTTPException(
+                status_code=HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    except RuntimeError:
+        pass  # Blacklist not initialized, skip check
+
+    # Use user_id for efficient lookup (no username index scan)
     user_repo = UserRepository(session)
-    user = await user_repo.get_by_username(token_data.username)
+    user = await user_repo.get_by_id(token_data.user_id)
 
     if not user:
         raise HTTPException(
@@ -73,6 +110,35 @@ async def get_current_user(
     if not user.is_active:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Inactive user")
 
+    return user
+
+
+async def get_verified_user(
+    user: Annotated[UserDB, Depends(get_current_user)],
+) -> UserDB:
+    """
+    Get current authenticated and verified user.
+
+    Parameters
+    ----------
+    user : UserDB
+        Current user from get_current_user.
+
+    Returns
+    -------
+    UserDB
+        Current verified user.
+
+    Raises
+    ------
+    HTTPException
+        If user email is not verified.
+    """
+    if not user.is_verified:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Email not verified. Please verify your email first.",
+        )
     return user
 
 
@@ -95,6 +161,7 @@ def get_user_repository(session: Annotated[AsyncSession, Depends(get_session)]) 
 
 UserDBDep = Annotated[UserDB, Depends(get_current_user)]
 UserRespDep = Annotated[UserResponse, Depends(get_current_user)]
+VerifiedUserDep = Annotated[UserDB, Depends(get_verified_user)]
 UserRepoDep = Annotated[UserRepository, Depends(get_user_repository)]
 
 

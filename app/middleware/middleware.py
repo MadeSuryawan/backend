@@ -27,7 +27,9 @@ from app.clients.ai_client import AiClient
 from app.configs import settings
 from app.db import close_db, init_db
 from app.managers.cache_manager import cache_manager
+from app.managers.login_attempt_tracker import init_login_tracker
 from app.managers.rate_limiter import close_limiter
+from app.managers.token_blacklist import init_token_blacklist
 from app.utils.helpers import file_logger, get_summary, host
 
 if log_to_file := settings.LOG_TO_FILE:
@@ -64,6 +66,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
         await cache_manager.initialize()
         app.state.cache_manager = cache_manager
+
+        # Initialize token blacklist and login tracker if Redis is available
+        if cache_manager.is_redis_available:
+            init_token_blacklist(cache_manager.redis_client)
+            init_login_tracker(cache_manager.redis_client)
+            logger.info("Token blacklist and login tracker initialized")
 
         logger.info(f"is uvloop: {type(get_event_loop()) is Loop}")
 

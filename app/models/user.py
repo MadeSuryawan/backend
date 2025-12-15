@@ -112,6 +112,13 @@ class UserDB(SQLModel, table=True):
         description="Whether the user is verified",
     )
 
+    # Role-based access control
+    role: str = Field(
+        default="user",
+        sa_column=Column(String(20), nullable=False, server_default="user", index=True),
+        description="User role (user, moderator, admin)",
+    )
+
     # Timestamps (timezone-aware)
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(tz=UTC).replace(second=0, microsecond=0),
@@ -134,6 +141,7 @@ class UserDB(SQLModel, table=True):
                 "last_name": "Doe",
                 "is_active": True,
                 "is_verified": False,
+                "role": "user",
             },
         },
     )

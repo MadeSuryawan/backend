@@ -1,11 +1,11 @@
-"""Authentication routes for handling user login and registration."""
+"""Authentication routes for handling user login, registration, and token management."""
 
 from typing import Annotated
 
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import ORJSONResponse
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from starlette.responses import RedirectResponse, Response
 from starlette.status import (
     HTTP_201_CREATED,
@@ -16,13 +16,24 @@ from starlette.status import (
 from app.configs import settings
 from app.decorators.metrics import timed
 from app.dependencies import AuthServiceDep, UserRepoDep, UserRespDep
+from app.errors.auth import EmailVerificationError, PasswordResetError
 from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import limiter
-from app.schemas.auth import Token
+from app.managers.token_manager import decode_access_token
+from app.schemas.auth import (
+    EmailVerificationRequest,
+    LogoutRequest,
+    MessageResponse,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    Token,
+    TokenRefreshRequest,
+)
 from app.schemas.user import UserCreate, UserResponse
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
 
 router = APIRouter(prefix="/auth", tags=["🔐 Auth"])
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 # OAuth Configuration
 oauth = OAuth()
@@ -37,8 +48,6 @@ if settings.GOOGLE_CLIENT_ID:
     )
 
 if settings.WECHAT_APP_ID:
-    # WeChat configuration (custom, as it might not follow strict OIDC)
-    # Using a generic setup, might need adjustment for specialized WeChat flow
     oauth.register(
         name="wechat",
         client_id=settings.WECHAT_APP_ID,
@@ -54,13 +63,14 @@ if settings.WECHAT_APP_ID:
     response_class=ORJSONResponse,
     response_model=Token,
     summary="Login for access token",
-    description="Authenticate user with username/email and password to obtain an access token.",
+    description="Authenticate with username/email and password to obtain tokens.",
     responses={
         200: {
             "content": {
                 "application/json": {
                     "example": {
                         "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
                         "token_type": "bearer",
                     },
                 },
@@ -73,7 +83,7 @@ if settings.WECHAT_APP_ID:
             },
         },
         429: {
-            "description": "Rate limit exceeded",
+            "description": "Rate limit exceeded or account locked",
             "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
         },
     },
@@ -87,32 +97,204 @@ async def login_for_access_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     auth_service: AuthServiceDep,
 ) -> Token:
-    """
-    Login with username (or email) and password.
-
-    Parameters
-    ----------
-    request : Request
-        Current request context.
-    response : Response
-        Response object for middleware/decorators.
-    form_data : OAuth2PasswordRequestForm
-        Form data containing username and password.
-    auth_service : AuthService
-        Authentication service dependency.
-
-    Returns
-    -------
-    Token
-        Access token object.
-
-    Raises
-    ------
-    InvalidCredentialsError
-        If authentication fails.
-    """
+    """Login with username (or email) and password."""
     user = await auth_service.authenticate_user(form_data.username, form_data.password)
     return auth_service.create_token_for_user(user)
+
+
+@router.post(
+    "/refresh",
+    response_class=ORJSONResponse,
+    response_model=Token,
+    summary="Refresh access token",
+    description="Exchange a refresh token for a new access and refresh token pair.",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "token_type": "bearer",
+                    },
+                },
+            },
+        },
+        401: {
+            "description": "Invalid or expired refresh token",
+            "content": {"application/json": {"example": {"detail": "Invalid refresh token"}}},
+        },
+    },
+    operation_id="auth_refresh",
+)
+@timed("/auth/refresh")
+@limiter.limit("10/minute")
+async def refresh_token(
+    request: Request,
+    response: Response,
+    body: TokenRefreshRequest,
+    auth_service: AuthServiceDep,
+) -> Token:
+    """Exchange refresh token for new token pair."""
+    return await auth_service.refresh_tokens(body.refresh_token)
+
+
+@router.post(
+    "/logout",
+    response_class=ORJSONResponse,
+    response_model=MessageResponse,
+    summary="Logout user",
+    description="Invalidate current access and refresh tokens.",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {"message": "Successfully logged out", "success": True}
+                },
+            },
+        },
+    },
+    operation_id="auth_logout",
+)
+@timed("/auth/logout")
+async def logout(
+    request: Request,
+    response: Response,
+    token: Annotated[str, Depends(oauth2_scheme)],
+    body: LogoutRequest,
+    auth_service: AuthServiceDep,
+) -> MessageResponse:
+    """Logout and invalidate tokens."""
+    await auth_service.logout_user(token, body.refresh_token)
+    return MessageResponse(message="Successfully logged out", success=True)
+
+
+@router.post(
+    "/verify-email",
+    response_class=ORJSONResponse,
+    response_model=MessageResponse,
+    summary="Verify email address",
+    description="Verify user email with the token sent to their email.",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {"message": "Email verified successfully", "success": True}
+                },
+            },
+        },
+        400: {
+            "description": "Invalid token",
+            "content": {
+                "application/json": {"example": {"detail": "Invalid or expired verification token"}}
+            },
+        },
+    },
+    operation_id="auth_verify_email",
+)
+@timed("/auth/verify-email")
+@limiter.limit("10/hour")
+async def verify_email(
+    request: Request,
+    response: Response,
+    body: EmailVerificationRequest,
+    auth_service: AuthServiceDep,
+) -> MessageResponse:
+    """Verify email with token."""
+    token_data = decode_access_token(body.token)
+    if not token_data:
+        raise EmailVerificationError
+
+    success = await auth_service.verify_email(token_data.user_id)
+    if not success:
+        raise EmailVerificationError
+
+    return MessageResponse(message="Email verified successfully", success=True)
+
+
+@router.post(
+    "/forgot-password",
+    response_class=ORJSONResponse,
+    response_model=MessageResponse,
+    summary="Request password reset",
+    description="Send a password reset email to the user.",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "If the email exists, a reset link has been sent",
+                        "success": True,
+                    },
+                },
+            },
+        },
+    },
+    operation_id="auth_forgot_password",
+)
+@timed("/auth/forgot-password")
+@limiter.limit("3/hour")
+async def forgot_password(
+    request: Request,
+    response: Response,
+    body: PasswordResetRequest,
+    auth_service: AuthServiceDep,
+) -> MessageResponse:
+    """Request password reset email."""
+    # Always return success to prevent email enumeration
+    reset_token = await auth_service.send_password_reset(body.email)
+
+    # In production, send email here with reset_token
+    # For now, we just return success
+    _ = reset_token  # Suppress unused warning
+
+    return MessageResponse(
+        message="If the email exists, a reset link has been sent",
+        success=True,
+    )
+
+
+@router.post(
+    "/reset-password",
+    response_class=ORJSONResponse,
+    response_model=MessageResponse,
+    summary="Reset password",
+    description="Reset password using the token from the reset email.",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {"message": "Password reset successfully", "success": True}
+                },
+            },
+        },
+        400: {
+            "description": "Invalid token",
+            "content": {
+                "application/json": {"example": {"detail": "Invalid or expired reset token"}}
+            },
+        },
+    },
+    operation_id="auth_reset_password",
+)
+@timed("/auth/reset-password")
+@limiter.limit("5/hour")
+async def reset_password(
+    request: Request,
+    response: Response,
+    body: PasswordResetConfirm,
+    auth_service: AuthServiceDep,
+) -> MessageResponse:
+    """Reset password with token."""
+    token_data = decode_access_token(body.token)
+    if not token_data:
+        raise PasswordResetError
+
+    success = await auth_service.reset_password(token_data.user_id, body.new_password)
+    if not success:
+        raise PasswordResetError
+
+    return MessageResponse(message="Password reset successfully", success=True)
 
 
 @router.post(
@@ -163,33 +345,9 @@ async def register_user(
     user_create: UserCreate,
     repo: UserRepoDep,
 ) -> UserResponse:
-    """
-    Register a new user.
-
-    Parameters
-    ----------
-    request : Request
-        Current request context.
-    response : Response
-        Response object for middleware/decorators.
-    user_create : UserCreate
-        User registration data.
-    repo : UserRepository
-        User repository dependency.
-
-    Returns
-    -------
-    UserResponse
-        Created user information.
-
-    Raises
-    ------
-    HTTPException
-        If registration fails (e.g. duplicate user).
-    """
+    """Register a new user."""
     try:
         user = await repo.create(user_create)
-        # Clear cache so new user appears in lists immediately
         await cache_manager.delete(
             user_id_key(user.uuid),
             username_key(user.username),
@@ -206,13 +364,11 @@ async def register_user(
     summary="Initiate OAuth login",
     description="Redirect user to the OAuth provider's login page.",
     responses={
-        307: {
-            "description": "Redirect to provider",
-        },
+        307: {"description": "Redirect to provider"},
         404: {
             "description": "Provider not configured",
             "content": {
-                "application/json": {"example": {"detail": "Provider google not configured"}},
+                "application/json": {"example": {"detail": "Provider google not configured"}}
             },
         },
     },
@@ -224,28 +380,7 @@ async def login_oauth(
     response: Response,
     provider: str,
 ) -> RedirectResponse:
-    """
-    Initiate OAuth login flow.
-
-    Parameters
-    ----------
-    request : Request
-        Current request context.
-    response : Response
-        Response object for middleware/decorators.
-    provider : str
-        OAuth provider name (e.g. 'google').
-
-    Returns
-    -------
-    RedirectResponse
-        Redirect to provider's consent page.
-
-    Raises
-    ------
-    HTTPException
-        If provider is not configured.
-    """
+    """Initiate OAuth login flow."""
     client = oauth.create_client(provider)
     if not client:
         raise HTTPException(
@@ -271,30 +406,7 @@ async def auth_callback(
     provider: str,
     auth_service: AuthServiceDep,
 ) -> Token:
-    """
-    Handle OAuth callback and exchange for local token.
-
-    Parameters
-    ----------
-    request : Request
-        Current request context containing auth code.
-    response : Response
-        Response object for middleware/decorators.
-    provider : str
-        OAuth provider name.
-    auth_service : AuthService
-        Authentication service dependency.
-
-    Returns
-    -------
-    Token
-        Access token object.
-
-    Raises
-    ------
-    HTTPException
-        If callback handling fails.
-    """
+    """Handle OAuth callback and exchange for local token."""
     client = oauth.create_client(provider)
     if not client:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Provider not found")
@@ -303,13 +415,11 @@ async def auth_callback(
         token = await client.authorize_access_token(request)
         user_info = token.get("userinfo")
         if not user_info:
-            # Fallback for providers that don't return userinfo in token (like generic OAuth2)
             user_info = await client.userinfo(token=token)
 
         user = await auth_service.get_or_create_oauth_user(dict(user_info), provider)
         return auth_service.create_token_for_user(user)
     except Exception as e:
-        # Log error in production
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=f"OAuth failed: {e!s}") from e
 
 
@@ -351,21 +461,5 @@ async def read_users_me(
     response: Response,
     user_resp: UserRespDep,
 ) -> UserResponse:
-    """
-    Get current logged in user.
-
-    Parameters
-    ----------
-    request : Request
-        Current request context.
-    response : Response
-        Response object for middleware/decorators.
-    user_resp : UserResponse
-        Authenticated user (resolved by dependency).
-
-    Returns
-    -------
-    UserResponse
-        Current user's profile information.
-    """
+    """Get current logged in user."""
     return UserResponse.model_validate(user_resp, from_attributes=True)
