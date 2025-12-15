@@ -42,6 +42,7 @@ from app.middleware import (
     lifespan,
 )
 from app.routes import (
+    admin_router,
     ai_router,
     auth_router,
     blog_router,
@@ -87,6 +88,7 @@ routes = [
     items_router,
     cache_router,
     limiter_router,
+    admin_router,
 ]
 
 _ = [app.include_router(router) for router in routes]

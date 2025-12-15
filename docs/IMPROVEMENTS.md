@@ -6,12 +6,12 @@ This document outlines a comprehensive, prioritized list of improvements for the
 
 ## 🎯 Priority Matrix
 
-| Priority | Focus                             | Timeline               |
-|----------|-----------------------------------|------------------------|
-| P0       | Critical for production readiness | Immediate (1–2 weeks)  |
-| P1       | High-value features               | Short-term (2–4 weeks) |
+| Priority | Focus                             | Timeline                 |
+| -------- | --------------------------------- | ------------------------ |
+| P0       | Critical for production readiness | Immediate (1–2 weeks)    |
+| P1       | High-value features               | Short-term (2–4 weeks)   |
 | P2       | Quality of life improvements      | Medium-term (1–2 months) |
-| P3       | Nice-to-have enhancements         | Long-term (2–3 months) |
+| P3       | Nice-to-have enhancements         | Long-term (2–3 months)   |
 
 ## 🔴 P0: Critical Production Requirements
 

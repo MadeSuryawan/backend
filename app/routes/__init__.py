@@ -1,3 +1,4 @@
+from app.routes.admin import router as admin_router
 from app.routes.ai import router as ai_router
 from app.routes.auth import router as auth_router
 from app.routes.blog import router as blog_router
@@ -8,6 +9,7 @@ from app.routes.limiter import router as limiter_router
 from app.routes.user import router as user_router
 
 __all__ = [
+    "admin_router",
     "cache_router",
     "email_router",
     "items_router",

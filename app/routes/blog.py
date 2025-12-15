@@ -47,6 +47,7 @@ from starlette.status import (
     HTTP_409_CONFLICT,
 )
 
+from app.auth.permissions import AdminUserDep, check_owner_or_admin
 from app.decorators.caching import cache_busting, cached
 from app.decorators.metrics import timed
 from app.dependencies import BlogListQuery, BlogQueryListDep, BlogRepoDep, UserDBDep
@@ -55,7 +56,7 @@ from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import limiter
 from app.models import BlogDB
 from app.schemas import BlogCreate, BlogListResponse, BlogResponse, BlogSchema, BlogUpdate
-from app.utils.helpers import file_logger, host, response_datetime
+from app.utils.helpers import file_logger, response_datetime
 
 router = APIRouter(prefix="/blogs", tags=["📝 Blogs"])
 
@@ -837,11 +838,13 @@ async def update_blog(
     """
     try:
         existing = await deps.repo.get_by_id(blog_id)
-        if existing and existing.author_id != deps.current_user.uuid:
+        if not existing:
             raise HTTPException(
-                status_code=HTTP_403_FORBIDDEN,
-                detail="You can only update your own blogs",
+                status_code=HTTP_404_NOT_FOUND,
+                detail=f"Blog with ID {blog_id} not found",
             )
+        # Check if user is owner or admin
+        check_owner_or_admin(existing.author_id, deps.current_user, "blog")
         db_blog = await deps.repo.update(blog_id, blog_update)
         if not db_blog:
             raise HTTPException(
@@ -950,11 +953,13 @@ async def delete_blog(
         If blog not found.
     """
     existing = await repo.get_by_id(blog_id)
-    if existing and existing.author_id != current_user.uuid:
+    if not existing:
         raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="You can only delete your own blogs",
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"Blog with ID {blog_id} not found",
         )
+    # Check if user is owner or admin
+    check_owner_or_admin(existing.author_id, current_user, "blog")
     deleted = await repo.delete(blog_id)
     if not deleted:
         raise HTTPException(
@@ -1039,7 +1044,7 @@ async def bust_blogs_list(
             "description": "Forbidden",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Admin access required (localhost only)"},
+                    "example": {"detail": "Admin access required"},
                 },
             },
         },
@@ -1061,12 +1066,8 @@ async def bust_blog_by_slug(
     request: Request,
     response: Response,
     slug: str,
+    admin_user: AdminUserDep,
 ) -> ORJSONResponse:
-    if host(request) not in ("127.0.0.1", "::1", "localhost"):
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Admin access required (localhost only)",
-        )
     return ORJSONResponse(content={"status": "success"})
 
 
@@ -1081,7 +1082,7 @@ async def bust_blog_by_slug(
             "description": "Forbidden",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Admin access required (localhost only)"},
+                    "example": {"detail": "Admin access required"},
                 },
             },
         },
@@ -1106,12 +1107,8 @@ async def bust_blogs_by_author(
     response: Response,
     author_id: UUID,
     pagination: Annotated[PaginationQuery, Depends(get_pagination_query)],
+    admin_user: AdminUserDep,
 ) -> ORJSONResponse:
-    if host(request) not in ("127.0.0.1", "::1", "localhost"):
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Admin access required (localhost only)",
-        )
     return ORJSONResponse(content={"status": "success"})
 
 
@@ -1126,7 +1123,7 @@ async def bust_blogs_by_author(
             "description": "Forbidden",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Admin access required (localhost only)"},
+                    "example": {"detail": "Admin access required"},
                 },
             },
         },
@@ -1151,12 +1148,8 @@ async def bust_blogs_by_tags(
     response: Response,
     tags: Annotated[list[str], Query(description="Tags to match (any)")],
     pagination: Annotated[PaginationQuery, Depends(get_pagination_query)],
+    admin_user: AdminUserDep,
 ) -> ORJSONResponse:
-    if host(request) not in ("127.0.0.1", "::1", "localhost"):
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Admin access required (localhost only)",
-        )
     return ORJSONResponse(content={"status": "success"})
 
 
@@ -1171,7 +1164,7 @@ async def bust_blogs_by_tags(
             "description": "Forbidden",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Admin access required (localhost only)"},
+                    "example": {"detail": "Admin access required"},
                 },
             },
         },
@@ -1204,12 +1197,8 @@ async def bust_blogs_list_multi(
     response: Response,
     query: BlogQueryListDep,
     limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
+    admin_user: AdminUserDep,
 ) -> ORJSONResponse:
-    if host(request) not in ("127.0.0.1", "::1", "localhost"):
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Admin access required (localhost only)",
-        )
     return ORJSONResponse(content={"status": "success"})
 
 
@@ -1224,7 +1213,7 @@ async def bust_blogs_list_multi(
             "description": "Forbidden",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Admin access required (localhost only)"},
+                    "example": {"detail": "Admin access required"},
                 },
             },
         },
@@ -1259,12 +1248,8 @@ async def bust_blogs_list_grid(
     query: BlogQueryListDep,
     limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
     skips: Annotated[list[int], Query(description="List of skip values to invalidate.")],
+    admin_user: AdminUserDep,
 ) -> ORJSONResponse:
-    if host(request) not in ("127.0.0.1", "::1", "localhost"):
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Admin access required (localhost only)",
-        )
     return ORJSONResponse(content={"status": "success"})
 
 
@@ -1279,7 +1264,7 @@ async def bust_blogs_list_grid(
             "description": "Forbidden",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Admin access required (localhost only)"},
+                    "example": {"detail": "Admin access required"},
                 },
             },
         },
@@ -1292,11 +1277,10 @@ async def bust_blogs_list_grid(
 )
 @timed("/blogs/bust-all")
 @limiter.limit("5/minute")
-async def bust_blogs_all(request: Request, response: Response) -> ORJSONResponse:
-    if host(request) not in ("127.0.0.1", "::1", "localhost"):
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Admin access required (localhost only)",
-        )
+async def bust_blogs_all(
+    request: Request,
+    response: Response,
+    admin_user: AdminUserDep,
+) -> ORJSONResponse:
     await cache_manager.clear(namespace="blogs")
     return ORJSONResponse(content={"status": "cleared"})

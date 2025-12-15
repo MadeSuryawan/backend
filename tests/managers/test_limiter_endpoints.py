@@ -1,10 +1,14 @@
 from collections.abc import AsyncGenerator
+from datetime import timedelta
 from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
+from app.managers.token_manager import create_access_token
+from app.models import UserDB
 
 
 @pytest.mark.asyncio
@@ -28,8 +32,23 @@ async def test_limiter_status_endpoint() -> None:
 
 @pytest.mark.asyncio
 async def test_limiter_reset_admin_only_success() -> None:
-    """Test calling reset from localhost succeeds."""
-    # By default AsyncClient uses 127.0.0.1 as client host
+    """Test calling reset with admin authentication succeeds."""
+    # Create admin user and token
+    admin_user = UserDB(
+        uuid=uuid4(),
+        username="admin",
+        email="admin@test.com",
+        password_hash="hash",
+        is_active=True,
+        is_verified=True,
+        role="admin",
+    )
+    admin_token = create_access_token(
+        user_id=admin_user.uuid,
+        username=admin_user.username,
+        expires_delta=timedelta(minutes=30),
+    )
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         with (
             patch("app.clients.redis_client.RedisClient.ping", new_callable=AsyncMock) as mock_ping,
@@ -38,8 +57,10 @@ async def test_limiter_reset_admin_only_success() -> None:
                 "app.clients.redis_client.RedisClient.delete",
                 new_callable=AsyncMock,
             ) as mock_delete,
+            patch("app.repositories.user.UserRepository.get_by_id", new_callable=AsyncMock) as mock_get_user,
         ):
             mock_ping.return_value = True
+            mock_get_user.return_value = admin_user
 
             # Mock scan_iter to yield some keys
             async def scan_gen(pattern: str) -> AsyncGenerator[str]:
@@ -50,10 +71,11 @@ async def test_limiter_reset_admin_only_success() -> None:
 
             mock_delete.return_value = 1
 
-            # Call with all_endpoints=True
+            # Call with all_endpoints=True and admin token
             response = await client.post(
                 "/limiter/reset",
                 json={"all_endpoints": True, "key": "test_key"},
+                headers={"Authorization": f"Bearer {admin_token}"},
             )
 
             assert response.status_code == 200
@@ -64,35 +86,66 @@ async def test_limiter_reset_admin_only_success() -> None:
 
 @pytest.mark.asyncio
 async def test_limiter_reset_forbidden_remote() -> None:
-    """Test calling reset from remote IP is forbidden."""
-    # We need to simulate a request from a non-localhost IP.
-    # We can do this by creating a client with a custom transport or patching Request.client
-    # Easier to patch the endpoint logic's check or the request object properties, but let's try patching the request object via middleware or directly if possible.
-    # Actually, AsyncClient allows setting client=... in transport?
+    """Test calling reset without admin authentication is forbidden."""
+    # Create regular user (not admin)
+    regular_user = UserDB(
+        uuid=uuid4(),
+        username="user",
+        email="user@test.com",
+        password_hash="hash",
+        is_active=True,
+        is_verified=True,
+        role="user",
+    )
+    user_token = create_access_token(
+        user_id=regular_user.uuid,
+        username=regular_user.username,
+        expires_delta=timedelta(minutes=30),
+    )
 
-    # Let's mock the value in the endpoint: request.client.host
-    # Since we can't easily mock Request inside the endpoint without complex patching,
-    # we can trust that FastAPI sets request.client based on connection.
-    # However, with TestClient/AsyncClient, it's usually fixed.
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        with patch("app.repositories.user.UserRepository.get_by_id", new_callable=AsyncMock) as mock_get_user:
+            mock_get_user.return_value = regular_user
 
-    # We will assume safely that we need to pass headers or configure client?
-    # Wait, Starlette TestClient sets client host. httpx AsyncClient with ASGITransport defaults to 127.0.0.1.
-
-    # Let's inject a middleware or patch the Request.
-    # Actually, simpler: patch the check in the router itself? No, that defeats the purpose.
-
-    # We can use `client` kwarg in ASGITransport in recent versions, or `scope`.
-    transport = ASGITransport(app=app, client=("10.0.0.1", 1234))
-
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/limiter/reset", json={"all_endpoints": True})
-        assert response.status_code == 403
-        assert response.json()["detail"] == "Admin access required (localhost only)"
+            response = await client.post(
+                "/limiter/reset",
+                json={"all_endpoints": True},
+                headers={"Authorization": f"Bearer {user_token}"},
+            )
+            assert response.status_code == 403
+            assert "Admin access required" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
 async def test_limiter_reset_requires_all_endpoints() -> None:
     """Test failure when all_endpoints is False."""
+    # Create admin user and token
+    admin_user = UserDB(
+        uuid=uuid4(),
+        username="admin",
+        email="admin@test.com",
+        password_hash="hash",
+        is_active=True,
+        is_verified=True,
+        role="admin",
+    )
+    admin_token = create_access_token(
+        user_id=admin_user.uuid,
+        username=admin_user.username,
+        expires_delta=timedelta(minutes=30),
+    )
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/limiter/reset", json={"all_endpoints": False})
-        assert response.status_code == 501
+        with (
+            patch("app.clients.redis_client.RedisClient.ping", new_callable=AsyncMock) as mock_ping,
+            patch("app.repositories.user.UserRepository.get_by_id", new_callable=AsyncMock) as mock_get_user,
+        ):
+            mock_ping.return_value = True
+            mock_get_user.return_value = admin_user
+
+            response = await client.post(
+                "/limiter/reset",
+                json={"all_endpoints": False},
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
+            assert response.status_code == 501

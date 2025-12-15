@@ -6,14 +6,17 @@ Endpoints to inspect limiter health and reset rate limits with clear error respo
 
 from logging import getLogger
 
+from typing import Annotated
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import ORJSONResponse
 from starlette.status import HTTP_403_FORBIDDEN
 
+from app.auth.permissions import AdminUserDep
 from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import get_identifier
 from app.schemas import LimiterHealthResponse, LimiterResetRequest, LimiterResetResponse
-from app.utils.helpers import file_logger, host
+from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 
@@ -40,14 +43,6 @@ async def _perform_limiter_reset(
     Raises:
         HTTPException: For authorization failures, invalid input, or unavailable backends.
     """
-
-    if (client_host := host(request)) not in ("127.0.0.1", "::1", "localhost"):
-        logger.warning(f"Unauthorized access attempt to limiter reset from {client_host}")
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Admin access required (localhost only)",
-        )
-
     identifier = body.key or get_identifier(request)
     if not identifier:
         raise HTTPException(status_code=400, detail="Could not determine identifier")
@@ -142,7 +137,7 @@ async def get_limiter_status(request: Request) -> ORJSONResponse:
             "description": "Forbidden",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Admin access required (localhost only)"},
+                    "example": {"detail": "Admin access required"},
                 },
             },
         },
@@ -166,6 +161,7 @@ async def get_limiter_status(request: Request) -> ORJSONResponse:
 async def reset_limiter(
     request: Request,
     body: LimiterResetRequest,
+    admin_user: AdminUserDep,
 ) -> LimiterResetResponse:
     """
     Return limiter reset result.
@@ -176,6 +172,8 @@ async def reset_limiter(
         Current request context.
     body : LimiterResetRequest
         Reset parameters.
+    admin_user : UserDB
+        Admin user (enforced by AdminUserDep dependency).
 
     Returns
     -------

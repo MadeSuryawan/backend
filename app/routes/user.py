@@ -45,6 +45,7 @@ from starlette.status import (
     HTTP_409_CONFLICT,
 )
 
+from app.auth.permissions import AdminUserDep, check_owner_or_admin
 from app.decorators.caching import cache_busting, cached
 from app.decorators.metrics import timed
 from app.dependencies import UserDBDep, UserQueryListDep, UserRepoDep
@@ -54,7 +55,7 @@ from app.managers.rate_limiter import limiter
 from app.models import UserDB
 from app.schemas import UserCreate, UserResponse, UserUpdate
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
-from app.utils.helpers import file_logger, host, response_datetime
+from app.utils.helpers import file_logger, response_datetime
 
 router = APIRouter(prefix="/users", tags=["👤 Users"])
 
@@ -543,11 +544,8 @@ async def update_user(
     HTTPException
         If user not found or invalid update.
     """
-    if deps.current_user.uuid != user_id:
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="You can only update your own profile",
-        )
+    # Check if user is owner or admin
+    check_owner_or_admin(user_id, deps.current_user, "user")
     try:
         existing = await deps.repo.get_by_id(user_id)
         db_user = await deps.repo.update(user_id, user_update)
@@ -636,11 +634,8 @@ async def delete_user(
     HTTPException
         If user not found.
     """
-    if current_user.uuid != user_id:
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="You can only delete your own profile",
-        )
+    # Check if user is owner or admin
+    check_owner_or_admin(user_id, current_user, "user")
     existing = await repo.get_by_id(user_id)
     deleted = await repo.delete(user_id)
     if not deleted:
@@ -720,7 +715,7 @@ async def bust_users_list(
             "description": "Forbidden",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Admin access required (localhost only)"},
+                    "example": {"detail": "Admin access required"},
                 },
             },
         },
@@ -742,12 +737,8 @@ async def bust_user_by_id(
     request: Request,
     response: Response,
     user_id: UUID,
+    admin_user: AdminUserDep,
 ) -> ORJSONResponse:
-    if host(request) not in ("127.0.0.1", "::1", "localhost"):
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Admin access required (localhost only)",
-        )
     return ORJSONResponse(content={"status": "success"})
 
 
@@ -762,7 +753,7 @@ async def bust_user_by_id(
             "description": "Forbidden",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Admin access required (localhost only)"},
+                    "example": {"detail": "Admin access required"},
                 },
             },
         },
@@ -784,12 +775,8 @@ async def bust_user_by_username(
     request: Request,
     response: Response,
     username: str,
+    admin_user: AdminUserDep,
 ) -> ORJSONResponse:
-    if host(request) not in ("127.0.0.1", "::1", "localhost"):
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Admin access required (localhost only)",
-        )
     return ORJSONResponse(content={"status": "success"})
 
 
@@ -804,7 +791,7 @@ async def bust_user_by_username(
             "description": "Forbidden",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Admin access required (localhost only)"},
+                    "example": {"detail": "Admin access required"},
                 },
             },
         },
@@ -849,7 +836,7 @@ async def bust_users_list_multi(
             "description": "Forbidden",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Admin access required (localhost only)"},
+                    "example": {"detail": "Admin access required"},
                 },
             },
         },
@@ -875,12 +862,8 @@ async def bust_users_list_grid(
     query: UserQueryListDep,
     limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
     skips: Annotated[list[int], Query(description="List of skip values to invalidate.")],
+    admin_user: AdminUserDep,
 ) -> ORJSONResponse:
-    if host(request) not in ("127.0.0.1", "::1", "localhost"):
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Admin access required (localhost only)",
-        )
     return ORJSONResponse(content={"status": "success"})
 
 
@@ -895,7 +878,7 @@ async def bust_users_list_grid(
             "description": "Forbidden",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Admin access required (localhost only)"},
+                    "example": {"detail": "Admin access required"},
                 },
             },
         },
@@ -908,11 +891,10 @@ async def bust_users_list_grid(
 )
 @timed("/users/bust-all")
 @limiter.limit("5/minute")
-async def bust_users_all(request: Request, response: Response) -> ORJSONResponse:
-    if host(request) not in ("127.0.0.1", "::1", "localhost"):
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Admin access required (localhost only)",
-        )
+async def bust_users_all(
+    request: Request,
+    response: Response,
+    admin_user: AdminUserDep,
+) -> ORJSONResponse:
     await cache_manager.clear(namespace="users")
     return ORJSONResponse(content={"status": "cleared"})
