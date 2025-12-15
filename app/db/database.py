@@ -4,14 +4,13 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from logging import getLogger
 
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
-from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
 from app.configs import settings
@@ -125,22 +124,19 @@ async def transaction() -> AsyncGenerator[AsyncSession]:
 
 async def init_db() -> None:
     """
-    Initialize database tables.
+    Verify database connection and readiness.
 
-    This function creates all tables defined in SQLModel models.
+    This function verifies the database connection is working.
     It should be called on application startup.
 
     Note:
-        This is a simple initialization for development.
-        For production, use proper migration tools like Alembic.
+        Database schema is managed by Alembic migrations.
+        Run 'uv run alembic upgrade head' before starting the application.
     """
     async with engine.begin() as conn:
-        # Import all models to ensure they are registered
-        from app.models import BlogDB, UserDB  # noqa: F401, PLC0415
-
-        # Create all tables
-        await conn.run_sync(SQLModel.metadata.create_all)
-        logger.info("Database initialized successfully!")
+        # Verify database connection
+        await conn.execute(text("SELECT 1"))
+        logger.info("Database connection verified!")
 
 
 async def close_db() -> None:

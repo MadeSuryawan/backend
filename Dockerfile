@@ -45,5 +45,6 @@ ENV PATH="/app/.venv/bin:$PATH"
 RUN adduser -u 5678 --disabled-password --gecos "" appuser && chown -R appuser /app
 USER appuser
 
-# Run the application using the module path 'app.main:app'
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--loop", "uvloop", "--log-level", "info"]
+# 6. Run database migrations and start the application
+# Migrations are run before the app starts to ensure schema is up-to-date
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --loop uvloop --log-level info"]

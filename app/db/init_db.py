@@ -1,8 +1,12 @@
 """
-Database initialization script.
+Database initialization and verification script.
 
-This script creates all database tables and can be run independently
+This script verifies database connectivity and can be run independently
 or as part of the application startup.
+
+Note:
+    Database schema is managed by Alembic migrations.
+    Run 'uv run alembic upgrade head' to apply migrations.
 """
 
 from asyncio import run as asyncio_run
@@ -16,12 +20,13 @@ logger = file_logger(getLogger(__name__))
 
 
 async def main() -> None:
-    """Initialize database tables."""
+    """Verify database connection."""
     try:
-        logger.info("Creating database tables...")
+        logger.info("Verifying database connection...")
         await init_db()
+        logger.info("Database ready!")
     except Exception as e:
-        logger.exception("Failed to initialize database")
+        logger.exception("Failed to connect to database")
         raise DatabaseInitializationError from e
 
 
