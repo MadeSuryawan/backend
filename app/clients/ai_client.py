@@ -19,7 +19,6 @@ from app.configs.settings import (
     SAFETY_SETTINGS,
     settings,
 )
-from app.decorators.with_retry import with_retry
 from app.errors import (
     AiAuthenticationError,
     AiError,
@@ -100,12 +99,6 @@ class AiClient:
         """Get the AI client instance."""
         return self._client
 
-    @with_retry(
-        max_retries=settings.AI_MAX_RETRIES,
-        base_delay=settings.AI_RETRY_DELAY,
-        max_delay=settings.AI_REQUEST_TIMEOUT,
-        exec_retry=RETRIABLE_EXCEPTIONS,
-    )
     async def _generate_content(
         self,
         contents: ContentListUnion | ContentListUnionDict,
@@ -117,6 +110,11 @@ class AiClient:
         This is a low-level method for generating content with custom prompts
         and configurations. For specific use cases, prefer the higher-level
         methods like generate_itinerary, process_query, etc.
+
+        Note: Retry logic has been removed from this method. Endpoints using
+        AI generation should instead use the @idempotent decorator to prevent
+        duplicate API calls and ensure consistent responses. The circuit breaker
+        in do_service() provides protection against cascading failures.
 
         Args:
             contents: The contents to send to the model.

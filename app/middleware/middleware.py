@@ -26,7 +26,9 @@ from uvloop import Loop
 from app.clients.ai_client import AiClient
 from app.configs import settings
 from app.db import close_db, init_db
+from app.dependencies.dependencies import init_idempotency_manager
 from app.managers.cache_manager import cache_manager
+from app.managers.idempotency_manager import IdempotencyManager
 from app.managers.login_attempt_tracker import init_login_tracker
 from app.managers.rate_limiter import close_limiter
 from app.managers.token_blacklist import init_token_blacklist
@@ -67,11 +69,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         await cache_manager.initialize()
         app.state.cache_manager = cache_manager
 
-        # Initialize token blacklist and login tracker if Redis is available
+        # Initialize token blacklist, login tracker, and idempotency manager if Redis is available
         if cache_manager.is_redis_available:
             init_token_blacklist(cache_manager.redis_client)
             init_login_tracker(cache_manager.redis_client)
             logger.info("Token blacklist and login tracker initialized")
+
+            # Initialize idempotency manager
+            idempotency_manager = IdempotencyManager(cache_manager.redis_client)
+            init_idempotency_manager(idempotency_manager)
+            app.state.idempotency_manager = idempotency_manager
+            logger.info("Idempotency manager initialized")
 
         logger.info(f"is uvloop: {type(get_event_loop()) is Loop}")
 

@@ -30,6 +30,7 @@ dependencies = [
   "google-auth-httplib2>=0.2.1",
   "google-auth-oauthlib>=1.2.3",
   "google-genai>=1.52.0",
+  "idemptx>=0.2.2",
   "itsdangerous>=2.2.0",
   "markdown>=3.10",
   "mdformat>=1.0.0",

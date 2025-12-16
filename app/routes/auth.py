@@ -11,11 +11,13 @@ from starlette.status import (
     HTTP_201_CREATED,
     HTTP_400_BAD_REQUEST,
     HTTP_404_NOT_FOUND,
+    HTTP_409_CONFLICT,
 )
 
 from app.configs import settings
+from app.decorators.idempotent import idempotent
 from app.decorators.metrics import timed
-from app.dependencies import AuthServiceDep, UserRepoDep, UserRespDep
+from app.dependencies import AuthServiceDep, IdempotencyDep, UserRepoDep, UserRespDep
 from app.errors.auth import EmailVerificationError, PasswordResetError
 from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import limiter
@@ -303,7 +305,8 @@ async def reset_password(
     response_model=UserResponse,
     status_code=HTTP_201_CREATED,
     summary="Register a new user",
-    description="Register a new user account with the provided information.",
+    description="Register a new user account with the provided information. "
+    "Supports idempotency via Idempotency-Key header to prevent duplicate registrations.",
     responses={
         201: {
             "content": {
@@ -330,6 +333,12 @@ async def reset_password(
                 "application/json": {"example": {"detail": "Username or email already exists"}},
             },
         },
+        409: {
+            "description": "Duplicate request - idempotency key already used",
+            "content": {
+                "application/json": {"example": {"detail": "Request with this idempotency key is already being processed"}},
+            },
+        },
         429: {
             "description": "Rate limit exceeded",
             "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
@@ -339,13 +348,20 @@ async def reset_password(
 )
 @timed("/auth/register")
 @limiter.limit("5/hour")
+@idempotent(namespace="auth:register")
 async def register_user(
     request: Request,
     response: Response,
     user_create: UserCreate,
     repo: UserRepoDep,
+    idempotency_manager: IdempotencyDep,
 ) -> UserResponse:
-    """Register a new user."""
+    """
+    Register a new user.
+
+    Supports idempotency via `Idempotency-Key` header (UUID format).
+    If the same key is used within 1 hour, the cached response is returned.
+    """
     try:
         user = await repo.create(user_create)
         await cache_manager.delete(

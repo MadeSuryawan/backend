@@ -48,8 +48,9 @@ from starlette.status import (
 
 from app.auth.permissions import AdminUserDep, check_owner_or_admin
 from app.decorators.caching import cache_busting, cached
+from app.decorators.idempotent import idempotent
 from app.decorators.metrics import timed
-from app.dependencies import BlogListQuery, BlogQueryListDep, BlogRepoDep, UserDBDep
+from app.dependencies import BlogListQuery, BlogQueryListDep, BlogRepoDep, IdempotencyDep, UserDBDep
 from app.errors.database import DatabaseError, DuplicateEntryError
 from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import limiter
@@ -265,7 +266,8 @@ def blogs_search_tags_key(tags: list[str], pagination: PaginationQuery) -> str:
     response_model=BlogResponse,
     status_code=HTTP_201_CREATED,
     summary="Create a new blog post",
-    description="Create a new blog post with the provided information.",
+    description="Create a new blog post with the provided information. "
+    "Supports idempotency via Idempotency-Key header to prevent duplicate posts.",
     responses={
         201: {
             "content": {
@@ -290,6 +292,12 @@ def blogs_search_tags_key(tags: list[str], pagination: PaginationQuery) -> str:
             "description": "Bad request",
             "content": {"application/json": {"example": {"detail": "Slug already exists"}}},
         },
+        409: {
+            "description": "Duplicate request - idempotency key already used",
+            "content": {
+                "application/json": {"example": {"detail": "Request with this idempotency key is already being processed"}},
+            },
+        },
         429: {
             "description": "Rate limit exceeded",
             "content": {"application/json": {"example": {"detail": "Rate limit exceeded"}}},
@@ -299,6 +307,7 @@ def blogs_search_tags_key(tags: list[str], pagination: PaginationQuery) -> str:
 )
 @timed("/blogs/create")
 @limiter.limit(lambda key: "10/minute" if "apikey" in key else "2/minute")
+@idempotent(namespace="blogs:create")
 @cache_busting(
     cache_manager,
     key_builder=lambda blog, **kw: [
@@ -332,9 +341,13 @@ async def create_blog(
         ),
     ],
     repo: BlogRepoDep,
+    idempotency_manager: IdempotencyDep,
 ) -> BlogResponse:
     """
     Create a new blog post.
+
+    Supports idempotency via `Idempotency-Key` header (UUID format).
+    If the same key is used within 1 hour, the cached response is returned.
 
     Parameters
     ----------
@@ -346,6 +359,8 @@ async def create_blog(
         Blog input payload.
     repo : BlogRepository
         Repository dependency.
+    idempotency_manager : IdempotencyManager
+        Idempotency manager dependency.
 
     Returns
     -------

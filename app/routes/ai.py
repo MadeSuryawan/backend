@@ -23,8 +23,9 @@ from fastapi.responses import ORJSONResponse
 from starlette.responses import Response
 
 from app.decorators.caching import cached
+from app.decorators.idempotent import idempotent
 from app.decorators.metrics import timed
-from app.dependencies import AiDep, EmailDep
+from app.dependencies import AiDep, EmailDep, IdempotencyDep
 from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import limiter
 from app.schemas.ai import (
@@ -149,12 +150,20 @@ async def chat_bot(
     response_class=ORJSONResponse,
     summary="Send a travel inquiry email",
     response_model=ContactAnalysisResponse,
+    description="Send a travel inquiry email with AI-generated confirmation. "
+    "Supports idempotency via Idempotency-Key header to prevent duplicate emails.",
     responses={
         200: {
             "content": {
                 "application/json": {
                     "example": {"confirmation": "Inquiry received. We will get back to you soon."},
                 },
+            },
+        },
+        409: {
+            "description": "Duplicate request - idempotency key already used",
+            "content": {
+                "application/json": {"example": {"detail": "Request with this idempotency key is already being processed"}},
             },
         },
         429: {
@@ -166,6 +175,7 @@ async def chat_bot(
 )
 @timed("/ai/email-inquiry")
 @limiter.limit("5/hour")
+@idempotent(namespace="ai:email-inquiry")
 async def email_inquiry_confirmation_message(
     request: Request,
     response: Response,
@@ -187,9 +197,14 @@ async def email_inquiry_confirmation_message(
     ],
     ai_client: AiDep,
     email_client: EmailDep,
+    idempotency_manager: IdempotencyDep,
 ) -> ORJSONResponse:
     """
     Send a travel inquiry email.
+
+    Supports idempotency via `Idempotency-Key` header (UUID format).
+    If the same key is used within 1 hour, the cached response is returned.
+    This prevents duplicate email sends and duplicate AI processing.
 
     Parameters
     ----------
@@ -203,6 +218,8 @@ async def email_inquiry_confirmation_message(
         AI client dependency.
     email_client : EmailClient
         Email client dependency.
+    idempotency_manager : IdempotencyManager
+        Idempotency manager dependency.
 
     Returns
     -------

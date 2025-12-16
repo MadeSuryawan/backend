@@ -43,6 +43,14 @@ from app.errors.email import (
     SendingError,
     email_client_exception_handler,
 )
+from app.errors.idempotency import (
+    DuplicateRequestError,
+    IdempotencyError,
+    IdempotencyKeyInvalidError,
+    IdempotencyKeyMissingError,
+    IdempotencyStorageError,
+    idempotency_exception_handler,
+)
 from app.errors.password_hasher import (
     PasswordHashingError,
     PasswordRehashError,
@@ -57,6 +65,12 @@ __all__ = [
     "ConfigurationError",
     "EmailServiceError",
     "SendingError",
+    "DuplicateRequestError",
+    "IdempotencyError",
+    "IdempotencyKeyInvalidError",
+    "IdempotencyKeyMissingError",
+    "IdempotencyStorageError",
+    "idempotency_exception_handler",
     "CacheCompressionError",
     "CacheDecompressionError",
     "CacheDeserializationError",

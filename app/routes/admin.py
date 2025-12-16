@@ -4,6 +4,7 @@ Admin Routes.
 Endpoints for administrative operations requiring admin role.
 """
 
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
@@ -17,7 +18,7 @@ from starlette.status import HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
 from app.auth.permissions import AdminUserDep
 from app.db import get_session
 from app.decorators.metrics import timed
-from app.dependencies import UserRepoDep
+from app.dependencies import IdempotencyDep, UserRepoDep, get_idempotency_manager
 from app.models import UserDB
 from app.schemas.admin import (
     AdminUserListResponse,
@@ -25,6 +26,7 @@ from app.schemas.admin import (
     SystemStatsResponse,
     UserRoleUpdate,
 )
+from app.schemas.idempotency import IdempotencyMetrics, IdempotencyRecord
 from app.schemas.user import UserResponse
 
 router = APIRouter(prefix="/admin", tags=["👑 Admin"])
@@ -330,3 +332,236 @@ async def get_system_stats(
         admin_users=admin_users,
         moderator_users=moderator_users,
     )
+
+
+# =============================================================================
+# Idempotency Management Endpoints
+# =============================================================================
+
+
+@router.get(
+    "/idempotency/metrics",
+    response_class=ORJSONResponse,
+    response_model=IdempotencyMetrics,
+    summary="Get idempotency metrics (admin only)",
+    description="Retrieve idempotency hit/miss statistics. Admin access required.",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "hits": 150,
+                        "misses": 500,
+                        "blocked_duplicates": 25,
+                        "hit_rate": 0.23,
+                    },
+                },
+            },
+        },
+        503: {
+            "description": "Idempotency manager not available",
+            "content": {
+                "application/json": {"example": {"detail": "Idempotency manager not initialized"}},
+            },
+        },
+    },
+    operation_id="admin_get_idempotency_metrics",
+)
+@timed("/admin/idempotency/metrics")
+async def get_idempotency_metrics(
+    admin_user: AdminUserDep,
+) -> IdempotencyMetrics:
+    """
+    Get idempotency hit/miss metrics.
+
+    Parameters
+    ----------
+    admin_user : UserDB
+        Admin user (enforced by AdminUserDep dependency).
+
+    Returns
+    -------
+    IdempotencyMetrics
+        Statistics about idempotency cache hits, misses, and blocked duplicates.
+    """
+    try:
+        manager = get_idempotency_manager()
+        return manager.get_metrics()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+
+@router.get(
+    "/idempotency/keys/{idempotency_key}",
+    response_class=ORJSONResponse,
+    response_model=IdempotencyRecord | None,
+    summary="Get idempotency record (admin only)",
+    description="Retrieve an idempotency record by key. Admin access required.",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "key": "550e8400-e29b-41d4-a716-446655440000",
+                        "status": "COMPLETED",
+                        "response": {"id": "123", "name": "test"},
+                        "created_at": "2025-01-01T12:00:00Z",
+                        "ttl_seconds": 3600,
+                    },
+                },
+            },
+        },
+        404: {
+            "description": "Key not found",
+            "content": {
+                "application/json": {"example": {"detail": "Idempotency key not found"}},
+            },
+        },
+        503: {
+            "description": "Idempotency manager not available",
+            "content": {
+                "application/json": {"example": {"detail": "Idempotency manager not initialized"}},
+            },
+        },
+    },
+    operation_id="admin_get_idempotency_record",
+)
+@timed("/admin/idempotency/keys/{idempotency_key}")
+async def get_idempotency_record(
+    idempotency_key: str,
+    admin_user: AdminUserDep,
+) -> IdempotencyRecord | None:
+    """
+    Get an idempotency record by key.
+
+    Parameters
+    ----------
+    idempotency_key : str
+        The idempotency key to look up.
+    admin_user : UserDB
+        Admin user (enforced by AdminUserDep dependency).
+
+    Returns
+    -------
+    IdempotencyRecord | None
+        The idempotency record if found, None otherwise.
+    """
+    try:
+        manager = get_idempotency_manager()
+        record = await manager.get_record_by_key(idempotency_key)
+        if record is None:
+            raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Idempotency key not found")
+        return record
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+
+@router.delete(
+    "/idempotency/keys/{idempotency_key}",
+    response_class=ORJSONResponse,
+    summary="Delete idempotency key (admin only)",
+    description="Delete an idempotency record by key. Admin access required.",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {"status": "deleted", "key": "550e8400-e29b-41d4-a716-446655440000"},
+                },
+            },
+        },
+        404: {
+            "description": "Key not found",
+            "content": {
+                "application/json": {"example": {"detail": "Idempotency key not found"}},
+            },
+        },
+        503: {
+            "description": "Idempotency manager not available",
+            "content": {
+                "application/json": {"example": {"detail": "Idempotency manager not initialized"}},
+            },
+        },
+    },
+    operation_id="admin_delete_idempotency_key",
+)
+@timed("/admin/idempotency/keys/{idempotency_key}")
+async def delete_idempotency_key(
+    idempotency_key: str,
+    admin_user: AdminUserDep,
+) -> ORJSONResponse:
+    """
+    Delete an idempotency record.
+
+    This allows administrators to clear idempotency keys that may be
+    blocking legitimate retries.
+
+    Parameters
+    ----------
+    idempotency_key : str
+        The idempotency key to delete.
+    admin_user : UserDB
+        Admin user (enforced by AdminUserDep dependency).
+
+    Returns
+    -------
+    ORJSONResponse
+        Confirmation of deletion.
+    """
+    try:
+        manager = get_idempotency_manager()
+        deleted = await manager.delete_key(idempotency_key)
+        if not deleted:
+            raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Idempotency key not found")
+        return ORJSONResponse(content={"status": "deleted", "key": idempotency_key})
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+
+@router.delete(
+    "/idempotency/clear",
+    response_class=ORJSONResponse,
+    summary="Clear all idempotency keys (admin only)",
+    description="Clear all idempotency records. Admin access required. Use with caution.",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {"status": "cleared", "count": 42},
+                },
+            },
+        },
+        503: {
+            "description": "Idempotency manager not available",
+            "content": {
+                "application/json": {"example": {"detail": "Idempotency manager not initialized"}},
+            },
+        },
+    },
+    operation_id="admin_clear_idempotency_keys",
+)
+@timed("/admin/idempotency/clear")
+async def clear_all_idempotency_keys(
+    admin_user: AdminUserDep,
+) -> ORJSONResponse:
+    """
+    Clear all idempotency records.
+
+    WARNING: This will allow previously-blocked duplicate requests to be
+    processed again. Use with caution.
+
+    Parameters
+    ----------
+    admin_user : UserDB
+        Admin user (enforced by AdminUserDep dependency).
+
+    Returns
+    -------
+    ORJSONResponse
+        Confirmation with count of cleared records.
+    """
+    try:
+        manager = get_idempotency_manager()
+        count = await manager.clear_all()
+        return ORJSONResponse(content={"status": "cleared", "count": count})
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e

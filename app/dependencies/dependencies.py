@@ -16,6 +16,7 @@ from app.clients.ai_client import AiClient
 from app.clients.email_client import EmailClient
 from app.db import get_session
 from app.managers.cache_manager import CacheManager
+from app.managers.idempotency_manager import IdempotencyManager
 from app.managers.login_attempt_tracker import LoginAttemptTracker, get_login_tracker
 from app.managers.token_blacklist import TokenBlacklist, get_token_blacklist
 from app.managers.token_manager import decode_access_token
@@ -23,6 +24,44 @@ from app.models import UserDB
 from app.repositories import BlogRepository, UserRepository
 from app.schemas.user import UserResponse
 from app.services import AuthService
+
+# Global idempotency manager instance
+_idempotency_manager: IdempotencyManager | None = None
+
+
+def init_idempotency_manager(manager: IdempotencyManager) -> None:
+    """
+    Initialize the global idempotency manager.
+
+    Parameters
+    ----------
+    manager : IdempotencyManager
+        The idempotency manager instance.
+    """
+    global _idempotency_manager
+    _idempotency_manager = manager
+
+
+def get_idempotency_manager() -> IdempotencyManager:
+    """
+    Get the global idempotency manager.
+
+    Returns
+    -------
+    IdempotencyManager
+        The idempotency manager instance.
+
+    Raises
+    ------
+    RuntimeError
+        If the idempotency manager is not initialized.
+    """
+    if _idempotency_manager is None:
+        raise RuntimeError("Idempotency manager not initialized")
+    return _idempotency_manager
+
+
+IdempotencyDep = Annotated[IdempotencyManager, Depends(get_idempotency_manager)]
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
