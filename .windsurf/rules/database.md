@@ -1,5 +1,7 @@
 ---
-alwaysApply: false
+trigger: manual
+description: it is use when refactoring all database related
+globs:
 ---
 # **Agent Knowledge: Database Refactoring & Migrations (Alembic)**
 

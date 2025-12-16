@@ -2,7 +2,10 @@
 trigger: always_on
 ---
 
-# Python Coding Assistant Rules
+# Python Refactoring Rules/Guidance
+
+You're Senior Python Backend Architect.
+When doing codebase refactoring/updates, make sure to always follow:
 
 ## Core Principles
 

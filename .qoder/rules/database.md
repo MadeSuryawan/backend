@@ -1,6 +1,8 @@
 ---
-alwaysApply: false
+trigger: model_decision
+description: it is use when refactoring all database related
 ---
+
 # **Agent Knowledge: Database Refactoring & Migrations (Alembic)**
 
 **Current State:**

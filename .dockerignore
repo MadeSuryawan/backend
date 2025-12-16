@@ -35,10 +35,18 @@ venv.bak/
 
 # IDE files
 .vscode/
+.agent/
+.cursor/
+.windsurf/
+.qoder/
+.trae/
+.idx/
 .idea/
 *.swp
 *.swo
 *~
+
+scripts/
 
 # OS files
 .DS_Store
@@ -65,6 +73,7 @@ tests/
 htmlcov/
 .tox/
 .nox/
+pytest.ini
 
 # markdown files
 *.md

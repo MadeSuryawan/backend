@@ -1,10 +1,10 @@
-# **Prompt Context: Postgres Refactoring & Optimization Strategy**
+# Postgres Refactoring & Optimization Strategy
 
-**Core Philosophy:**
+## **Core Philosophy:**
 
 * **"Prove You Need It":** Do not introduce external services (MongoDB, ElasticSearch) until Postgres has been proven insufficient via measurement.
 * **Simplicity First:** The complexity of maintaining distributed systems (time/cost) often outweighs the theoretical performance gains for most applications under <10k-50k daily users.
-* **Vertical Scaling:** Before re-architecting for microservices or external stores, maximize Postgres performance through indexing, query tuning, and simple vertical hardware scaling.
+* **Vertical Scaling:** Maximize Postgres performance through indexing, query tuning, and simple vertical hardware scaling.
 
 ---
 
