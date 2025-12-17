@@ -12,6 +12,16 @@ A practical guide for day-to-day development with Alembic migrations in the Bali
 ./scripts/migrate.sh current          # Check current database revision
 ./scripts/migrate.sh generate "msg"   # Create new migration after model changes
 ./scripts/migrate.sh check            # Verify no pending migrations
+./scripts/migrate.sh stamp head       # Mark existing DB as current (if tables exist)
+```
+
+**Quick Diagnostic:**
+
+```bash
+# If upgrade fails with "relation already exists":
+./scripts/migrate.sh current          # Check Alembic state
+./scripts/migrate.sh stamp head       # Fix: mark DB as current
+./scripts/migrate.sh upgrade          # Verify it works
 ```
 
 ---
@@ -121,17 +131,34 @@ echo 'DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/baliblissed' >>
 
 ### Scenario 2: Existing Database from Before Alembic
 
-If you have a database created with the old `create_all()` method:
+If you have a database created with the old `create_all()` method or manually:
 
 ```bash
-# 1. Stamp the database with the initial migration
-# This tells Alembic the schema is already at this version
-./scripts/migrate.sh stamp 0001
+# 1. Check current Alembic state (may be empty)
+./scripts/migrate.sh current
 
-# 2. Verify
+# 2. Check what the head revision is
+./scripts/migrate.sh heads
+# Note the revision number (e.g., 0001)
+
+# 3. Stamp the database with the appropriate revision
+# This tells Alembic the schema is already at this version
+./scripts/migrate.sh stamp head
+# Or use specific revision: ./scripts/migrate.sh stamp 0001
+
+# 4. Verify
 ./scripts/migrate.sh current
 # Should show: 0001 (head)
+
+# 5. Test that upgrade works (should do nothing)
+./scripts/migrate.sh upgrade
+# Should complete successfully without errors
 ```
+
+**Important:** Only stamp if your database schema matches the migration. If tables exist but schema differs, you may need to:
+
+- Create a new migration to align differences, or
+- Drop and recreate tables (if data loss is acceptable)
 
 ### Scenario 3: Merge Conflict in Migrations
 
@@ -214,6 +241,8 @@ uv run alembic upgrade <from_rev>:<to_rev> --sql > migration.sql
 - **Never manually modify database schema** without a migration
 - **Don't combine unrelated changes** in one migration
 - **Don't skip migration review** even for simple changes
+- **Don't ignore "relation already exists" errors** - stamp the database instead
+- **Don't drop tables manually** to fix migration errors without backing up data first
 
 ---
 
@@ -270,6 +299,40 @@ cat secrets/.env | grep DATABASE_URL
 # Ensure PostgreSQL is running
 docker compose up -d  # if using Docker
 ```
+
+### "relation already exists" / "DuplicateTableError"
+
+**Error:** `ProgrammingError: relation "users" already exists` or `DuplicateTableError`
+
+**Cause:** Database tables exist but Alembic doesn't know about them (missing `alembic_version` entry).
+
+**Solution:**
+
+```bash
+# 1. Check if Alembic knows about current state
+./scripts/migrate.sh current
+# If empty, Alembic doesn't know the database state
+
+# 2. Check what tables exist in your database
+# (Connect to PostgreSQL and run: \dt)
+
+# 3. Determine which revision matches your schema
+./scripts/migrate.sh heads
+# Note the revision (e.g., 0001)
+
+# 4. Stamp the database with the correct revision
+./scripts/migrate.sh stamp head
+# Or specific revision: ./scripts/migrate.sh stamp 0001
+
+# 5. Verify the stamp worked
+./scripts/migrate.sh current
+# Should show: 0001 (head)
+
+# 6. Test upgrade (should complete without errors)
+./scripts/migrate.sh upgrade
+```
+
+**Prevention:** Always use migrations to create/modify schema. If you must create tables manually, immediately stamp the database afterward.
 
 ---
 

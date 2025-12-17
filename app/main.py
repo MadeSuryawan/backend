@@ -80,15 +80,15 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 
 routes = [
-    ai_router,
+    admin_router,
     auth_router,
+    ai_router,
     email_router,
     user_router,
     blog_router,
     items_router,
     cache_router,
     limiter_router,
-    admin_router,
 ]
 
 _ = [app.include_router(router) for router in routes]
