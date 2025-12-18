@@ -46,11 +46,10 @@ from starlette.status import (
 )
 
 from app.auth.permissions import AdminUserDep, check_owner_or_admin
-from app.decorators.caching import cache_busting, cached
+from app.decorators.caching import cache_busting, cached, get_cache_manager
 from app.decorators.metrics import timed
 from app.dependencies import UserDBDep, UserQueryListDep, UserRepoDep
 from app.errors.database import DatabaseError, DuplicateEntryError
-from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import limiter
 from app.models import UserDB
 from app.schemas import UserCreate, UserResponse, UserUpdate
@@ -183,7 +182,6 @@ BustListGridDepsDep = Annotated[BustListGridDeps, Depends(get_bust_list_grid_dep
 @timed("/users/create")
 @limiter.limit(lambda key: "15/hour" if "apikey" in key else "3/hour")
 @cache_busting(
-    cache_manager,
     key_builder=lambda **kw: [users_list_key(0, 10)],
     namespace="users",
 )
@@ -236,7 +234,7 @@ async def create_user(
     """
     try:
         db_user = await repo.create(user)
-        await cache_manager.delete(
+        await get_cache_manager(request).delete(
             user_id_key(db_user.uuid),
             username_key(db_user.username),
             namespace="users",
@@ -284,7 +282,6 @@ async def create_user(
 @timed("/users/all")
 @limiter.limit(lambda key: "30/minute" if "apikey" in key else "10/minute")
 @cached(
-    cache_manager,
     ttl=3600,
     namespace="users",
     key_builder=lambda **kw: users_list_key(kw.get("skip", 0), kw.get("limit", 10)),
@@ -362,7 +359,6 @@ async def get_users(
 @timed("/users/by-id")
 @limiter.limit(lambda key: "60/minute" if "apikey" in key else "20/minute")
 @cached(
-    cache_manager,
     ttl=1800,
     namespace="users",
     key_builder=lambda **kw: user_id_key(kw["user_id"]),
@@ -445,7 +441,6 @@ async def get_user(
 @timed("/users/by-username")
 @limiter.limit(lambda key: "60/minute" if "apikey" in key else "20/minute")
 @cached(
-    cache_manager,
     ttl=1800,
     namespace="users",
     key_builder=lambda **kw: username_key(kw["username"]),
@@ -530,7 +525,6 @@ async def get_user_by_username(
 @timed("/users/update")
 @limiter.limit(lambda key: "20/minute" if "apikey" in key else "5/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda user_id, **kw: [user_id_key(user_id), users_list_key(0, 10)],
     namespace="users",
 )
@@ -607,7 +601,7 @@ async def update_user(
                 users_list_key(0, 10),
             ],
         )
-        await cache_manager.delete(*keys, namespace="users")
+        await get_cache_manager(request).delete(*keys, namespace="users")
         return db_user_to_response(db_user)
     except DuplicateEntryError as e:
         raise HTTPException(status_code=HTTP_409_CONFLICT, detail=e.detail) from e
@@ -639,7 +633,6 @@ async def update_user(
 @timed("/users/delete")
 @limiter.limit(lambda key: "10/minute" if "apikey" in key else "2/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda user_id, **kw: [user_id_key(user_id), users_list_key(0, 10)],
     namespace="users",
 )
@@ -681,7 +674,7 @@ async def delete_user(
             detail=f"User with ID {user_id} not found",
         )
     if existing:
-        await cache_manager.delete(
+        await get_cache_manager(request).delete(
             user_id_key(existing.uuid),
             username_key(existing.username),
             users_list_key(0, 10),
@@ -708,7 +701,6 @@ async def delete_user(
 @timed("/users/bust-list")
 @limiter.limit("10/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda **kw: [users_list_key(kw.get("skip", 0), kw.get("limit", 10))],
     namespace="users",
 )
@@ -766,7 +758,6 @@ async def bust_users_list(
 @timed("/users/bust-by-id")
 @limiter.limit("10/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda user_id, **kw: [user_id_key(user_id)],
     namespace="users",
 )
@@ -804,7 +795,6 @@ async def bust_user_by_id(
 @timed("/users/bust-by-username")
 @limiter.limit("10/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda username, **kw: [username_key(username)],
     namespace="users",
 )
@@ -842,7 +832,6 @@ async def bust_user_by_username(
 @timed("/users/bust-list-multi")
 @limiter.limit("10/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda query, limits, **kw: [
         users_list_key(query.skip, limit_value) for limit_value in limits
     ],
@@ -887,7 +876,6 @@ async def bust_users_list_multi(
 @timed("/users/bust-list-grid")
 @limiter.limit("10/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda deps, **kw: [
         users_list_key(skip_value, limit_value)
         for limit_value in deps.limits
@@ -933,5 +921,5 @@ async def bust_users_all(
     response: Response,
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
-    await cache_manager.clear(namespace="users")
+    await get_cache_manager(request).clear(namespace="users")
     return ORJSONResponse(content={"status": "cleared"})

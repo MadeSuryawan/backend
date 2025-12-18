@@ -26,7 +26,7 @@ from uvloop import Loop
 from app.clients.ai_client import AiClient
 from app.configs import settings
 from app.db import close_db, init_db
-from app.managers.cache_manager import cache_manager
+from app.managers.cache_manager import CacheManager
 from app.managers.login_attempt_tracker import init_login_tracker
 from app.managers.rate_limiter import close_limiter
 from app.managers.token_blacklist import init_token_blacklist
@@ -64,6 +64,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
         await init_db()
 
+        cache_manager = CacheManager()
         await cache_manager.initialize()
         app.state.cache_manager = cache_manager
 

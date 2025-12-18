@@ -13,6 +13,7 @@ from starlette.responses import JSONResponse
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.configs import settings
+from app.decorators.caching import get_cache_manager
 from app.dependencies import EmailDep
 from app.errors import (
     AiError,
@@ -31,7 +32,6 @@ from app.errors import (
     password_hashing_exception_handler,
     validation_exception_handler,
 )
-from app.managers.cache_manager import cache_manager
 from app.managers.circuit_breaker import ai_circuit_breaker, email_circuit_breaker
 from app.managers.metrics import get_system_metrics, metrics_manager
 from app.managers.rate_limiter import limiter, rate_limit_exceeded_handler
@@ -165,7 +165,7 @@ async def health_check(request: Request, email_client: EmailDep) -> ORJSONRespon
         {"version": "1.0.0", "status": "ok", "timestamp": "2025-01-01", "services": { ... }, "cache": { ... }}
     """
     # Get cache health info
-    cache_health_data = await cache_manager.health_check()
+    cache_health_data = await get_cache_manager(request).health_check()
 
     # Determine AI client status
     ai_client_status = (
@@ -331,7 +331,6 @@ async def root(request: Request, response: Response) -> JSONResponse:
       "message": str
     }
     """
-    response.headers["X-Frame-Options"] = "DENY"
     return JSONResponse(content={"message": "Welcome to BaliBlissed Backend"})
 
 

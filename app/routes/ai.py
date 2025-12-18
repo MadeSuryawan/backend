@@ -25,7 +25,6 @@ from starlette.responses import Response
 from app.decorators.caching import cached
 from app.decorators.metrics import timed
 from app.dependencies import AiDep, EmailDep
-from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import limiter
 from app.schemas.ai import (
     ChatRequest,
@@ -264,7 +263,6 @@ async def email_inquiry_confirmation_message(
 @timed("/ai/itinerary-md")
 @limiter.limit("5/hour")
 @cached(
-    cache_manager,
     ttl=3600,
     key_builder=lambda itinerary_req, **kw: itinerary_md_key(itinerary_req),
     namespace="itinerary-md",
@@ -356,7 +354,6 @@ async def itinerary(
 @timed("/ai/itinerary-txt")
 @limiter.limit("5/hour")
 @cached(
-    cache_manager,
     ttl=3600,
     key_builder=lambda itinerary_md, **kw: itinerary_md_key(itinerary_md),
     namespace="itinerary-txt",

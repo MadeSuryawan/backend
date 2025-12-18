@@ -31,9 +31,8 @@ from fastapi.responses import ORJSONResponse
 from pydantic.main import BaseModel
 from starlette.status import HTTP_404_NOT_FOUND
 
-from app.decorators.caching import cache_busting, cached
+from app.decorators.caching import cache_busting, cached, get_cache_manager
 from app.decorators.metrics import timed
-from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import limiter
 from app.schemas import Item, ItemUpdate
 from app.utils.helpers import file_logger
@@ -87,7 +86,6 @@ class PaginatedItemsResponse(BaseModel):
 @timed("/items/create")
 @limiter.limit("2/minute")
 @cache_busting(
-    cache_manager,
     keys=[
         "get_all_items",
         "get_raw_items",
@@ -166,8 +164,7 @@ async def create_item(
 
     # Proactively set the cache (Write-Through)
     # This prevents the subsequent "Miss" when the user fetches it for the first time
-
-    await cache_manager.set(
+    await get_cache_manager(request).set(
         f"item_{item.id}",
         item.model_dump(),
         ttl=3600,
@@ -208,7 +205,6 @@ async def create_item(
 @timed("/items/get")
 @limiter.limit("10/minute")
 @cached(
-    cache_manager,
     ttl=3600,
     namespace="items",
     key_builder=lambda item_id, **kw: f"item_{item_id}",
@@ -290,7 +286,6 @@ async def get_item(item_id: int, request: Request, response: Response) -> Item:
 @timed("/items/all")
 @limiter.limit("10/minute")
 @cached(
-    cache_manager,
     ttl=3600,
     namespace="items",
     key_builder=lambda **kw: "get_all_items",
@@ -371,7 +366,6 @@ async def get_all_items(request: Request, response: Response) -> AllItemsRespons
 @timed("/items/raw")
 @limiter.limit("10/minute")
 @cached(
-    cache_manager,
     ttl=3600,
     namespace="items",
     key_builder=lambda **kw: "get_raw_items",
@@ -454,7 +448,6 @@ async def get_raw_items(
 @timed("/items/map")
 @limiter.limit("10/minute")
 @cached(
-    cache_manager,
     ttl=3600,
     namespace="items",
     key_builder=lambda **kw: "get_map_items",
@@ -510,7 +503,6 @@ async def get_map_items(request: Request, response: Response) -> dict[str, Item]
 @timed("/items/maybe")
 @limiter.limit("10/minute")
 @cached(
-    cache_manager,
     ttl=3600,
     namespace="items",
     key_builder=lambda item_id, **kw: f"get_maybe_item_{item_id}",
@@ -577,7 +569,6 @@ async def get_maybe_item(item_id: int, request: Request, response: Response) -> 
 @timed("/items/paginated")
 @limiter.limit("10/minute")
 @cached(
-    cache_manager,
     ttl=3600,
     namespace="items",
     key_builder=lambda **kw: f"get_paginated_items_{kw.get('page', 1)}_{kw.get('page_size', 10)}",
@@ -674,7 +665,6 @@ async def get_paginated_items(
 @timed("/items/bust-paginated")
 @limiter.limit("10/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda **kw: [f"get_paginated_items_{kw.get('page', 1)}_{kw.get('page_size', 10)}"],
     namespace="items",
 )
@@ -794,7 +784,7 @@ async def bust_paginated_all(
     pages = (total + page_size - 1) // page_size if page_size > 0 else 0
     keys = [f"get_paginated_items_{p}_{page_size}" for p in range(1, pages + 1)]
     if keys:
-        await cache_manager.delete(*keys, namespace="items")
+        await get_cache_manager(request).delete(*keys, namespace="items")
     return ORJSONResponse(content={"status": "success"})
 
 
@@ -866,7 +856,7 @@ async def bust_paginated_multi(
         pages = (total + size - 1) // size if size > 0 else 0
         keys.extend([f"get_paginated_items_{p}_{size}" for p in range(1, pages + 1)])
     if keys:
-        await cache_manager.delete(*keys, namespace="items")
+        await get_cache_manager(request).delete(*keys, namespace="items")
     return ORJSONResponse(content={"status": "success"})
 
 
@@ -898,7 +888,6 @@ async def bust_paginated_multi(
 @timed("/items/dict-list")
 @limiter.limit("10/minute")
 @cached(
-    cache_manager,
     ttl=3600,
     namespace="items",
     key_builder=lambda **kw: "get_dict_list_items",
@@ -975,7 +964,6 @@ async def get_dict_list_items(request: Request, response: Response) -> dict[str,
 @timed("/items/tuple")
 @limiter.limit("10/minute")
 @cached(
-    cache_manager,
     ttl=3600,
     namespace="items",
     key_builder=lambda **kw: "get_tuple_items",
@@ -1050,7 +1038,6 @@ async def get_tuple_items(request: Request, response: Response) -> tuple[Item, .
 @timed("/items/update")
 @limiter.limit("10/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda item_id, **kw: [
         f"item_{item_id}",
         "get_all_items",
@@ -1162,7 +1149,6 @@ async def update_item(
 @timed("/items/delete")
 @limiter.limit("10/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda item_id, **kw: [
         f"item_{item_id}",
         "get_all_items",
@@ -1216,7 +1202,9 @@ async def delete_item(item_id: int, request: Request, response: Response) -> ORJ
         raise HTTPException(status_code=404, detail="Item not found")
 
     del items_db[item_id]
-    return ORJSONResponse(content={"message": "Item deleted successfully"})
+    if not items_db.get(item_id):
+        return ORJSONResponse(content={"message": "Item deleted successfully"})
+    raise HTTPException(status_code=500, detail="Failed to delete item, please try again")
 
 
 @router.delete(
@@ -1278,7 +1266,7 @@ async def clear_all_items(request: Request, response: Response) -> ORJSONRespons
     for size in sizes:
         keys.extend([f"get_paginated_items_{p}_{size}" for p in range(1, 51)])
     items_db.clear()
-    await cache_manager.delete(
+    await get_cache_manager(request).delete(
         "get_all_items",
         "get_raw_items",
         "get_map_items",

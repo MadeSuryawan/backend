@@ -4,10 +4,12 @@
 from collections.abc import Callable
 from functools import wraps
 from hashlib import sha256
+from inspect import signature
 from json import dumps
 from logging import getLogger
 from typing import Any
 
+from fastapi import Request
 from fastapi.exceptions import ResponseValidationError
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from redis.exceptions import RedisError
@@ -26,6 +28,24 @@ exceptions = (
     ResponseValidationError,
     TypeError,
 )
+
+
+def get_request_arg(
+    func: Callable[..., Any],
+    *args: list[Any],
+    **kwargs: dict[str, Any],
+) -> Request:
+    try:
+        bound = signature(func).bind(*args, **kwargs)
+        bound.apply_defaults()  # populates defaults if any are missing
+        return bound.arguments["request"]
+    except KeyError as e:
+        details = f"Request argument not found on {func.__name__} function"
+        raise AttributeError(details) from e
+
+
+def get_cache_manager(request: Request) -> CacheManager:
+    return request.app.state.cache_manager
 
 
 def _infer_response_type_from_callable(func: Callable[..., Any]) -> object | None:
@@ -52,7 +72,6 @@ def _to_json_safe(value: object) -> object:
 
 
 def cached(
-    cache_manager: CacheManager,
     ttl: int | None = None,
     namespace: str | None = None,
     key_builder: Callable[..., str] | None = None,
@@ -62,7 +81,6 @@ def cached(
     FastAPI endpoint result caching decorator.
 
     Args:
-        cache_manager: Cache manager instance.
         ttl: Time to live in seconds.
         namespace: Cache namespace.
         key_builder: Custom function to build cache key from args/kwargs.
@@ -74,7 +92,7 @@ def cached(
 
     Example:
         @app.get("/items/{item_id}")
-        @cached(cache_manager, ttl=3600, namespace="items", response_model=Item)
+        @cached(ttl=3600, namespace="items", response_model=Item)
         async def get_item(item_id: int) -> Item:
             return Item(id=item_id, name="Item")
     """
@@ -82,13 +100,14 @@ def cached(
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args: list[Any], **kwargs: dict[str, Any]) -> object:
+            cache_manager = get_cache_manager(get_request_arg(func, *args, **kwargs))
+
             # Build cache key
             if key_builder:
                 cache_key = key_builder(*args, **kwargs)
             else:
                 # Auto-generate key from function name and arguments
                 cache_key = _generate_cache_key(func.__name__, *args, **kwargs)
-
             # Try to get from cache
             try:
                 skip = bool(kwargs.get("refresh", False))
@@ -103,32 +122,50 @@ def cached(
             except exceptions as e:
                 logger.warning(f"Cache retrieval failed: {e}")
 
-            # Execute function and cache result
-            result = await func(*args, **kwargs)
-            # logger.debug(f"{result=}, {type(result)=}")
-
-            try:
-                payload = _to_json_safe(result)
-                if await cache_manager.set(
-                    cache_key,
-                    payload,
-                    ttl=ttl,
-                    namespace=namespace,
-                ):
-                    logger.debug(f"Cached result for key: {cache_key}")
-                    return result
-            except exceptions as e:
-                logger.warning(f"{e}")
-
-            return result
+            return await cache_new_value(
+                func,
+                cache_manager,
+                cache_key,
+                ttl,
+                namespace,
+                *args,
+                **kwargs,
+            )
 
         return wrapper
 
     return decorator
 
 
-def cache_busting(
+async def cache_new_value(
+    func: Callable,
     cache_manager: CacheManager,
+    cache_key: str,
+    ttl: int | None = None,
+    namespace: str | None = None,
+    *args: list[Any],
+    **kwargs: dict[str, Any],
+) -> object:
+    result = await func(*args, **kwargs)
+    # logger.debug(f"{result=}, {type(result)=}")
+
+    try:
+        payload = _to_json_safe(result)
+        if await cache_manager.set(
+            cache_key,
+            payload,
+            ttl=ttl,
+            namespace=namespace,
+        ):
+            logger.debug(f"Cached result for key: {cache_key}")
+            return result
+    except exceptions as e:
+        logger.warning(f"{e}")
+
+    return result
+
+
+def cache_busting(
     keys: list[str] | None = None,
     namespace: str | None = None,
     key_builder: Callable[..., list[str]] | None = None,
@@ -137,7 +174,6 @@ def cache_busting(
     Busting on mutations (POST, PUT, DELETE) cache decorator.
 
     Args:
-        cache_manager: Cache manager instance.
         keys: List of cache keys to bust.
         namespace: Cache namespace.
         key_builder: Custom function to build keys to bust from args/kwargs.
@@ -149,6 +185,8 @@ def cache_busting(
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args: list[Any], **kwargs: dict[str, Any]) -> object:
+            cache_manager = get_cache_manager(get_request_arg(func, *args, **kwargs))
+
             # Execute function
             result = await func(*args, **kwargs)
 
@@ -156,7 +194,6 @@ def cache_busting(
             keys_to_bust = keys or []
             if key_builder:
                 keys_to_bust = key_builder(*args, **kwargs)
-
             # Bust cache
             if keys_to_bust:
                 try:

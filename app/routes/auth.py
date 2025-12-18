@@ -14,10 +14,10 @@ from starlette.status import (
 )
 
 from app.configs import settings
+from app.decorators.caching import get_cache_manager
 from app.decorators.metrics import timed
 from app.dependencies import AuthServiceDep, UserRepoDep, UserRespDep
 from app.errors.auth import EmailVerificationError, PasswordResetError
-from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import limiter
 from app.managers.token_manager import decode_access_token
 from app.schemas.auth import (
@@ -186,7 +186,9 @@ async def logout(
         400: {
             "description": "Invalid token",
             "content": {
-                "application/json": {"example": {"detail": "Invalid or expired verification token"}},
+                "application/json": {
+                    "example": {"detail": "Invalid or expired verification token"},
+                },
             },
         },
     },
@@ -348,7 +350,7 @@ async def register_user(
     """Register a new user."""
     try:
         user = await repo.create(user_create)
-        await cache_manager.delete(
+        await get_cache_manager(request).delete(
             user_id_key(user.uuid),
             username_key(user.username),
             users_list_key(0, 10),

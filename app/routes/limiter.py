@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import ORJSONResponse
 
 from app.auth.permissions import AdminUserDep
-from app.managers.cache_manager import cache_manager
+from app.decorators.caching import get_cache_manager
 from app.managers.rate_limiter import get_identifier
 from app.schemas import LimiterHealthResponse, LimiterResetRequest, LimiterResetResponse
 from app.utils.helpers import file_logger
@@ -45,7 +45,7 @@ async def _perform_limiter_reset(
         raise HTTPException(status_code=400, detail="Could not determine identifier")
 
     if body.all_endpoints:
-        redis = cache_manager.redis_client
+        redis = get_cache_manager(request).redis_client
         if not await redis.ping():
             raise HTTPException(status_code=503, detail="Redis unavailable")
 
@@ -98,7 +98,7 @@ async def get_limiter_status(request: Request) -> ORJSONResponse:
 
     status = LimiterHealthResponse()
 
-    redis_healthy = await cache_manager.redis_client.ping()
+    redis_healthy = await get_cache_manager(request).redis_client.ping()
     if not redis_healthy:
         status.detail = "Falling back to in-memory storage or disconnected"
         status.storage = "in-memory"

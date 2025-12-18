@@ -47,11 +47,10 @@ from starlette.status import (
 )
 
 from app.auth.permissions import AdminUserDep, check_owner_or_admin
-from app.decorators.caching import cache_busting, cached
+from app.decorators.caching import cache_busting, cached, get_cache_manager
 from app.decorators.metrics import timed
 from app.dependencies import BlogListQuery, BlogQueryListDep, BlogRepoDep, UserDBDep
 from app.errors.database import DatabaseError, DuplicateEntryError
-from app.managers.cache_manager import cache_manager
 from app.managers.rate_limiter import limiter
 from app.models import BlogDB
 from app.schemas import BlogCreate, BlogListResponse, BlogResponse, BlogSchema, BlogUpdate
@@ -300,7 +299,6 @@ def blogs_search_tags_key(tags: list[str], pagination: PaginationQuery) -> str:
 @timed("/blogs/create")
 @limiter.limit(lambda key: "10/minute" if "apikey" in key else "2/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda blog, **kw: [
         blog_slug_key(blog.slug),
         blogs_list_key(
@@ -481,7 +479,6 @@ async def get_blog(
 @timed("/blogs/by-slug")
 @limiter.limit(lambda key: "60/minute" if "apikey" in key else "20/minute")
 @cached(
-    cache_manager,
     ttl=3600,
     namespace="blogs",
     key_builder=lambda **kw: blog_slug_key(kw["slug"]),
@@ -563,7 +560,6 @@ async def get_blog_by_slug(
 @timed("/blogs/all")
 @limiter.limit(lambda key: "30/minute" if "apikey" in key else "10/minute")
 @cached(
-    cache_manager,
     ttl=3600,
     namespace="blogs",
     key_builder=lambda **kw: blogs_list_key(kw["query"]),
@@ -647,7 +643,6 @@ async def get_blogs(
 @timed("/blogs/by-author-id")
 @limiter.limit(lambda key: "30/minute" if "apikey" in key else "10/minute")
 @cached(
-    cache_manager,
     ttl=3600,
     namespace="blogs",
     key_builder=lambda **kw: blogs_by_author_key(kw["author_id"], kw["pagination"]),
@@ -729,7 +724,6 @@ async def get_blogs_by_author(
 @timed("/blogs/search/tags")
 @limiter.limit(lambda key: "30/minute" if "apikey" in key else "10/minute")
 @cached(
-    cache_manager,
     ttl=3600,
     namespace="blogs",
     key_builder=lambda **kw: blogs_search_tags_key(kw["tags"], kw["pagination"]),
@@ -815,7 +809,6 @@ async def search_blogs_by_tags(
 @timed("/blogs/update")
 @limiter.limit(lambda key: "20/minute" if "apikey" in key else "5/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda blog_id, blog_update, deps, **kw: [
         blogs_list_key(BlogListQuery(skip=0, limit=10)),
     ],
@@ -919,7 +912,7 @@ async def update_blog(
             ],
         )
         if keys:
-            await cache_manager.delete(*keys, namespace="blogs")
+            await get_cache_manager(request).delete(*keys, namespace="blogs")
         return db_blog_to_response(db_blog)
     except ValueError as e:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(e)) from e
@@ -949,7 +942,6 @@ async def update_blog(
 @timed("/blogs/delete")
 @limiter.limit(lambda key: "10/minute" if "apikey" in key else "2/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda blog_id, **kw: [
         blogs_list_key(BlogListQuery(skip=0, limit=10)),
     ],
@@ -1013,7 +1005,7 @@ async def delete_blog(
             ),
             blogs_search_tags_key(existing.tags, PaginationQuery(skip=0, limit=10)),
         ]
-        await cache_manager.delete(*keys, namespace="blogs")
+        await get_cache_manager(request).delete(*keys, namespace="blogs")
 
 
 @router.post(
@@ -1035,7 +1027,6 @@ async def delete_blog(
 @timed("/blogs/bust-list")
 @limiter.limit("10/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda **kw: [blogs_list_key(kw["query"])],
     namespace="blogs",
 )
@@ -1089,7 +1080,6 @@ async def bust_blogs_list(
 @timed("/blogs/bust-by-slug")
 @limiter.limit("10/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda slug, **kw: [blog_slug_key(slug)],
     namespace="blogs",
 )
@@ -1127,7 +1117,6 @@ async def bust_blog_by_slug(
 @timed("/blogs/bust-by-author")
 @limiter.limit("10/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda author_id, pagination, **kw: [
         blogs_by_author_key(author_id, pagination),
     ],
@@ -1168,7 +1157,6 @@ async def bust_blogs_by_author(
 @timed("/blogs/bust-by-tags")
 @limiter.limit("10/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda tags, pagination, **kw: [
         blogs_search_tags_key(tags, pagination),
     ],
@@ -1209,7 +1197,6 @@ async def bust_blogs_by_tags(
 @timed("/blogs/bust-list-multi")
 @limiter.limit("10/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda query, limits, **kw: [
         blogs_list_key(
             BlogListQuery(
@@ -1258,7 +1245,6 @@ async def bust_blogs_list_multi(
 @timed("/blogs/bust-list-grid")
 @limiter.limit("10/minute")
 @cache_busting(
-    cache_manager,
     key_builder=lambda query, grid_query, **kw: [
         blogs_list_key(
             BlogListQuery(
@@ -1312,5 +1298,5 @@ async def bust_blogs_all(
     response: Response,
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
-    await cache_manager.clear(namespace="blogs")
+    await get_cache_manager(request).clear(namespace="blogs")
     return ORJSONResponse(content={"status": "cleared"})

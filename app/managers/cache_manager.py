@@ -473,6 +473,3 @@ class CacheManager:
         """Reset cache statistics."""
         self.statistics.reset()
         logger.info("Cache statistics reset.")
-
-
-cache_manager = CacheManager()
