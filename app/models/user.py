@@ -64,6 +64,11 @@ class UserDB(SQLModel, table=True):
         sa_column=Column(String(100)),
         description="User last name",
     )
+    display_name: str | None = Field(
+        default=None,
+        sa_column=Column(String(200)),
+        description="Computed display name (first_name + last_name or username)",
+    )
     bio: str | None = Field(
         default=None,
         sa_column=Column(String(160)),

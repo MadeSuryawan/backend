@@ -12,6 +12,23 @@ from app.repositories.base import BaseRepository
 from app.schemas.user import UserCreate, UserUpdate
 
 
+def compute_display_name(first_name: str | None, last_name: str | None, username: str) -> str:
+    """
+    Compute display name from first name, last name, or fallback to username.
+
+    Args:
+        first_name: User's first name.
+        last_name: User's last name.
+        username: User's username (fallback).
+
+    Returns:
+        Display name string.
+    """
+    if first_name and last_name:
+        return f"{first_name} {last_name}"
+    return username
+
+
 class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
     """
     Repository for User database operations.
@@ -57,6 +74,7 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
             password_hash=password_hash,
             first_name=schema.first_name,
             last_name=schema.last_name,
+            display_name=compute_display_name(schema.first_name, schema.last_name, schema.username),
             bio=schema.bio,
             profile_picture=str(schema.profile_picture) if schema.profile_picture else None,
             website=str(schema.website) if schema.website else None,
@@ -127,7 +145,17 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
         if "website" in update_data and update_data["website"]:
             update_data["website"] = str(update_data["website"])
 
-        update_data["updated_at"] = datetime.now(tz=UTC)
+        # Recompute display_name if first_name or last_name is being updated
+        if "first_name" in update_data or "last_name" in update_data:
+            new_first_name = update_data.get("first_name", db_user.first_name)
+            new_last_name = update_data.get("last_name", db_user.last_name)
+            update_data["display_name"] = compute_display_name(
+                new_first_name,
+                new_last_name,
+                db_user.username,
+            )
+
+        update_data["updated_at"] = datetime.now(tz=UTC).replace(second=0, microsecond=0)
 
         for key, value in update_data.items():
             setattr(db_user, key, value)

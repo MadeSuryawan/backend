@@ -260,7 +260,7 @@ async def update_user_role(
 
     # Update role directly
     user.role = role_update.role
-    user.updated_at = datetime.now(tz=UTC)
+    user.updated_at = datetime.now(tz=UTC).replace(second=0, microsecond=0)
     await session.commit()
     await session.refresh(user)
     return AdminUserResponse.model_validate(user)

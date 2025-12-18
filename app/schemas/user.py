@@ -277,12 +277,18 @@ class UserResponse(BaseModel):
     email: EmailStr
     is_active: bool = Field(alias="isActive")
     is_verified: bool = Field(alias="isVerified")
+    role: str = Field(default="user", description="User role (user, moderator, admin)")
     profile_picture: HttpUrl | None = Field(alias="profilePicture")
     bio: str = Field(default="N/A")
     website: HttpUrl | None = None
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime | None = Field(default=None, alias="updatedAt")
     country: str = Field(default="N/A")
+    display_name: str | None = Field(
+        default=None,
+        alias="displayName",
+        description="Display name (stored in database, computed if missing)",
+    )
 
     @field_validator("first_name", "last_name", "bio", "country", mode="before")
     @classmethod
@@ -295,10 +301,17 @@ class UserResponse(BaseModel):
             return "N/A"
         return v
 
-    @computed_field(alias="displayName")
-    @property
-    def display_name(self) -> str:
-        """Compute full name from first and last name."""
-        if self.first_name and self.last_name:
-            return f"{self.first_name} {self.last_name}"
-        return self.username
+    @model_validator(mode="after")
+    def compute_display_name_if_missing(self) -> "UserResponse":
+        """
+        Compute display_name if not provided (fallback for backward compatibility).
+
+        This ensures display_name is always set, even if the database value is None
+        (shouldn't happen after migration, but provides safety).
+        """
+        if not self.display_name:
+            if self.first_name and self.last_name and self.first_name != "N/A" and self.last_name != "N/A":
+                self.display_name = f"{self.first_name} {self.last_name}"
+            else:
+                self.display_name = self.username
+        return self

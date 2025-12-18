@@ -180,7 +180,7 @@ BustListGridDepsDep = Annotated[BustListGridDeps, Depends(get_bust_list_grid_dep
     operation_id="users_create",
 )
 @timed("/users/create")
-@limiter.limit(lambda key: "15/hour" if "apikey" in key else "3/hour")
+@limiter.limit(lambda key: "15/hour" if "apikey" in key else "5/hour")
 @cache_busting(
     key_builder=lambda **kw: [users_list_key(0, 10)],
     namespace="users",
