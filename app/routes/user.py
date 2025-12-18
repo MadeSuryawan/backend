@@ -664,22 +664,32 @@ async def delete_user(
     HTTPException
         If user not found.
     """
+    # Check if user exists first
+    existing = await repo.get_by_id(user_id)
+    if not existing:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found",
+        )
+
     # Check if user is owner or admin
     check_owner_or_admin(user_id, current_user, "user")
-    existing = await repo.get_by_id(user_id)
+
+    # Delete the user
     deleted = await repo.delete(user_id)
     if not deleted:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
             detail=f"User with ID {user_id} not found",
         )
-    if existing:
-        await get_cache_manager(request).delete(
-            user_id_key(existing.uuid),
-            username_key(existing.username),
-            users_list_key(0, 10),
-            namespace="users",
-        )
+
+    # Clear cache for deleted user
+    await get_cache_manager(request).delete(
+        user_id_key(existing.uuid),
+        username_key(existing.username),
+        users_list_key(0, 10),
+        namespace="users",
+    )
 
 
 @router.post(
