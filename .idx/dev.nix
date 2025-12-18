@@ -64,6 +64,8 @@
       "kilocode.kilo-code"
       "cweijan.vscode-database-client2"
       "meta.pyrefly"
+      "DotJoshJohnson.xml"
+      "redhat.vscode-yaml"
     ];
 
     workspace = {
