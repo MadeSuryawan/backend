@@ -18,7 +18,7 @@ from logging import getLogger
 from threading import Lock
 from time import perf_counter
 from types import TracebackType
-from typing import Any, Self, cast
+from typing import Any, Self
 
 from psutil import cpu_percent as get_cpu_percent
 from psutil import disk_usage, virtual_memory
@@ -319,10 +319,9 @@ async def get_system_metrics() -> dict[str, Any]:
         disk = disk_usage("/")
 
         # percpu=False (default) returns float, not list
-        cpu = cast(float, get_cpu_percent(interval=_CPU_SAMPLE_INTERVAL))
 
         return SystemMetrics(
-            cpu_percent=cpu,
+            cpu_percent=get_cpu_percent(interval=_CPU_SAMPLE_INTERVAL),
             memory_percent=memory.percent,
             memory_used_mb=round(memory.used / _BYTES_PER_MB, 2),
             memory_total_mb=round(memory.total / _BYTES_PER_MB, 2),
