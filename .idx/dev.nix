@@ -66,6 +66,8 @@
       "meta.pyrefly"
       "DotJoshJohnson.xml"
       "redhat.vscode-yaml"
+      "ric-v.postgres-explorer"
+      "cweijan.vscode-redis-client"
     ];
 
     workspace = {
