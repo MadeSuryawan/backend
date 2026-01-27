@@ -84,13 +84,13 @@
         # 4. Setup Database
         # We perform a check to avoid errors if re-run, though onCreate only runs once usually.
         setup-db = ''
-          if [ ! -d ".idx/postgres_data" ]; then
-            initdb -D .idx/postgres_data
-            pg_ctl -D .idx/postgres_data start -l .idx/postgres.log
+          if [ ! -d ".idx/.data/postgres" ]; then
+            initdb -D .idx/.data/postgres
+            pg_ctl -D .idx/.data/postgres start -l .idx/postgres.log || true
             sleep 2
             createuser -s user || true
             createdb -O user baliblissed || true
-            pg_ctl -D .idx/postgres_data stop
+            pg_ctl -D .idx/.data/postgres stop
           fi
         '';
       };
@@ -101,7 +101,7 @@
         # 2. Sync dependencies
         sync-venv = "$HOME/.local/bin/uv sync";
         # 3. Ensure Postgres is running using the local data dir
-        start-postgres = "pg_ctl -D .idx/postgres_data start -l .idx/postgres.log || true";
+        start-postgres = "pg_ctl -D .idx/.data/postgres start -l .idx/postgres.log || true";
         # 4. Ensure Redis is running (if not managed automatically by services.redis.enable)
         # Note: services.redis.enable usually handles it, but we can start it manually if needed.
         # redis-server --daemonize yes
