@@ -2,62 +2,35 @@
 
 ## Overview
 
-This document describes the implementation plan for user-generated media (images and videos) for **reviews** and **blog posts** in the BaliBlissed travel agency web app. The solution extends the existing storage architecture used for profile pictures.
+This document describes the implementation plan for user-generated media for **reviews** (images only) and **blog posts** (images + videos) in the BaliBlissed travel agency web app. The solution extends the existing storage architecture used for profile pictures.
 
 ## **Status: 📋 PLANNED**
 
 ---
 
-## User Review Required
+## Design Decisions
 
-> [!IMPORTANT]
-> **Database Schema Changes Required**
->
-> This implementation requires database migrations:
->
-> 1. **BlogDB** - Add `videos_url` field (currently only has `images_url`)
-> 2. **ReviewDB** - Create new model (reviews don't exist as a database table yet)
->
-> Please confirm the review model requirements before proceeding.
+| Decision | Rationale |
+| -------- | --------- |
+| **Reviews: Images only** | Travel agency reviews rarely need video; reduces complexity |
+| **Blogs: Images + Videos** | Authors/admins may embed travel videos in blog content |
+| **Reuse existing storage** | Extend `StorageService` protocol - no new abstractions |
+| **Cloudinary for videos** | Automatic transcoding, CDN delivery, no server-side processing |
 
 ---
 
-## Goals
+## Storage Structure
 
-1. **Review Media**: Allow users to upload images/videos when reviewing tour packages
-2. **Blog Media**: Allow authenticated users to upload images/videos for blog posts
-3. **Reusability**: Extend existing `StorageService` protocol for multi-media support
-4. **Performance**: Video compression, thumbnails, and CDN delivery
-5. **Security**: Malware scanning, content validation, size limits
-
----
-
-## Architecture Overview
-
-### Design Principles
-
-| Principle | Implementation |
-| --------- | -------------- |
-| DRY | Extend existing `StorageService` protocol rather than creating new services |
-| KISS | Single `MediaService` for all user media types |
-| Separation of Concerns | Media processing separate from storage |
-| Scalability | Cloudinary handles video transcoding and CDN |
-
-### Storage Structure
-
-```plain text
+```text
 storage/
-├── profile_pictures/     # Existing - User avatars
+├── profile_pictures/     # Existing
 │   └── {user_uuid}.jpg
-├── review_media/         # NEW - Review images and videos
+├── review_images/        # NEW - Review photos
 │   └── {review_uuid}/
-│       ├── {media_uuid}.jpg
-│       ├── {media_uuid}_thumb.jpg
-│       └── {media_uuid}.mp4
+│       └── {media_uuid}.jpg
 └── blog_media/           # NEW - Blog images and videos
     └── {blog_uuid}/
         ├── {media_uuid}.jpg
-        ├── {media_uuid}_thumb.jpg
         └── {media_uuid}.mp4
 ```
 
@@ -65,810 +38,469 @@ storage/
 
 ## Implementation Plan
 
-### Phase 0: Database Model Changes
+### Phase 1: Database Changes
 
-> [!CAUTION]
-> This phase requires database migrations. Run migrations on a development database first.
+#### 1.1 Add `videos_url` to BlogDB
 
-#### [MODIFY] [blog.py](/app/models/blog.py)
-
-Add `videos_url` field to `BlogDB` model (line ~99):
+**File:** `app/models/blog.py` (after line 102)
 
 ```python
-# Add after images_url field
 videos_url: list[str] | None = Field(
     default=None,
     sa_column=Column(JSONB),
-    description="List of video URLs",
+    description="List of video URLs (max 3)",
 )
 ```
 
----
+#### 1.2 Create ReviewDB Model
 
-#### [NEW] [review.py](/app/models/review.py)
-
-Create new `ReviewDB` model for user reviews:
-
-> [!NOTE]
-> No `profile_picture` field needed - frontend fetches from `UserDB.profile_picture` via the `user_id` relationship.
+**File:** `app/models/review.py` (NEW)
 
 ```python
-"""Review database model using SQLModel."""
+"""Review database model."""
 
 from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID, uuid4
 
 from pydantic import ConfigDict
-from sqlalchemy import DateTime, Index, UniqueConstraint
+from sqlalchemy import DateTime, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declared_attr
 from sqlmodel import Column, Field, ForeignKey, SQLModel, String
 
 
 class ReviewDB(SQLModel, table=True):
-    """
-    Review database model for PostgreSQL.
-    
-    Represents user reviews for tour packages/items with ratings and media.
-    Reviews can be:
-    - Item-specific (item_id set) - Review for a specific tour package
-    - Global (item_id is None) - General testimonial about the agency
-    """
+    """User review for tour packages."""
 
     __tablename__ = cast("declared_attr[str]", "reviews")
 
     __table_args__ = (
-        # Unique constraint: one review per user per item (null item_id allows multiple global reviews)
-        UniqueConstraint("user_id", "item_id", name="uq_reviews_user_item"),
         Index("ix_reviews_user_item", "user_id", "item_id"),
         Index("ix_reviews_rating", "rating"),
+        Index("ix_reviews_created_at", "created_at"),
     )
 
-    # Primary key
-    id: UUID = Field(
-        default_factory=uuid4,
-        primary_key=True,
-        nullable=False,
-        description="Review ID",
-    )
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
 
-    # Foreign keys
     user_id: UUID = Field(
         sa_column=Column(
-            "user_id",
             ForeignKey("users.uuid", ondelete="CASCADE"),
             nullable=False,
             index=True,
         ),
-        description="Reviewer ID (foreign key to users.uuid)",
     )
     item_id: UUID | None = Field(
         default=None,
-        sa_column=Column(
-            "item_id",
-            nullable=True,  # Nullable for global reviews (testimonials)
-            index=True,
-        ),
-        description="Item/Tour ID being reviewed (null for global reviews)",
+        sa_column=Column(nullable=True, index=True),
+        description="Tour package ID (null for general testimonials)",
     )
 
-    # Review content
-    rating: int = Field(
-        ge=1,
-        le=5,
-        description="Rating from 1-5 stars",
-    )
-    title: str | None = Field(
-        default=None,
-        sa_column=Column(String(100)),
-        description="Review title (optional)",
-    )
-    content: str = Field(
-        sa_column=Column(String(5000), nullable=False),
-        description="Review content",
-    )
+    rating: int = Field(ge=1, le=5)
+    title: str | None = Field(default=None, sa_column=Column(String(100)))
+    content: str = Field(sa_column=Column(String(2000), nullable=False))
 
-    # Media fields (stored as JSON in PostgreSQL)
     images_url: list[str] | None = Field(
         default=None,
         sa_column=Column(JSONB),
-        description="List of image URLs (max 5)",
-    )
-    video_url: str | None = Field(
-        default=None,
-        sa_column=Column(String(500)),
-        description="Single video URL (testimonial video)",
+        description="Review images (max 5)",
     )
 
-    # Metadata
-    is_verified_purchase: bool = Field(
-        default=False,
-        description="Whether reviewer actually purchased the item",
-    )
-    helpful_count: int = Field(
-        default=0,
-        ge=0,
-        description="Number of users who found this helpful",
-    )
+    is_verified_purchase: bool = Field(default=False)
+    helpful_count: int = Field(default=0, ge=0)
 
-    # Timestamps
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(tz=UTC).replace(second=0, microsecond=0),
-        sa_column=Column(DateTime(timezone=True), nullable=False, index=True),
-        description="Creation timestamp",
+        default_factory=lambda: datetime.now(tz=UTC),
+        sa_column=Column(DateTime(timezone=True), nullable=False),
     )
     updated_at: datetime | None = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True)),
-        description="Last update timestamp",
     )
 
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "id": "550e8400-e29b-41d4-a716-446655440000",
-                "user_id": "123e4567-e89b-12d3-a456-426614174000",
-                "item_id": None,  # Global review example
-                "rating": 5,
-                "title": "Amazing Bali Experience!",
-                "content": "BaliBlissed made our honeymoon perfect...",
-                "images_url": ["https://example.com/review1.jpg"],
-                "video_url": None,
-                "is_verified_purchase": True,
-                "helpful_count": 12,
-            },
-        },
-    )
+    model_config = ConfigDict(from_attributes=True)
 ```
 
----
+#### 1.3 Alembic Migration
 
-#### [NEW] Alembic Migration
-
-Create migration file `alembic/versions/YYYYMMDD_HHMM_add_reviews_and_blog_videos.py`:
+**File:** `alembic/versions/YYYYMMDD_add_reviews_and_blog_videos.py`
 
 ```python
-"""Add reviews table and blog videos_url column.
+"""Add reviews table and blog videos_url.
 
 Revision ID: add_reviews_blog_videos
-Revises: 5f3ec632a8e7
-Create Date: 2026-01-XX
 """
-
-from collections.abc import Sequence
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
-
 from alembic import op
 
-revision: str = "add_reviews_blog_videos"
-down_revision: str | Sequence[str] | None = "5f3ec632a8e7"
-branch_labels: str | Sequence[str] | None = None
-depends_on: str | Sequence[str] | None = None
+revision = "add_reviews_blog_videos"
+down_revision = "5f3ec632a8e7"  # Update to latest
 
 
 def upgrade() -> None:
-    """Add reviews table and videos_url to blogs."""
-    # Add videos_url column to blogs table
+    # Blog videos
     op.add_column(
         "blogs",
-        sa.Column("videos_url", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("videos_url", postgresql.JSONB(), nullable=True),
     )
 
-    # Create reviews table
+    # Reviews table
     op.create_table(
         "reviews",
-        sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("user_id", sa.UUID(), nullable=False),
-        sa.Column("item_id", sa.UUID(), nullable=True),  # Nullable for global reviews
+        sa.Column("id", sa.UUID(), primary_key=True),
+        sa.Column("user_id", sa.UUID(), sa.ForeignKey("users.uuid", ondelete="CASCADE"), nullable=False),
+        sa.Column("item_id", sa.UUID(), nullable=True),
         sa.Column("rating", sa.Integer(), nullable=False),
-        sa.Column("title", sa.String(length=100), nullable=True),
-        sa.Column("content", sa.String(length=5000), nullable=False),
-        sa.Column("images_url", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("video_url", sa.String(length=500), nullable=True),  # Single video
-        sa.Column("is_verified_purchase", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("helpful_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("title", sa.String(100), nullable=True),
+        sa.Column("content", sa.String(2000), nullable=False),
+        sa.Column("images_url", postgresql.JSONB(), nullable=True),
+        sa.Column("is_verified_purchase", sa.Boolean(), server_default="false"),
+        sa.Column("helpful_count", sa.Integer(), server_default="0"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
-        sa.ForeignKeyConstraint(["user_id"], ["users.uuid"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("user_id", "item_id", name="uq_reviews_user_item"),
     )
-    
-    # Create indexes
-    op.create_index("ix_reviews_user_id", "reviews", ["user_id"], unique=False)
-    op.create_index("ix_reviews_item_id", "reviews", ["item_id"], unique=False)
-    op.create_index("ix_reviews_user_item", "reviews", ["user_id", "item_id"], unique=False)
-    op.create_index("ix_reviews_rating", "reviews", ["rating"], unique=False)
-    op.create_index("ix_reviews_created_at", "reviews", ["created_at"], unique=False)
+    op.create_index("ix_reviews_user_id", "reviews", ["user_id"])
+    op.create_index("ix_reviews_item_id", "reviews", ["item_id"])
+    op.create_index("ix_reviews_user_item", "reviews", ["user_id", "item_id"])
+    op.create_index("ix_reviews_rating", "reviews", ["rating"])
+    op.create_index("ix_reviews_created_at", "reviews", ["created_at"])
 
 
 def downgrade() -> None:
-    """Remove reviews table and videos_url from blogs."""
-    op.drop_index("ix_reviews_created_at", table_name="reviews")
-    op.drop_index("ix_reviews_rating", table_name="reviews")
-    op.drop_index("ix_reviews_user_item", table_name="reviews")
-    op.drop_index("ix_reviews_item_id", table_name="reviews")
-    op.drop_index("ix_reviews_user_id", table_name="reviews")
     op.drop_table("reviews")
-    
     op.drop_column("blogs", "videos_url")
 ```
 
 ---
 
-#### [MODIFY] [models/**init**.py](/app/models/__init__.py)
+### Phase 2: Extend Storage & Services
 
-Export the new `ReviewDB` model:
+#### 2.1 Extend StorageService Protocol
 
-```python
-from app.models.review import ReviewDB
-
-__all__ = ["BlogDB", "ReviewDB", "UserDB"]
-```
-
----
-
-### Phase 1: Extend Storage Protocol
-
-#### [MODIFY] [base.py](/app/services/storage/base.py)
-
-Add generic media upload/delete methods to `StorageService` Protocol:
+**File:** `app/services/storage/base.py` (add methods)
 
 ```python
 @abstractmethod
 async def upload_media(
     self,
+    folder: str,
     entity_id: str,
     media_id: str,
     file_data: bytes,
     content_type: str,
-    folder: str,  # "review_media" or "blog_media"
 ) -> str:
-    """Upload media and return URL."""
+    """Upload image/video to folder/{entity_id}/{media_id}.ext"""
     ...
 
 @abstractmethod
-async def delete_media(
-    self,
-    entity_id: str,
-    media_id: str,
-    folder: str,
-) -> bool:
-    """Delete media by ID."""
-    ...
-
-@abstractmethod
-async def upload_video(
-    self,
-    entity_id: str,
-    media_id: str,
-    file_data: bytes,
-    content_type: str,
-    folder: str,
-) -> str:
-    """Upload video with transcoding and return URL."""
+async def delete_media(self, folder: str, entity_id: str, media_id: str) -> bool:
+    """Delete media file."""
     ...
 ```
 
----
+#### 2.2 Implement in LocalStorage and CloudinaryStorage
 
-### Phase 2: Update Storage Implementations
+Extend both implementations following the existing `upload_profile_picture` pattern.
 
-#### [MODIFY] [local.py](/app/services/storage/local.py)
+#### 2.3 Create MediaService
 
-Add methods for generic media operations:
-
-- `upload_media()`: Store images in `{folder}/{entity_id}/{media_id}.{ext}`
-- `delete_media()`: Remove specific media file
-- `upload_video()`: Store videos with thumbnail generation using ffmpeg (dev only)
-
-#### [MODIFY] [cloudinary_storage.py](/app/services/storage/cloudinary_storage.py)
-
-Add methods leveraging Cloudinary's features:
-
-- `upload_media()`: Upload with auto-optimization, generate thumbnails
-- `delete_media()`: Delete from Cloudinary by public_id
-- `upload_video()`: Upload with automatic transcoding and adaptive streaming
-
----
-
-### Phase 3: Create MediaService
-
-#### [NEW] [media.py](/app/services/media.py)
-
-New service class following the same pattern as `ProfilePictureService`:
+**File:** `app/services/media.py` (NEW)
 
 ```python
+"""Media upload service for reviews and blogs."""
+
+from uuid import uuid4
+
+from fastapi import UploadFile
+from PIL import Image
+
+from app.configs.settings import settings
+from app.errors.upload import (
+    ImageTooLargeError,
+    InvalidImageError,
+    MediaLimitExceededError,
+    UnsupportedImageTypeError,
+)
+from app.services.storage import get_storage_service
+
+
 class MediaService:
-    """Service for handling review and blog media uploads."""
-    
-    def __init__(self, storage: StorageService | None = None) -> None:
-        self.storage = storage or get_storage_service()
-    
-    def validate_image(self, file: UploadFile, file_data: bytes) -> Image.Image:
-        """Validate image type, size, and content."""
-        ...
-    
-    def validate_video(self, file: UploadFile, file_data: bytes) -> None:
-        """Validate video type, size, and duration."""
-        ...
-    
-    def process_image(self, img: Image.Image) -> tuple[bytes, str]:
-        """Resize and optimize image."""
-        ...
-    
-    async def upload_review_image(
-        self,
-        review_id: str,
-        file: UploadFile,
-    ) -> str:
-        """Upload image for a review."""
-        ...
-    
-    async def upload_review_video(
-        self,
-        review_id: str,
-        file: UploadFile,
-    ) -> str:
-        """Upload video for a review."""
-        ...
-    
-    async def upload_blog_image(
-        self,
-        blog_id: str,
-        file: UploadFile,
-    ) -> str:
+    """Handles image uploads for reviews and blogs."""
+
+    def __init__(self) -> None:
+        self.storage = get_storage_service()
+
+    async def upload_review_image(self, review_id: str, file: UploadFile) -> str:
+        """Upload image for a review (max 5 images, 5MB each)."""
+        return await self._upload_image(
+            folder="review_images",
+            entity_id=review_id,
+            file=file,
+            max_size_mb=settings.MEDIA_IMAGE_MAX_SIZE_MB,
+        )
+
+    async def upload_blog_image(self, blog_id: str, file: UploadFile) -> str:
         """Upload image for a blog post."""
-        ...
-    
-    async def upload_blog_video(
+        return await self._upload_image(
+            folder="blog_media",
+            entity_id=blog_id,
+            file=file,
+            max_size_mb=settings.MEDIA_IMAGE_MAX_SIZE_MB,
+        )
+
+    async def upload_blog_video(self, blog_id: str, file: UploadFile) -> str:
+        """Upload video for a blog post (Cloudinary handles transcoding)."""
+        media_id = str(uuid4())
+        file_data = await file.read()
+
+        # Basic validation - Cloudinary handles the rest
+        if len(file_data) > settings.MEDIA_VIDEO_MAX_SIZE_MB * 1024 * 1024:
+            raise ImageTooLargeError(settings.MEDIA_VIDEO_MAX_SIZE_MB)
+
+        return await self.storage.upload_media(
+            folder="blog_media",
+            entity_id=blog_id,
+            media_id=media_id,
+            file_data=file_data,
+            content_type=file.content_type or "video/mp4",
+        )
+
+    async def delete_media(self, folder: str, entity_id: str, media_id: str) -> bool:
+        """Delete a media file."""
+        return await self.storage.delete_media(folder, entity_id, media_id)
+
+    async def _upload_image(
         self,
-        blog_id: str,
+        folder: str,
+        entity_id: str,
         file: UploadFile,
+        max_size_mb: int,
     ) -> str:
-        """Upload video for a blog post."""
-        ...
-    
-    async def delete_review_media(self, review_id: str, media_id: str) -> bool:
-        """Delete a specific media from a review."""
-        ...
-    
-    async def delete_blog_media(self, blog_id: str, media_id: str) -> bool:
-        """Delete a specific media from a blog."""
-        ...
+        """Common image upload logic."""
+        # Validate content type
+        allowed = settings.MEDIA_IMAGE_ALLOWED_TYPES
+        if file.content_type not in allowed:
+            raise UnsupportedImageTypeError(file.content_type or "unknown", allowed)
+
+        file_data = await file.read()
+
+        # Validate size
+        if len(file_data) > max_size_mb * 1024 * 1024:
+            raise ImageTooLargeError(max_size_mb)
+
+        # Validate image content
+        try:
+            img = Image.open(file_data)
+            img.verify()
+        except Exception as e:
+            raise InvalidImageError() from e
+
+        media_id = str(uuid4())
+        return await self.storage.upload_media(
+            folder=folder,
+            entity_id=entity_id,
+            media_id=media_id,
+            file_data=file_data,
+            content_type=file.content_type or "image/jpeg",
+        )
 ```
 
 ---
 
-### Phase 4: Add Configuration Settings
+### Phase 3: Configuration & API
 
-#### [MODIFY] [settings.py](/app/configs/settings.py)
+#### 3.1 Add Settings
 
-Add media upload settings:
+**File:** `app/configs/settings.py` (add)
 
 ```python
-# Review Media Settings
-REVIEW_IMAGE_MAX_SIZE_MB: int = 10
-REVIEW_IMAGE_MAX_COUNT: int = 5
-REVIEW_VIDEO_MAX_SIZE_MB: int = 50
-REVIEW_VIDEO_MAX_DURATION_SEC: int = 60  # 1 minute
-REVIEW_IMAGE_ALLOWED_TYPES: list[str] = ["image/jpeg", "image/png", "image/webp"]
-REVIEW_VIDEO_ALLOWED_TYPES: list[str] = ["video/mp4", "video/quicktime", "video/webm"]
-
-# Blog Media Settings
-BLOG_IMAGE_MAX_SIZE_MB: int = 10
-BLOG_IMAGE_MAX_COUNT: int = 10
-BLOG_VIDEO_MAX_SIZE_MB: int = 100
-BLOG_VIDEO_MAX_DURATION_SEC: int = 300  # 5 minutes
-BLOG_IMAGE_ALLOWED_TYPES: list[str] = ["image/jpeg", "image/png", "image/webp", "image/gif"]
-BLOG_VIDEO_ALLOWED_TYPES: list[str] = ["video/mp4", "video/quicktime", "video/webm"]
+# Media Upload Settings
+MEDIA_IMAGE_MAX_SIZE_MB: int = 5
+MEDIA_IMAGE_MAX_COUNT_REVIEW: int = 5
+MEDIA_IMAGE_MAX_COUNT_BLOG: int = 10
+MEDIA_VIDEO_MAX_SIZE_MB: int = 50
+MEDIA_VIDEO_MAX_COUNT_BLOG: int = 3
+MEDIA_IMAGE_ALLOWED_TYPES: list[str] = ["image/jpeg", "image/png", "image/webp"]
+MEDIA_VIDEO_ALLOWED_TYPES: list[str] = ["video/mp4", "video/quicktime"]
 ```
 
----
+#### 3.2 Add Error Classes
 
-### Phase 5: Extend Error Classes
-
-#### [MODIFY] [upload.py](/app/errors/upload.py)
-
-Add video-specific error classes:
+**File:** `app/errors/upload.py` (add)
 
 ```python
-class VideoTooLargeError(UploadError):
-    """Raised when video exceeds size limit."""
-    status_code: int = 413
-
-class VideoTooLongError(UploadError):
-    """Raised when video exceeds duration limit."""
-    status_code: int = 413
-
-class UnsupportedVideoTypeError(UploadError):
-    """Raised when video type is not allowed."""
-    status_code: int = 415
-
-class InvalidVideoError(UploadError):
-    """Raised when video validation fails."""
-    status_code: int = 400
-
 class MediaLimitExceededError(UploadError):
-    """Raised when media count limit is exceeded."""
-    status_code: int = 400
+    """Raised when media count limit exceeded."""
+
+    def __init__(self, max_count: int, media_type: str = "images") -> None:
+        super().__init__(
+            detail=f"Maximum {max_count} {media_type} allowed",
+            status_code=HTTP_400_BAD_REQUEST,
+        )
 ```
 
----
+#### 3.3 Review Schemas
 
-### Phase 6: Create API Endpoints
-
-#### [MODIFY] [blog.py](/app/routes/blog.py)
-
-Add media upload endpoints for blogs:
-
-```http
-POST /blogs/{blog_id}/media/images
-Content-Type: multipart/form-data
-Authorization: Bearer <token>
-
-Response: { "url": "https://...", "mediaId": "..." }
-```
-
-```http
-POST /blogs/{blog_id}/media/videos
-Content-Type: multipart/form-data
-Authorization: Bearer <token>
-
-Response: { "url": "https://...", "mediaId": "...", "thumbnailUrl": "..." }
-```
-
-```http
-DELETE /blogs/{blog_id}/media/{media_id}
-Authorization: Bearer <token>
-
-Response: 204 No Content
-```
-
-#### [NEW] [review.py](/app/routes/review.py)
-
-Add CRUD and media upload endpoints for reviews:
-
-```http
-POST /reviews
-Content-Type: application/json
-Authorization: Bearer <token>
-
-Body: {
-  "item_id": "uuid" | null,  # null for global testimonial
-  "rating": 5,
-  "title": "...",
-  "content": "..."
-}
-
-Response: { "id": "uuid", ... }
-```
-
-```http
-POST /reviews/{review_id}/media/images
-POST /reviews/{review_id}/media/videos
-DELETE /reviews/{review_id}/media/{media_id}
-```
-
----
-
-### Phase 7: Update Schemas
-
-#### [MODIFY] [blog.py](/app/schemas/blog.py)
-
-Add media response schemas:
+**File:** `app/schemas/review.py` (NEW)
 
 ```python
-class MediaUploadResponse(BaseModel):
-    """Response after successful media upload."""
-    media_id: str
-    url: str
-    thumbnail_url: str | None = None
-    content_type: str
-    size_bytes: int
+"""Review schemas."""
 
-class BlogMediaResponse(BaseModel):
-    """Blog media list response."""
-    images: list[MediaUploadResponse] = []
-    videos: list[MediaUploadResponse] = []
-```
+from datetime import datetime
+from uuid import UUID
 
-#### [NEW] [review.py](/app/schemas/review.py)
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
-Create review schemas:
 
-```python
 class ReviewCreate(BaseModel):
-    """Schema for creating a review."""
-    item_id: UUID | None = Field(default=None, description="Item ID (optional for global reviews)")
+    """Create review request."""
+
+    item_id: UUID | None = Field(default=None, description="Tour package ID")
     rating: int = Field(ge=1, le=5)
     title: str | None = Field(default=None, max_length=100)
-    content: str = Field(min_length=10, max_length=5000)
-    images_url: list[HttpUrl] | None = None
-    video_url: str | None = None
+    content: str = Field(min_length=10, max_length=2000)
+
 
 class ReviewResponse(BaseModel):
-    """Schema for review response."""
+    """Review response."""
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
     id: UUID
-    user_id: UUID
-    item_id: UUID | None
+    user_id: UUID = Field(alias="userId")
+    item_id: UUID | None = Field(alias="itemId")
     rating: int
     title: str | None
     content: str
-    images_url: list[HttpUrl] | None
-    video_url: str | None
-    helpful_count: int
-    created_at: datetime
-    updated_at: datetime | None
-    
-    # User info (fetched via relation)
-    user_display_name: str
-    user_profile_picture: str | None
+    images_url: list[HttpUrl] | None = Field(default=None, alias="imagesUrl")
+    helpful_count: int = Field(alias="helpfulCount")
+    created_at: datetime = Field(alias="createdAt")
+
+
+class MediaUploadResponse(BaseModel):
+    """Media upload response."""
+
+    media_id: str = Field(alias="mediaId")
+    url: str
+```
+
+#### 3.4 API Endpoints
+
+**Blog media endpoints** (add to `app/routes/blog.py`):
+
+```python
+@router.post("/{blog_id}/images", response_model=MediaUploadResponse)
+async def upload_blog_image(blog_id: UUID, file: UploadFile, deps: BlogOpsDeps):
+    """Upload image to blog post."""
+    ...
+
+@router.post("/{blog_id}/videos", response_model=MediaUploadResponse)
+async def upload_blog_video(blog_id: UUID, file: UploadFile, deps: BlogOpsDeps):
+    """Upload video to blog post (authors/admins only)."""
+    ...
+
+@router.delete("/{blog_id}/media/{media_id}", status_code=204)
+async def delete_blog_media(blog_id: UUID, media_id: str, deps: BlogOpsDeps):
+    """Delete media from blog post."""
+    ...
+```
+
+**Review endpoints** (new file `app/routes/review.py`):
+
+```python
+@router.post("/", response_model=ReviewResponse, status_code=201)
+async def create_review(data: ReviewCreate, deps: ReviewOpsDeps):
+    """Create a new review."""
+    ...
+
+@router.post("/{review_id}/images", response_model=MediaUploadResponse)
+async def upload_review_image(review_id: UUID, file: UploadFile, deps: ReviewOpsDeps):
+    """Upload image to review (max 5)."""
+    ...
+
+@router.delete("/{review_id}/images/{media_id}", status_code=204)
+async def delete_review_image(review_id: UUID, media_id: str, deps: ReviewOpsDeps):
+    """Delete image from review."""
+    ...
 ```
 
 ---
 
 ## API Reference
 
-### Blog Media Endpoints
-
 | Method | Endpoint | Description | Auth |
 | ------ | -------- | ----------- | ---- |
-| POST | `/blogs/{blog_id}/media/images` | Upload blog image | Owner/Admin |
-| POST | `/blogs/{blog_id}/media/videos` | Upload blog video | Owner/Admin |
-| DELETE | `/blogs/{blog_id}/media/{media_id}` | Delete blog media | Owner/Admin |
-
-### Review Media Endpoints
-
-| Method | Endpoint | Description | Auth |
-| ------ | -------- | ----------- | ---- |
-| POST | `/reviews/{review_id}/media/images` | Upload review image | Owner/Admin |
-| POST | `/reviews/{review_id}/media/videos` | Upload review video | Owner/Admin |
-| DELETE | `/reviews/{review_id}/media/{media_id}` | Delete review media | Owner/Admin |
+| POST | `/reviews` | Create review | User |
+| GET | `/reviews` | List reviews | Public |
+| POST | `/reviews/{id}/images` | Upload review image | Owner |
+| DELETE | `/reviews/{id}/images/{media_id}` | Delete review image | Owner/Admin |
+| POST | `/blogs/{id}/images` | Upload blog image | Author/Admin |
+| POST | `/blogs/{id}/videos` | Upload blog video | Author/Admin |
+| DELETE | `/blogs/{id}/media/{media_id}` | Delete blog media | Author/Admin |
 
 ---
 
-## Configuration Reference
+## Configuration
 
 | Setting | Default | Description |
 | ------- | ------- | ----------- |
-| `REVIEW_IMAGE_MAX_SIZE_MB` | `10` | Max review image size |
-| `REVIEW_IMAGE_MAX_COUNT` | `5` | Max images per review |
-| `REVIEW_VIDEO_MAX_SIZE_MB` | `50` | Max review video size |
-| `REVIEW_VIDEO_MAX_DURATION_SEC` | `60` | Max review video duration |
-| `BLOG_IMAGE_MAX_SIZE_MB` | `10` | Max blog image size |
-| `BLOG_IMAGE_MAX_COUNT` | `10` | Max images per blog |
-| `BLOG_VIDEO_MAX_SIZE_MB` | `100` | Max blog video size |
-| `BLOG_VIDEO_MAX_DURATION_SEC` | `300` | Max blog video duration |
+| `MEDIA_IMAGE_MAX_SIZE_MB` | `5` | Max image size |
+| `MEDIA_IMAGE_MAX_COUNT_REVIEW` | `5` | Max images per review |
+| `MEDIA_IMAGE_MAX_COUNT_BLOG` | `10` | Max images per blog |
+| `MEDIA_VIDEO_MAX_SIZE_MB` | `50` | Max video size |
+| `MEDIA_VIDEO_MAX_COUNT_BLOG` | `3` | Max videos per blog |
 
 ---
 
-## Security Considerations
+## Security
 
 | Risk | Mitigation |
 | ---- | ---------- |
-| Malicious files | Validate content-type AND actual file content |
-| Video bombs | Check duration before processing |
-| Path traversal | UUID-based filenames, no user input in paths |
-| Oversized uploads | Size validation before storage |
-| Unauthorized access | `check_owner_or_admin()` on all operations |
-| Rate limiting | 5 uploads/hour per user for videos, 20 for images |
-| Content moderation | Consider Cloudinary AI moderation in production |
-
----
-
-## Testing Strategy
-
-### Existing Tests to Extend
-
-| Existing Test | Extension |
-| ------------- | --------- |
-| `tests/services/test_storage.py` | Add `test_upload_media()`, `test_delete_media()`, `test_upload_video()` |
-| `tests/services/test_profile_picture.py` | Use as template for `tests/services/test_media.py` |
-| `tests/errors/test_upload_errors.py` | Add video error class tests |
-
-### New Test Files
-
-#### [NEW] `tests/services/test_media.py`
-
-```python
-# Test cases:
-# - test_validate_image_valid_jpeg
-# - test_validate_image_invalid_type
-# - test_validate_image_too_large
-# - test_validate_video_valid_mp4
-# - test_validate_video_too_large
-# - test_validate_video_too_long
-# - test_upload_review_image
-# - test_upload_review_video
-# - test_upload_blog_image
-# - test_upload_blog_video
-# - test_delete_review_media
-# - test_delete_blog_media
-# - test_media_count_limit
-```
-
-#### [NEW] `tests/routes/test_blog_media.py`
-
-```python
-# Test cases:
-# - test_upload_blog_image_success
-# - test_upload_blog_image_unauthorized
-# - test_upload_blog_image_forbidden
-# - test_upload_blog_video_success
-# - test_delete_blog_media_success
-```
-
-### Run Commands
-
-```bash
-# Run all media-related tests
-uv run pytest tests/services/test_media.py tests/routes/test_blog_media.py -v
-
-# Run with coverage
-uv run pytest tests/services/test_media.py --cov=app/services/media --cov-report=term-missing
-
-# Run existing storage tests (should still pass)
-uv run pytest tests/services/test_storage.py -v
-```
+| Invalid files | Validate content-type + PIL verify |
+| Oversized uploads | Size check before storage |
+| Path traversal | UUID-based filenames only |
+| Unauthorized access | `check_owner_or_admin()` |
+| Rate limiting | 20 images/hour, 5 videos/hour |
 
 ---
 
 ## Files Summary
 
-### Database Layer (Phase 0)
-
 | File | Action | Description |
 | ---- | ------ | ----------- |
-| `app/models/blog.py` | MODIFY | Add `videos_url` field |
-| `app/models/review.py` | NEW | ReviewDB model with media fields |
+| `app/models/blog.py` | MODIFY | Add `videos_url` |
+| `app/models/review.py` | NEW | ReviewDB model |
 | `app/models/__init__.py` | MODIFY | Export ReviewDB |
-| `alembic/versions/YYYYMMDD_add_reviews_and_blog_videos.py` | NEW | Migration for reviews table and blog videos |
-
-### Service Layer (Phase 1-3)
-
-| File | Action | Description |
-| ---- | ------ | ----------- |
-| `app/services/storage/base.py` | MODIFY | Add generic media methods to Protocol |
-| `app/services/storage/local.py` | MODIFY | Implement local media storage |
-| `app/services/storage/cloudinary_storage.py` | MODIFY | Implement Cloudinary media storage |
-| `app/services/media.py` | NEW | MediaService class |
-| `app/services/__init__.py` | MODIFY | Export MediaService |
-
-### Configuration & Errors (Phase 4-5)
-
-| File | Action | Description |
-| ---- | ------ | ----------- |
-| `app/configs/settings.py` | MODIFY | Add media configuration |
-| `app/errors/upload.py` | MODIFY | Add video error classes |
-| `app/errors/__init__.py` | MODIFY | Export new errors |
-
-### API Layer (Phase 6-7)
-
-| File | Action | Description |
-| ---- | ------ | ----------- |
-| `app/schemas/blog.py` | MODIFY | Add `videos_url` and media response schemas |
-| `app/schemas/review.py` | NEW | Review schemas with media fields |
-| `app/routes/blog.py` | MODIFY | Add blog media endpoints |
-| `app/routes/review.py` | NEW | Review CRUD and media endpoints |
-| `.env.example` | MODIFY | Document new settings |
-
-### Tests
-
-| File | Action | Description |
-| ---- | ------ | ----------- |
-| `tests/models/test_review.py` | NEW | ReviewDB model tests |
-| `tests/services/test_media.py` | NEW | MediaService tests |
-| `tests/routes/test_blog_media.py` | NEW | Blog media endpoint tests |
-| `tests/routes/test_review.py` | NEW | Review endpoint tests |
+| `alembic/versions/...` | NEW | Migration |
+| `app/services/storage/base.py` | MODIFY | Add `upload_media`, `delete_media` |
+| `app/services/storage/local.py` | MODIFY | Implement new methods |
+| `app/services/storage/cloudinary_storage.py` | MODIFY | Implement new methods |
+| `app/services/media.py` | NEW | MediaService |
+| `app/configs/settings.py` | MODIFY | Add media settings |
+| `app/errors/upload.py` | MODIFY | Add MediaLimitExceededError |
+| `app/schemas/review.py` | NEW | Review schemas |
+| `app/schemas/blog.py` | MODIFY | Add MediaUploadResponse |
+| `app/routes/review.py` | NEW | Review endpoints |
+| `app/routes/blog.py` | MODIFY | Add media endpoints |
 
 ---
 
-## Implementation Order
-
-1. **Database Models** - Add `ReviewDB` model and `videos_url` to `BlogDB`
-2. **Alembic Migration** - Create and run migration
-3. **Settings & Errors** - Add media configuration and video error classes
-4. **Storage Protocol** - Extend `StorageService` with new methods
-5. **Storage Implementations** - Local and Cloudinary media storage
-6. **MediaService** - Create the service layer
-7. **Schemas** - Add review and media response schemas
-8. **Routes** - Add review CRUD and media endpoints
-9. **Tests** - Write comprehensive tests
-10. **Documentation** - Update this file with implementation status
-
----
-
-## Frontend Integration
-
-### TypeScript Example
-
-```typescript
-// Upload blog image
-async function uploadBlogImage(
-  blogId: string,
-  file: File,
-  token: string
-): Promise<MediaUploadResponse> {
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const response = await fetch(`/api/blogs/${blogId}/media/images`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}` },
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || 'Upload failed');
-  }
-
-  return response.json();
-}
-
-// Upload review video
-async function uploadReviewVideo(
-  reviewId: string,
-  file: File,
-  token: string,
-  onProgress?: (percent: number) => void
-): Promise<MediaUploadResponse> {
-  const formData = new FormData();
-  formData.append('file', file);
-
-  // Use XMLHttpRequest for progress tracking
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `/api/reviews/${reviewId}/media/videos`);
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-    
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && onProgress) {
-        onProgress((e.loaded / e.total) * 100);
-      }
-    };
-    
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(JSON.parse(xhr.responseText));
-      } else {
-        reject(new Error(JSON.parse(xhr.responseText).detail));
-      }
-    };
-    
-    xhr.onerror = () => reject(new Error('Upload failed'));
-    xhr.send(formData);
-  });
-}
-```
-
----
-
-## Dependencies
-
-No new dependencies required. Existing packages are sufficient:
-
-- `Pillow` - Image processing (already installed)
-- `cloudinary` - Cloud storage (already installed)
-- `aiofiles` - Async file I/O (already installed)
-
-Optional for video validation in development:
+## Testing
 
 ```bash
-# For video duration validation (development only)
-# Cloudinary handles this in production
-uv add python-magic  # MIME type detection
+# Run media tests
+uv run pytest tests/services/test_media.py tests/routes/test_review.py -v
+
+# Run with coverage
+uv run pytest tests/services/test_media.py --cov=app/services/media
 ```
 
 ---
 
 ## References
 
+- [USER_PROFILE_PICTURE.md](./USER_PROFILE_PICTURE.md) - Existing implementation
 - [Cloudinary Video Upload](https://cloudinary.com/documentation/python_video_upload)
-- [Cloudinary Video Transformations](https://cloudinary.com/documentation/video_transformation_reference)
 - [FastAPI File Uploads](https://fastapi.tiangolo.com/tutorial/request-files/)
-- [USER_PROFILE_PICTURE.md](file:///Users/madesuryawan/Documents/Source_Codes/Web_Dev/Unified_Backend/backend/docs/USER_PROFILE_PICTURE.md) - Existing implementation reference
