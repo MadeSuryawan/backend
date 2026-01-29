@@ -149,6 +149,112 @@ def get_bust_list_grid_deps(
 
 BustListGridDepsDep = Annotated[BustListGridDeps, Depends(get_bust_list_grid_deps)]
 
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+
+async def _get_user_or_404(repo: UserRepoDep, user_id: UUID) -> UserDB:
+    """
+    Retrieve user by ID or raise 404 if not found.
+
+    Parameters
+    ----------
+    repo : UserRepoDep
+        User repository instance.
+    user_id : UUID
+        User identifier.
+
+    Returns
+    -------
+    UserDB
+        The user database entity.
+
+    Raises
+    ------
+    HTTPException
+        404 if user not found.
+    """
+    db_user = await repo.get_by_id(user_id)
+    if not db_user:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found",
+        )
+    return db_user
+
+
+async def _get_authorized_user(
+    repo: UserRepoDep,
+    user_id: UUID,
+    current_user: UserDB,
+    resource_name: str = "user",
+) -> UserDB:
+    """
+    Retrieve user and verify authorization (owner or admin).
+
+    Parameters
+    ----------
+    repo : UserRepoDep
+        User repository instance.
+    user_id : UUID
+        Target user identifier.
+    current_user : UserDB
+        Currently authenticated user.
+    resource_name : str
+        Resource name for error messages.
+
+    Returns
+    -------
+    UserDB
+        The authorized user database entity.
+
+    Raises
+    ------
+    HTTPException
+        404 if user not found, 403 if not authorized.
+    """
+    db_user = await _get_user_or_404(repo, user_id)
+    check_owner_or_admin(user_id, current_user, resource_name)
+    return db_user
+
+
+async def _invalidate_user_cache(
+    request: Request,
+    user_id: UUID,
+    username: str,
+) -> None:
+    """
+    Invalidate cache entries for a user.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    user_id : UUID
+        User identifier.
+    username : str
+        User's username.
+    """
+    await get_cache_manager(request).delete(
+        user_id_key(user_id),
+        username_key(username),
+        users_list_key(0, 10),
+        namespace="users",
+    )
+
+
+def _get_profile_picture_service() -> ProfilePictureService:
+    """
+    Get ProfilePictureService instance.
+
+    Returns
+    -------
+    ProfilePictureService
+        Service instance for profile picture operations.
+    """
+    return ProfilePictureService()
+
 
 @router.post(
     "/create",
@@ -245,11 +351,7 @@ async def create_user(
     """
     try:
         db_user = await repo.create(user)
-        await get_cache_manager(request).delete(
-            user_id_key(db_user.uuid),
-            username_key(db_user.username),
-            namespace="users",
-        )
+        await _invalidate_user_cache(request, db_user.uuid, db_user.username)
         return db_user_to_response(db_user)
     except DuplicateEntryError as e:
         raise HTTPException(status_code=HTTP_409_CONFLICT, detail=e.detail) from e
@@ -405,12 +507,7 @@ async def get_user(
     HTTPException
         If user not found.
     """
-    db_user = await repo.get_by_id(user_id)
-    if not db_user:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found",
-        )
+    db_user = await _get_user_or_404(repo, user_id)
     return db_user_to_response(db_user)
 
 
@@ -589,30 +686,24 @@ async def update_user(
     # Check if user is owner or admin
     check_owner_or_admin(user_id, deps.current_user, "user")
     try:
-        existing = await deps.repo.get_by_id(user_id)
+        # Get existing user for cache invalidation (username may change)
+        existing = await _get_user_or_404(deps.repo, user_id)
         db_user = await deps.repo.update(user_id, user_update)
         if not db_user:
             raise HTTPException(
                 status_code=HTTP_404_NOT_FOUND,
                 detail=f"User with ID {user_id} not found",
             )
-        keys: list[str] = []
-        if existing:
-            keys.extend(
-                [
-                    user_id_key(existing.uuid),
-                    username_key(existing.username),
-                    users_list_key(0, 10),
-                ],
+
+        # Invalidate old username cache if username changed
+        if existing.username != db_user.username:
+            await get_cache_manager(request).delete(
+                username_key(existing.username),
+                namespace="users",
             )
-        keys.extend(
-            [
-                user_id_key(db_user.uuid),
-                username_key(db_user.username),
-                users_list_key(0, 10),
-            ],
-        )
-        await get_cache_manager(request).delete(*keys, namespace="users")
+
+        # Invalidate cache for the updated user
+        await _invalidate_user_cache(request, user_id, db_user.username)
         return db_user_to_response(db_user)
     except DuplicateEntryError as e:
         raise HTTPException(status_code=HTTP_409_CONFLICT, detail=e.detail) from e
@@ -675,144 +766,15 @@ async def delete_user(
     HTTPException
         If user not found.
     """
-    # Check if user exists first
-    existing = await repo.get_by_id(user_id)
-    if not existing:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found",
-        )
-
-    # Check if user is owner or admin
+    # Get user and verify authorization
+    existing = await _get_user_or_404(repo, user_id)
     check_owner_or_admin(user_id, current_user, "user")
 
     # Delete the user
-    deleted = await repo.delete(user_id)
-    if not deleted:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found",
-        )
+    await repo.delete(user_id)
 
-    # Clear cache for deleted user
-    await get_cache_manager(request).delete(
-        user_id_key(existing.uuid),
-        username_key(existing.username),
-        users_list_key(0, 10),
-        namespace="users",
-    )
-
-
-# =============================================================================
-# Profile Picture Helper Functions
-# =============================================================================
-
-
-async def _get_user_or_404(repo: UserRepoDep, user_id: UUID) -> UserDB:
-    """
-    Retrieve user by ID or raise 404 if not found.
-
-    Parameters
-    ----------
-    repo : UserRepoDep
-        User repository instance.
-    user_id : UUID
-        User identifier.
-
-    Returns
-    -------
-    UserDB
-        The user database entity.
-
-    Raises
-    ------
-    HTTPException
-        404 if user not found.
-    """
-    db_user = await repo.get_by_id(user_id)
-    if not db_user:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found",
-        )
-    return db_user
-
-
-async def _get_authorized_user(
-    repo: UserRepoDep,
-    user_id: UUID,
-    current_user: UserDB,
-    resource_name: str = "user",
-) -> UserDB:
-    """
-    Retrieve user and verify authorization (owner or admin).
-
-    Parameters
-    ----------
-    repo : UserRepoDep
-        User repository instance.
-    user_id : UUID
-        Target user identifier.
-    current_user : UserDB
-        Currently authenticated user.
-    resource_name : str
-        Resource name for error messages.
-
-    Returns
-    -------
-    UserDB
-        The authorized user database entity.
-
-    Raises
-    ------
-    HTTPException
-        404 if user not found, 403 if not authorized.
-    """
-    db_user = await _get_user_or_404(repo, user_id)
-    check_owner_or_admin(user_id, current_user, resource_name)
-    return db_user
-
-
-async def _invalidate_user_cache(
-    request: Request,
-    user_id: UUID,
-    username: str,
-) -> None:
-    """
-    Invalidate cache entries for a user.
-
-    Parameters
-    ----------
-    request : Request
-        Current request context.
-    user_id : UUID
-        User identifier.
-    username : str
-        User's username.
-    """
-    await get_cache_manager(request).delete(
-        user_id_key(user_id),
-        username_key(username),
-        users_list_key(0, 10),
-        namespace="users",
-    )
-
-
-def _get_profile_picture_service() -> ProfilePictureService:
-    """
-    Get ProfilePictureService instance.
-
-    Returns
-    -------
-    ProfilePictureService
-        Service instance for profile picture operations.
-    """
-    return ProfilePictureService()
-
-
-# =============================================================================
-# Profile Picture Endpoints
-# =============================================================================
+    # Invalidate cache for deleted user
+    await _invalidate_user_cache(request, user_id, existing.username)
 
 
 @router.post(
