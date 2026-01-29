@@ -32,17 +32,20 @@ from logging import getLogger
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, UploadFile
 from fastapi.responses import ORJSONResponse
 from pydantic import ValidationError
 from starlette.responses import Response
 from starlette.status import (
+    HTTP_200_OK,
     HTTP_201_CREATED,
     HTTP_204_NO_CONTENT,
     HTTP_400_BAD_REQUEST,
     HTTP_403_FORBIDDEN,
     HTTP_404_NOT_FOUND,
     HTTP_409_CONFLICT,
+    HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+    HTTP_415_UNSUPPORTED_MEDIA_TYPE,
 )
 
 from app.auth.permissions import AdminUserDep, check_owner_or_admin
@@ -50,9 +53,17 @@ from app.decorators.caching import cache_busting, cached, get_cache_manager
 from app.decorators.metrics import timed
 from app.dependencies import UserDBDep, UserQueryListDep, UserRepoDep
 from app.errors.database import DatabaseError, DuplicateEntryError
+from app.errors.upload import (
+    ImageProcessingError,
+    ImageTooLargeError,
+    InvalidImageError,
+    UnsupportedImageTypeError,
+)
 from app.managers.rate_limiter import limiter
 from app.models import UserDB
 from app.schemas import UserCreate, UserResponse, UserUpdate
+from app.schemas.user import UserUpdate as UserUpdateSchema
+from app.services.profile_picture import ProfilePictureService
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
 from app.utils.helpers import file_logger, host, response_datetime
 
@@ -690,6 +701,337 @@ async def delete_user(
         users_list_key(0, 10),
         namespace="users",
     )
+
+
+# =============================================================================
+# Profile Picture Helper Functions
+# =============================================================================
+
+
+async def _get_user_or_404(repo: UserRepoDep, user_id: UUID) -> UserDB:
+    """
+    Retrieve user by ID or raise 404 if not found.
+
+    Parameters
+    ----------
+    repo : UserRepoDep
+        User repository instance.
+    user_id : UUID
+        User identifier.
+
+    Returns
+    -------
+    UserDB
+        The user database entity.
+
+    Raises
+    ------
+    HTTPException
+        404 if user not found.
+    """
+    db_user = await repo.get_by_id(user_id)
+    if not db_user:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found",
+        )
+    return db_user
+
+
+async def _get_authorized_user(
+    repo: UserRepoDep,
+    user_id: UUID,
+    current_user: UserDB,
+    resource_name: str = "user",
+) -> UserDB:
+    """
+    Retrieve user and verify authorization (owner or admin).
+
+    Parameters
+    ----------
+    repo : UserRepoDep
+        User repository instance.
+    user_id : UUID
+        Target user identifier.
+    current_user : UserDB
+        Currently authenticated user.
+    resource_name : str
+        Resource name for error messages.
+
+    Returns
+    -------
+    UserDB
+        The authorized user database entity.
+
+    Raises
+    ------
+    HTTPException
+        404 if user not found, 403 if not authorized.
+    """
+    db_user = await _get_user_or_404(repo, user_id)
+    check_owner_or_admin(user_id, current_user, resource_name)
+    return db_user
+
+
+async def _invalidate_user_cache(
+    request: Request,
+    user_id: UUID,
+    username: str,
+) -> None:
+    """
+    Invalidate cache entries for a user.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    user_id : UUID
+        User identifier.
+    username : str
+        User's username.
+    """
+    await get_cache_manager(request).delete(
+        user_id_key(user_id),
+        username_key(username),
+        users_list_key(0, 10),
+        namespace="users",
+    )
+
+
+def _get_profile_picture_service() -> ProfilePictureService:
+    """
+    Get ProfilePictureService instance.
+
+    Returns
+    -------
+    ProfilePictureService
+        Service instance for profile picture operations.
+    """
+    return ProfilePictureService()
+
+
+# =============================================================================
+# Profile Picture Endpoints
+# =============================================================================
+
+
+@router.post(
+    "/{user_id}/profile-picture",
+    response_class=ORJSONResponse,
+    response_model=UserResponse,
+    status_code=HTTP_200_OK,
+    summary="Upload profile picture",
+    description="Upload or replace a user's profile picture. Accepts JPEG, PNG, or WebP images up to 5MB.",
+    responses={
+        200: {
+            "description": "Profile picture uploaded successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "123e4567-e89b-12d3-a456-426614174000",
+                        "username": "johndoe",
+                        "profilePicture": "https://res.cloudinary.com/.../profile.jpg",
+                    },
+                },
+            },
+        },
+        400: {
+            "description": "Invalid image file",
+            "content": {
+                "application/json": {"example": {"detail": "Invalid or corrupted image file"}},
+            },
+        },
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {"example": {"detail": "Not authorized to modify this user"}},
+            },
+        },
+        404: {
+            "description": "User not found",
+            "content": {
+                "application/json": {"example": {"detail": "User with ID <uuid> not found"}},
+            },
+        },
+        413: {
+            "description": "Image too large",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Image size exceeds maximum allowed size of 5MB"},
+                },
+            },
+        },
+        415: {
+            "description": "Unsupported image type",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Unsupported image type. Allowed: image/jpeg, image/png, image/webp",
+                    },
+                },
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Rate limit exceeded"}}},
+        },
+    },
+    operation_id="users_upload_profile_picture",
+)
+@timed("/users/{user_id}/profile-picture")
+@limiter.limit("10/hour")
+@cache_busting(
+    key_builder=lambda user_id, **kw: [user_id_key(user_id), users_list_key(0, 10)],
+    namespace="users",
+)
+async def upload_profile_picture(
+    request: Request,
+    response: Response,  # noqa: ARG001 - Required by decorators
+    user_id: UUID,
+    file: UploadFile,
+    deps: Annotated[UserOpsDeps, Depends()],
+) -> UserResponse:
+    """
+    Upload or replace a user's profile picture.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    user_id : UUID
+        User identifier.
+    file : UploadFile
+        Uploaded image file.
+    deps : UserOpsDeps
+        Operation dependencies (repo + current_user).
+
+    Returns
+    -------
+    UserResponse
+        Updated user with new profile picture URL.
+
+    Raises
+    ------
+    HTTPException
+        If user not found, unauthorized, or invalid image.
+    """
+    # Get user and verify authorization
+    db_user = await _get_authorized_user(deps.repo, user_id, deps.current_user)
+
+    # Upload profile picture
+    try:
+        picture_url = await _get_profile_picture_service().upload_profile_picture(
+            user_id=str(user_id),
+            file=file,
+        )
+    except UnsupportedImageTypeError as e:
+        raise HTTPException(status_code=HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=e.detail) from e
+    except ImageTooLargeError as e:
+        raise HTTPException(status_code=HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=e.detail) from e
+    except (InvalidImageError, ImageProcessingError) as e:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail) from e
+
+    # Update user's profile_picture field in database
+    update_data = UserUpdateSchema(profile_picture=picture_url)
+    updated_user = await deps.repo.update(user_id, update_data)
+
+    if not updated_user:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found",
+        )
+
+    # Invalidate cache
+    await _invalidate_user_cache(request, user_id, db_user.username)
+
+    return db_user_to_response(updated_user)
+
+
+@router.delete(
+    "/{user_id}/profile-picture",
+    response_class=ORJSONResponse,
+    status_code=HTTP_204_NO_CONTENT,
+    summary="Delete profile picture",
+    description="Delete a user's profile picture. The user will revert to a default avatar.",
+    responses={
+        204: {"description": "Profile picture deleted successfully"},
+        400: {
+            "description": "No profile picture to delete",
+            "content": {
+                "application/json": {"example": {"detail": "No profile picture to delete"}},
+            },
+        },
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {"example": {"detail": "Not authorized to modify this user"}},
+            },
+        },
+        404: {
+            "description": "User not found",
+            "content": {
+                "application/json": {"example": {"detail": "User with ID <uuid> not found"}},
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Rate limit exceeded"}}},
+        },
+    },
+    operation_id="users_delete_profile_picture",
+)
+@timed("/users/{user_id}/profile-picture")
+@limiter.limit("10/hour")
+@cache_busting(
+    key_builder=lambda user_id, **kw: [user_id_key(user_id), users_list_key(0, 10)],
+    namespace="users",
+)
+async def delete_profile_picture(
+    request: Request,
+    response: Response,  # noqa: ARG001 - Required by decorators
+    user_id: UUID,
+    deps: Annotated[UserOpsDeps, Depends()],
+) -> None:
+    """
+    Delete a user's profile picture.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    user_id : UUID
+        User identifier.
+    deps : UserOpsDeps
+        Operation dependencies (repo + current_user).
+
+    Raises
+    ------
+    HTTPException
+        If user not found, unauthorized, or no picture to delete.
+    """
+    # Get user and verify authorization
+    db_user = await _get_authorized_user(deps.repo, user_id, deps.current_user)
+
+    # Check if user has a profile picture
+    if not db_user.profile_picture:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="No profile picture to delete",
+        )
+
+    # Delete from storage
+    await _get_profile_picture_service().delete_profile_picture(str(user_id))
+
+    # Update user's profile_picture field to None
+    update_data = UserUpdateSchema(profile_picture=None)
+    await deps.repo.update(user_id, update_data)
+
+    # Invalidate cache
+    await _invalidate_user_cache(request, user_id, db_user.username)
 
 
 @router.post(

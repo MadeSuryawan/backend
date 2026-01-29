@@ -16,7 +16,6 @@ from pydantic import (
     Field,
     HttpUrl,
     SecretStr,
-    computed_field,
     field_validator,
     model_validator,
 )
@@ -221,10 +220,10 @@ class UserUpdate(UserValidationMixin, BaseModel):
         default=None,
         description="Confirmed new password",
     )
-    profile_picture: HttpUrl | None = Field(
+    profile_picture: HttpUrl | str | None = Field(
         alias="profilePicture",
         default=None,
-        description="Profile picture URL",
+        description="Profile picture URL (can be full URL or relative path)",
     )
     bio: str | None = Field(
         default=None,
@@ -278,7 +277,7 @@ class UserResponse(BaseModel):
     is_active: bool = Field(alias="isActive")
     is_verified: bool = Field(alias="isVerified")
     role: str = Field(default="user", description="User role (user, moderator, admin)")
-    profile_picture: HttpUrl | None = Field(alias="profilePicture")
+    profile_picture: HttpUrl | str | None = Field(alias="profilePicture")
     bio: str = Field(default="N/A")
     website: HttpUrl | None = None
     created_at: datetime = Field(alias="createdAt")
@@ -310,7 +309,12 @@ class UserResponse(BaseModel):
         (shouldn't happen after migration, but provides safety).
         """
         if not self.display_name:
-            if self.first_name and self.last_name and self.first_name != "N/A" and self.last_name != "N/A":
+            if (
+                self.first_name
+                and self.last_name
+                and self.first_name != "N/A"
+                and self.last_name != "N/A"
+            ):
                 self.display_name = f"{self.first_name} {self.last_name}"
             else:
                 self.display_name = self.username

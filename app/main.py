@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, ORJSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
@@ -92,6 +93,16 @@ routes = [
 ]
 
 _ = [app.include_router(router) for router in routes]
+
+# Mount static files for local uploads (only if using local storage)
+if settings.STORAGE_PROVIDER == "local":
+    # Ensure uploads directory exists
+    settings.UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    app.mount(
+        "/uploads",
+        StaticFiles(directory=str(settings.UPLOADS_DIR)),
+        name="uploads",
+    )
 
 errors = [
     (CacheExceptionError, cache_exception_handler),

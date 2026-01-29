@@ -48,6 +48,16 @@ from app.errors.password_hasher import (
     PasswordRehashError,
     password_hashing_exception_handler,
 )
+from app.errors.upload import (
+    ImageProcessingError,
+    ImageTooLargeError,
+    InvalidImageError,
+    NoProfilePictureError,
+    StorageError,
+    UnsupportedImageTypeError,
+    UploadError,
+    upload_exception_handler,
+)
 from app.errors.validation import ValidationError, validation_exception_handler
 
 __all__ = [
@@ -94,4 +104,12 @@ __all__ = [
     "QueryProcessingError",
     "ValidationError",
     "validation_exception_handler",
+    "UploadError",
+    "ImageTooLargeError",
+    "UnsupportedImageTypeError",
+    "InvalidImageError",
+    "ImageProcessingError",
+    "StorageError",
+    "NoProfilePictureError",
+    "upload_exception_handler",
 ]

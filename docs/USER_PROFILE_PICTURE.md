@@ -1,32 +1,36 @@
-# User Profile Picture Implementation Plan
+# User Profile Picture Feature
 
 ## Overview
 
-This plan outlines the implementation of user profile picture functionality for the BaliBlissed travel agency web app. The solution is designed to be **concise, practical, and extensible** - supporting both OAuth (Google/WeChat) and direct email authentication, while laying the groundwork for future blog and review media uploads.
+This document describes the **fully implemented** user profile picture functionality for the BaliBlissed travel agency web app. The solution supports both OAuth (Google/WeChat) and direct email authentication, with a flexible storage backend (local for development, Cloudinary for production).
+
+## **Status: ✅ IMPLEMENTED**
 
 ---
 
-## Current State Analysis
+## Implementation Summary
 
-### ✅ Already Implemented
+### Components Implemented
 
 | Component | Status | Location |
 | --------- | ------ | -------- |
 | Database column | ✅ | `alembic/versions/20251215_0001_initial_schema.py:41` |
 | User model field | ✅ | `app/models/user.py:77-81` |
-| OAuth profile picture | ✅ | `app/services/auth.py:328` - extracts `picture` from OAuth |
-| UserCreate schema | ✅ | `app/schemas/user.py:158-162` |
-| UserUpdate schema | ✅ | `app/schemas/user.py:224-228` |
-| UserResponse schema | ✅ | `app/schemas/user.py:281` |
-| Repository support | ✅ | `app/repositories/user.py:79,143-144` |
-| File upload dependency | ✅ | `python-multipart` in `pyproject.toml:46` |
-
-### ❌ What's Missing
-
-1. File upload endpoint for manual profile picture uploads
-2. File storage service (local for dev, cloud for production)
-3. Image validation (type, size)
-4. Default avatar generation
+| OAuth profile picture | ✅ | `app/services/auth.py:328` |
+| Configuration settings | ✅ | `app/configs/settings.py` |
+| Storage protocol | ✅ | `app/services/storage/base.py` |
+| Local storage | ✅ | `app/services/storage/local.py` |
+| Cloudinary storage | ✅ | `app/services/storage/cloudinary_storage.py` |
+| Storage factory | ✅ | `app/services/storage/__init__.py` |
+| Error classes | ✅ | `app/errors/upload.py` |
+| Profile picture service | ✅ | `app/services/profile_picture.py` |
+| Upload endpoint | ✅ | `app/routes/user.py` |
+| Delete endpoint | ✅ | `app/routes/user.py` |
+| Static files mount | ✅ | `app/main.py` |
+| Unit tests | ✅ | `tests/services/test_profile_picture.py` |
+| Storage tests | ✅ | `tests/services/test_storage.py` |
+| Error tests | ✅ | `tests/errors/test_upload_errors.py` |
+| Route tests | ✅ | `tests/routes/test_profile_picture.py` |
 
 ---
 
@@ -69,52 +73,300 @@ storage/
 
 ---
 
-## Implementation Phases
+## API Endpoints
 
-### Phase 1: Storage Configuration (10 min)
+### Upload Profile Picture
 
-**File:** [`app/configs/settings.py`](app/configs/settings.py:200)
-
-Add to the `Settings` class:
-
-```python
-# File Storage Configuration
-STORAGE_PROVIDER: Literal["local", "cloudinary"] = "local"
-STORAGE_LOCAL_PATH: Path = Path("uploads")
-
-# Cloudinary Configuration (production)
-CLOUDINARY_CLOUD_NAME: str | None = None
-CLOUDINARY_API_KEY: str | None = None
-CLOUDINARY_API_SECRET: str | None = None
-
-# Upload Constraints
-MAX_IMAGE_SIZE_MB: int = 5
-ALLOWED_IMAGE_TYPES: list[str] = ["image/jpeg", "image/png", "image/webp"]
-PROFILE_PICTURE_MAX_DIMENSIONS: tuple[int, int] = (512, 512)
-PROFILE_PICTURE_THUMB_DIMENSIONS: tuple[int, int] = (128, 128)
+```http
+POST /users/{user_id}/profile-picture
+Content-Type: multipart/form-data
+Authorization: Bearer <token>
 ```
 
-Update `.env.example`:
+**Request:**
 
-```bash
-# Storage Configuration
-STORAGE_PROVIDER=local
-CLOUDINARY_CLOUD_NAME=
-CLOUDINARY_API_KEY=
-CLOUDINARY_API_SECRET=
+- `file`: Image file (JPEG, PNG, or WebP, max 5MB)
+
+**Response (200 OK):**
+
+```json
+{
+  "uuid": "123e4567-e89b-12d3-a456-426614174000",
+  "username": "johndoe",
+  "email": "john@example.com",
+  "profilePicture": "https://res.cloudinary.com/.../profile_pictures/123e4567.jpg",
+  "firstName": "John",
+  "lastName": "Doe",
+  "role": "user",
+  "isActive": true,
+  "isVerified": true,
+  "createdAt": "2024-01-15T10:30:00Z",
+  "updatedAt": "2024-01-20T14:45:00Z"
+}
+```
+
+**Error Responses:**
+
+- `401 Unauthorized`: Missing or invalid authentication token
+- `403 Forbidden`: Not authorized to update this user's profile picture
+- `413 Request Entity Too Large`: Image exceeds 5MB limit
+- `415 Unsupported Media Type`: Invalid image type (not JPEG/PNG/WebP)
+- `429 Too Many Requests`: Rate limit exceeded (10 uploads/hour)
+
+### Delete Profile Picture
+
+```http
+DELETE /users/{user_id}/profile-picture
+Authorization: Bearer <token>
+```
+
+**Response (204 No Content):** Empty body on success
+
+**Error Responses:**
+
+- `400 Bad Request`: No profile picture to delete
+- `401 Unauthorized`: Missing or invalid authentication token
+- `403 Forbidden`: Not authorized to delete this user's profile picture
+- `429 Too Many Requests`: Rate limit exceeded
+
+---
+
+## Frontend Integration Guide
+
+### JavaScript/TypeScript Example
+
+```typescript
+// Upload profile picture
+async function uploadProfilePicture(userId: string, file: File, token: string): Promise<User> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`/api/users/${userId}/profile-picture`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Upload failed');
+  }
+
+  return response.json();
+}
+
+// Delete profile picture
+async function deleteProfilePicture(userId: string, token: string): Promise<void> {
+  const response = await fetch(`/api/users/${userId}/profile-picture`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Delete failed');
+  }
+}
+
+// Get default avatar URL for users without profile pictures
+function getDefaultAvatarUrl(userId: string, username?: string): string {
+  const seed = encodeURIComponent(username || userId);
+  return `https://api.dicebear.com/9.x/initials/svg?seed=${seed}&backgroundColor=0ea5e9,14b8a6,8b5cf6,f59e0b,ef4444&backgroundType=gradientLinear&fontWeight=500`;
+}
+```
+
+### React Component Example
+
+```tsx
+import { useState, useRef } from 'react';
+
+interface ProfilePictureUploaderProps {
+  userId: string;
+  currentPicture?: string;
+  username: string;
+  onUploadSuccess: (user: User) => void;
+}
+
+export function ProfilePictureUploader({
+  userId,
+  currentPicture,
+  username,
+  onUploadSuccess,
+}: ProfilePictureUploaderProps) {
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Get display URL (uploaded picture or default avatar)
+  const displayUrl = currentPicture || getDefaultAvatarUrl(userId, username);
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Client-side validation
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setError('Please select a JPEG, PNG, or WebP image');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image must be less than 5MB');
+      return;
+    }
+
+    setIsUploading(true);
+    setError(null);
+
+    try {
+      const token = localStorage.getItem('accessToken');
+      const updatedUser = await uploadProfilePicture(userId, file, token!);
+      onUploadSuccess(updatedUser);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  return (
+    <div className="profile-picture-uploader">
+      <img
+        src={displayUrl}
+        alt={`${username}'s profile`}
+        className="profile-picture"
+        style={{ width: 128, height: 128, borderRadius: '50%' }}
+      />
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        onChange={handleFileSelect}
+        style={{ display: 'none' }}
+      />
+
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        disabled={isUploading}
+      >
+        {isUploading ? 'Uploading...' : 'Change Picture'}
+      </button>
+
+      {error && <p className="error">{error}</p>}
+    </div>
+  );
+}
+```
+
+### Vue.js Example
+
+```vue
+<template>
+  <div class="profile-picture-uploader">
+    <img
+      :src="displayUrl"
+      :alt="`${username}'s profile`"
+      class="profile-picture"
+    />
+
+    <input
+      ref="fileInput"
+      type="file"
+      accept="image/jpeg,image/png,image/webp"
+      @change="handleFileSelect"
+      style="display: none"
+    />
+
+    <button @click="$refs.fileInput.click()" :disabled="isUploading">
+      {{ isUploading ? 'Uploading...' : 'Change Picture' }}
+    </button>
+
+    <p v-if="error" class="error">{{ error }}</p>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed } from 'vue';
+
+const props = defineProps<{
+  userId: string;
+  currentPicture?: string;
+  username: string;
+}>();
+
+const emit = defineEmits<{
+  uploadSuccess: [user: User];
+}>();
+
+const isUploading = ref(false);
+const error = ref<string | null>(null);
+
+const displayUrl = computed(() =>
+  props.currentPicture || getDefaultAvatarUrl(props.userId, props.username)
+);
+
+async function handleFileSelect(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+
+  // Validation and upload logic similar to React example
+  // ...
+}
+</script>
 ```
 
 ---
 
-### Phase 2: Storage Service (30 min)
+## Configuration
 
-**File:** [`app/services/storage/base.py`](app/services/storage/base.py:1)
+### Environment Variables
+
+Add to your `.env` file:
+
+```bash
+# Storage Configuration
+STORAGE_PROVIDER=local                    # Options: local, cloudinary
+UPLOADS_DIR=uploads                       # Local storage directory
+
+# Cloudinary Configuration (for production)
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+
+# Profile Picture Settings
+PROFILE_PICTURE_MAX_SIZE_MB=5             # Maximum file size in MB
+PROFILE_PICTURE_MAX_DIMENSION=1024        # Maximum width/height in pixels
+PROFILE_PICTURE_QUALITY=85                # JPEG quality (1-100)
+PROFILE_PICTURE_ALLOWED_TYPES=image/jpeg,image/png,image/webp
+```
+
+### Settings Reference
+
+| Setting | Default | Description |
+| ------- | ------- | ----------- |
+| `STORAGE_PROVIDER` | `local` | Storage backend (`local` or `cloudinary`) |
+| `UPLOADS_DIR` | `uploads` | Local storage directory path |
+| `PROFILE_PICTURE_MAX_SIZE_MB` | `5` | Maximum upload size in MB |
+| `PROFILE_PICTURE_MAX_DIMENSION` | `1024` | Maximum image dimension (width/height) |
+| `PROFILE_PICTURE_QUALITY` | `85` | JPEG compression quality |
+| `PROFILE_PICTURE_ALLOWED_TYPES` | `image/jpeg,image/png,image/webp` | Allowed MIME types |
+
+---
+
+## Implementation Details
+
+### Storage Service Architecture
+
+The storage system uses a Protocol-based design for flexibility:
 
 ```python
-"""Storage protocol for file uploads."""
-
+# app/services/storage/base.py
 from typing import Protocol
-from uuid import UUID
 
 
 class StorageService(Protocol):
@@ -122,46 +374,37 @@ class StorageService(Protocol):
 
     async def upload_profile_picture(
         self,
-        user_id: UUID,
+        user_id: str,
         file_data: bytes,
         content_type: str,
     ) -> str:
         """Upload profile picture and return URL."""
         ...
 
-    async def delete_profile_picture(self, user_id: UUID, file_url: str) -> bool:
+    async def delete_profile_picture(self, user_id: str, file_url: str) -> bool:
         """Delete profile picture by URL."""
         ...
 
-    def get_default_avatar_url(self, user_id: UUID) -> str:
-        """Get default avatar URL for user."""
+    async def get_profile_picture_url(self, user_id: str) -> str | None:
+        """Get profile picture URL for user."""
         ...
 ```
 
-**File:** [`app/services/storage/local.py`](app/services/storage/local.py:1)
+### Local Storage (Development)
 
 ```python
-"""Local filesystem storage for development."""
-
-from pathlib import Path
-from uuid import UUID
-
-import aiofiles
-
-from app.configs import settings
-
-
+# app/services/storage/local.py
 class LocalStorage:
     """Local filesystem storage implementation."""
 
-    def __init__(self) -> None:
-        self.base_path = settings.STORAGE_LOCAL_PATH
+    def __init__(self, base_path: Path | None = None) -> None:
+        self.base_path = base_path or Path(settings.UPLOADS_DIR)
         self.profile_pictures_path = self.base_path / "profile_pictures"
         self.profile_pictures_path.mkdir(parents=True, exist_ok=True)
 
     async def upload_profile_picture(
         self,
-        user_id: UUID,
+        user_id: str,
         file_data: bytes,
         content_type: str,
     ) -> str:
@@ -174,45 +417,12 @@ class LocalStorage:
             await f.write(file_data)
 
         return f"/uploads/profile_pictures/{filename}"
-
-    async def delete_profile_picture(self, user_id: UUID, file_url: str) -> bool:  # noqa: ARG002
-        """Delete local profile picture."""
-        filename = file_url.split("/")[-1]
-        file_path = self.profile_pictures_path / filename
-
-        if file_path.exists():
-            file_path.unlink()
-            return True
-        return False
-
-    def get_default_avatar_url(self, user_id: UUID) -> str:
-        """Return DiceBear avatar URL for local dev."""
-        return f"https://api.dicebear.com/7.x/avataaars/svg?seed={user_id}"
-
-    def _get_extension(self, content_type: str) -> str:
-        """Get file extension from content type."""
-        mapping = {
-            "image/jpeg": ".jpg",
-            "image/png": ".png",
-            "image/webp": ".webp",
-        }
-        return mapping.get(content_type, ".jpg")
 ```
 
-**File:** [`app/services/storage/cloudinary.py`](app/services/storage/cloudinary.py:1)
+### Cloudinary Storage (Production)
 
 ```python
-"""Cloudinary storage for production with auto-optimization."""
-
-from uuid import UUID
-
-import cloudinary
-import cloudinary.uploader
-from cloudinary.utils import cloudinary_url
-
-from app.configs import settings
-
-
+# app/services/storage/cloudinary_storage.py
 class CloudinaryStorage:
     """Cloudinary storage with automatic image optimization."""
 
@@ -226,9 +436,9 @@ class CloudinaryStorage:
 
     async def upload_profile_picture(
         self,
-        user_id: UUID,
+        user_id: str,
         file_data: bytes,
-        content_type: str,  # noqa: ARG002
+        content_type: str,
     ) -> str:
         """Upload to Cloudinary with optimization."""
         public_id = f"{self.folder}/{user_id}"
@@ -239,68 +449,23 @@ class CloudinaryStorage:
             overwrite=True,
             resource_type="image",
             transformation=[
-                {
-                    "width": settings.PROFILE_PICTURE_MAX_DIMENSIONS[0],
-                    "height": settings.PROFILE_PICTURE_MAX_DIMENSIONS[1],
-                    "crop": "fill",
-                    "gravity": "face",
-                },
+                {"width": 512, "height": 512, "crop": "fill", "gravity": "face"},
                 {"quality": "auto", "fetch_format": "auto"},
             ],
         )
 
         return result["secure_url"]
-
-    async def delete_profile_picture(self, user_id: UUID, file_url: str) -> bool:  # noqa: ARG002
-        """Delete from Cloudinary."""
-        public_id = f"{self.folder}/{user_id}"
-        result = cloudinary.uploader.destroy(public_id)
-        return result.get("result") == "ok"
-
-    def get_default_avatar_url(self, user_id: UUID) -> str:
-        """Return Cloudinary-generated or DiceBear default avatar."""
-        # Option 1: Use Cloudinary's placeholder
-        # Option 2: Use DiceBear for consistent look
-        return f"https://api.dicebear.com/7.x/avataaars/svg?seed={user_id}"
-
-    def get_profile_picture_transformed(
-        self,
-        user_id: UUID,
-        width: int = 128,
-        height: int = 128,
-    ) -> str:
-        """Get transformed profile picture URL (for thumbnails)."""
-        public_id = f"{self.folder}/{user_id}"
-        url, _ = cloudinary_url(
-            public_id,
-            width=width,
-            height=height,
-            crop="fill",
-            gravity="face",
-            quality="auto",
-            fetch_format="auto",
-        )
-        return url
 ```
 
-**File:** [`app/services/storage/__init__.py`](app/services/storage/__init__.py:1)
+### Storage Factory
 
 ```python
-"""Storage service factory."""
-
-from app.configs import settings
-from app.services.storage.cloudinary import CloudinaryStorage
-from app.services.storage.local import LocalStorage
-
-__all__ = ["get_storage_service"]
-
-
-_storage_instance = None
-
+# app/services/storage/__init__.py
+_storage_instance: LocalStorage | CloudinaryStorage | None = None
 
 def get_storage_service() -> LocalStorage | CloudinaryStorage:
     """Get configured storage service (singleton)."""
-    global _storage_instance  # noqa: PLW0603
+    global _storage_instance
 
     if _storage_instance is None:
         if settings.STORAGE_PROVIDER == "cloudinary":
@@ -311,134 +476,44 @@ def get_storage_service() -> LocalStorage | CloudinaryStorage:
     return _storage_instance
 ```
 
-**Dependencies to add:**
-
-```bash
-uv add aiofiles cloudinary
-```
-
 ---
 
-### Phase 3: Upload Error Classes (10 min)
+### Profile Picture Service
 
-**File:** [`app/errors/upload.py`](app/errors/upload.py:1)
-
-```python
-"""Upload-specific error classes."""
-
-from fastapi import HTTPException
-from starlette.status import HTTP_400_BAD_REQUEST, HTTP_413_REQUEST_ENTITY_TOO_LARGE
-
-
-class InvalidImageError(HTTPException):
-    """Raised when image validation fails."""
-
-    def __init__(self, detail: str) -> None:
-        super().__init__(status_code=HTTP_400_BAD_REQUEST, detail=detail)
-
-
-class ImageTooLargeError(HTTPException):
-    """Raised when image exceeds size limit."""
-
-    def __init__(self, max_size_mb: int, actual_size_mb: float) -> None:
-        super().__init__(
-            status_code=HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Image too large: {actual_size_mb:.1f}MB. Maximum: {max_size_mb}MB",
-        )
-
-
-class UnsupportedImageTypeError(HTTPException):
-    """Raised when image type is not allowed."""
-
-    def __init__(self, allowed_types: list[str]) -> None:
-        super().__init__(
-            status_code=HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported image type. Allowed: {', '.join(allowed_types)}",
-        )
-```
-
-**Update:** [`app/errors/__init__.py`](app/errors/__init__.py:50)
+The `ProfilePictureService` handles validation, processing, and storage operations:
 
 ```python
-from app.errors.upload import (
-    ImageTooLargeError,
-    InvalidImageError,
-    UnsupportedImageTypeError,
-)
-
-__all__ = [
-    # ... existing exports ...
-    "ImageTooLargeError",
-    "InvalidImageError",
-    "UnsupportedImageTypeError",
-]
-```
-
----
-
-### Phase 4: Profile Picture Service (20 min)
-
-**File:** [`app/services/profile_picture.py`](app/services/profile_picture.py:1)
-
-```python
-"""Profile picture service with validation and upload handling."""
-
-from datetime import UTC, datetime
-from io import BytesIO
-from typing import TYPE_CHECKING
-from uuid import UUID
-
-from fastapi import UploadFile
-from PIL import Image
-
-from app.configs import settings
-from app.errors.upload import (
-    ImageTooLargeError,
-    InvalidImageError,
-    UnsupportedImageTypeError,
-)
-from app.repositories import UserRepository
-from app.services.storage import get_storage_service
-
-if TYPE_CHECKING:
-    from app.services.storage.base import StorageService
-
-
+# app/services/profile_picture.py
 class ProfilePictureService:
     """Service for handling profile picture operations."""
 
-    def __init__(
-        self,
-        storage: "StorageService | None" = None,
-        user_repo: UserRepository | None = None,
-    ) -> None:
+    def __init__(self, storage: StorageService | None = None) -> None:
         self.storage = storage or get_storage_service()
-        self.user_repo = user_repo
 
     def validate_image(self, file: UploadFile, file_data: bytes) -> None:
         """Validate image type, size, and content."""
         # Check content type
-        if file.content_type not in settings.ALLOWED_IMAGE_TYPES:
-            raise UnsupportedImageTypeError(settings.ALLOWED_IMAGE_TYPES)
+        if file.content_type not in settings.PROFILE_PICTURE_ALLOWED_TYPES:
+            raise UnsupportedImageTypeError(file.content_type)
 
         # Check file size
-        max_size_bytes = settings.MAX_IMAGE_SIZE_MB * 1024 * 1024
+        max_size_bytes = settings.PROFILE_PICTURE_MAX_SIZE_MB * 1024 * 1024
         if len(file_data) > max_size_bytes:
             actual_mb = len(file_data) / (1024 * 1024)
-            raise ImageTooLargeError(settings.MAX_IMAGE_SIZE_MB, actual_mb)
+            raise ImageTooLargeError(settings.PROFILE_PICTURE_MAX_SIZE_MB, actual_mb)
 
-        # Validate image content
+        # Validate image content with PIL
         try:
             img = Image.open(BytesIO(file_data))
             img.verify()
         except Exception as e:
-            raise InvalidImageError("Invalid image file") from e
+            raise InvalidImageError("Invalid or corrupted image file") from e
 
-    def process_image(self, file_data: bytes) -> bytes:
-        """Resize and optimize image for profile picture."""
+    def process_image(self, file_data: bytes) -> tuple[bytes, str]:
+        """Resize and optimize image. Returns (processed_data, content_type)."""
         img = Image.open(BytesIO(file_data))
 
-        # Convert to RGB if necessary
+        # Convert to RGB if necessary (for PNG with transparency)
         if img.mode in ("RGBA", "P"):
             background = Image.new("RGB", img.size, (255, 255, 255))
             if img.mode == "P":
@@ -447,457 +522,132 @@ class ProfilePictureService:
             img = background
 
         # Resize to max dimensions
-        max_width, max_height = settings.PROFILE_PICTURE_MAX_DIMENSIONS
-        img.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
+        max_dim = settings.PROFILE_PICTURE_MAX_DIMENSION
+        img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
 
-        # Save optimized image
+        # Save optimized JPEG
         output = BytesIO()
-        img.save(output, format="JPEG", quality=85, optimize=True)
+        img.save(output, format="JPEG", quality=settings.PROFILE_PICTURE_QUALITY, optimize=True)
         output.seek(0)
 
-        return output.read()
+        return output.read(), "image/jpeg"
 
-    async def upload(
-        self,
-        user_id: UUID,
-        file: UploadFile,
-        user_repo: UserRepository,
-    ) -> str:
-        """Upload and set profile picture for user."""
-        # Read file data
-        file_data = await file.read()
-
-        # Validate
-        self.validate_image(file, file_data)
-
-        # Process image
-        processed_data = self.process_image(file_data)
-
-        # Delete old picture if exists (and is local/uploaded)
-        user = await user_repo.get_by_id(user_id)
-        if user and user.profile_picture:
-            # Only delete if it's an uploaded file, not OAuth URL
-            if not user.profile_picture.startswith("http") or "googleusercontent" not in user.profile_picture:
-                await self.storage.delete_profile_picture(user_id, user.profile_picture)
-
-        # Upload new picture
-        picture_url = await self.storage.upload_profile_picture(
-            user_id=user_id,
-            file_data=processed_data,
-            content_type="image/jpeg",
+    @staticmethod
+    def get_default_avatar_url(seed: str) -> str:
+        """Generate DiceBear avatar URL with initials style."""
+        encoded_seed = urllib.parse.quote(seed)
+        return (
+            f"https://api.dicebear.com/9.x/initials/svg"
+            f"?seed={encoded_seed}"
+            f"&backgroundColor=0ea5e9,14b8a6,8b5cf6,f59e0b,ef4444"
+            f"&backgroundType=gradientLinear"
+            f"&fontWeight=500"
         )
-
-        # Update user record
-        user.profile_picture = picture_url
-        user.updated_at = datetime.now(tz=UTC).replace(second=0, microsecond=0)
-        await user_repo._add_and_refresh(user)  # noqa: SLF001
-
-        return picture_url
-
-    async def delete(self, user_id: UUID, user_repo: UserRepository) -> bool:
-        """Delete user's profile picture."""
-        user = await user_repo.get_by_id(user_id)
-        if not user or not user.profile_picture:
-            return False
-
-        # Delete from storage if local/uploaded
-        if not user.profile_picture.startswith("http") or "googleusercontent" not in user.profile_picture:
-            await self.storage.delete_profile_picture(user_id, user.profile_picture)
-
-        # Clear profile picture
-        user.profile_picture = None
-        user.updated_at = datetime.now(tz=UTC).replace(second=0, microsecond=0)
-        await user_repo._add_and_refresh(user)  # noqa: SLF001
-
-        return True
-
-    def get_default_avatar(self, user_id: UUID) -> str:
-        """Get default avatar URL for user."""
-        return self.storage.get_default_avatar_url(user_id)
 ```
 
-**Dependencies to add:**
+---
+
+### Error Classes
+
+```python
+# app/errors/upload.py
+class UploadError(AppError):
+    """Base class for upload-related errors."""
+    status_code: int = 500
+    detail: str = "Upload failed"
+
+class ImageTooLargeError(UploadError):
+    """Raised when image exceeds size limit."""
+    status_code: int = 413
+
+class UnsupportedImageTypeError(UploadError):
+    """Raised when image type is not allowed."""
+    status_code: int = 415
+
+class InvalidImageError(UploadError):
+    """Raised when image validation fails."""
+    status_code: int = 400
+
+class ImageProcessingError(UploadError):
+    """Raised when image processing fails."""
+    status_code: int = 422
+
+class StorageError(UploadError):
+    """Raised when storage operation fails."""
+    status_code: int = 500
+    detail: str = "Storage operation failed"
+
+class NoProfilePictureError(UploadError):
+    """Raised when trying to delete non-existent profile picture."""
+    status_code: int = 400
+    detail: str = "No profile picture to delete"
+```
+
+---
+
+## Default Avatar (DiceBear)
+
+When a user doesn't have a profile picture, the backend returns a DiceBear URL using the "initials" style:
+
+```text
+https://api.dicebear.com/9.x/initials/svg?seed={username}&backgroundColor=0ea5e9,14b8a6,8b5cf6,f59e0b,ef4444&backgroundType=gradientLinear&fontWeight=500
+```
+
+**Features:**
+
+- Uses DiceBear v9 API
+- "initials" style shows user's initials
+- Gradient background with brand colors
+- Consistent across all platforms
+- No storage required
+
+---
+
+## Testing
+
+### Test Files Created
+
+| File | Tests | Description |
+| ---- | ----- | ----------- |
+| `tests/services/test_profile_picture.py` | 28 | ProfilePictureService unit tests |
+| `tests/services/test_storage.py` | 8 | LocalStorage unit tests |
+| `tests/errors/test_upload_errors.py` | 17 | Upload error class tests |
+| `tests/routes/test_profile_picture.py` | 4 | API endpoint tests |
+
+### Running Tests
 
 ```bash
-uv add Pillow
+# Run all profile picture tests
+uv run pytest tests/services/test_profile_picture.py tests/services/test_storage.py tests/errors/test_upload_errors.py tests/routes/test_profile_picture.py -v
+
+# Run with coverage
+uv run pytest tests/services/test_profile_picture.py --cov=app/services/profile_picture --cov-report=term-missing
 ```
+
+### Test Coverage
+
+- ✅ Image validation (type, size, content)
+- ✅ Image processing (resize, format conversion)
+- ✅ Default avatar URL generation
+- ✅ Local storage operations
+- ✅ Error handling
+- ✅ Authentication requirements
 
 ---
 
-### Phase 5: Upload Endpoint (20 min)
-
-**Update:** [`app/routes/user.py`](app/routes/user.py:1)
-
-Add imports at the top:
-
-```python
-from fastapi import File, UploadFile
-
-from app.services.profile_picture import ProfilePictureService
-```
-
-Add the endpoint:
-
-```python
-@router.post(
-    "/{user_id}/profile-picture",
-    response_class=ORJSONResponse,
-    response_model=UserResponse,
-    summary="Upload profile picture",
-    description="Upload or update user profile picture. Max 5MB, accepts JPEG/PNG/WebP.",
-    responses={
-        200: {
-            "description": "Profile picture updated",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "id": "123e4567-e89b-12d3-a456-426614174000",
-                        "username": "johndoe",
-                        "profilePicture": "https://res.cloudinary.com/.../profile_pictures/...",
-                    },
-                },
-            },
-        },
-        400: {"description": "Invalid image file"},
-        413: {"description": "Image too large"},
-        429: {"description": "Rate limit exceeded"},
-    },
-    operation_id="users_upload_profile_picture",
-)
-@timed("/users/profile-picture/upload")
-@limiter.limit("10/hour")
-@cache_busting(
-    key_builder=lambda user_id, **kw: [user_id_key(user_id), users_list_key(0, 10)],
-    namespace="users",
-)
-async def upload_profile_picture(
-    request: Request,
-    response: Response,
-    user_id: UUID,
-    file: Annotated[UploadFile, File(description="Profile picture image (JPEG/PNG/WebP, max 5MB)")],
-    deps: Annotated[UserOpsDeps, Depends()],
-) -> UserResponse:
-    """
-    Upload or update user's profile picture.
-
-    Only the user themselves or an admin can update a profile picture.
-    Image is automatically resized to 512x512 and optimized.
-    """
-    # Check ownership
-    check_owner_or_admin(user_id, deps.current_user, "profile picture")
-
-    # Upload picture
-    profile_service = ProfilePictureService(user_repo=deps.repo)
-    await profile_service.upload(user_id, file, deps.repo)
-
-    # Get updated user
-    db_user = await deps.repo.get_by_id(user_id)
-    if not db_user:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found",
-        )
-
-    # Invalidate cache
-    await get_cache_manager(request).delete(
-        user_id_key(user_id),
-        username_key(db_user.username),
-        users_list_key(0, 10),
-        namespace="users",
-    )
-
-    return db_user_to_response(db_user)
-
-
-@router.delete(
-    "/{user_id}/profile-picture",
-    response_class=ORJSONResponse,
-    status_code=HTTP_204_NO_CONTENT,
-    summary="Delete profile picture",
-    description="Remove user's profile picture and revert to default avatar.",
-    responses={
-        204: {"description": "Profile picture deleted"},
-        404: {"description": "User not found or no profile picture"},
-        429: {"description": "Rate limit exceeded"},
-    },
-    operation_id="users_delete_profile_picture",
-)
-@timed("/users/profile-picture/delete")
-@limiter.limit("10/hour")
-@cache_busting(
-    key_builder=lambda user_id, **kw: [user_id_key(user_id), users_list_key(0, 10)],
-    namespace="users",
-)
-async def delete_profile_picture(
-    request: Request,
-    response: Response,
-    user_id: UUID,
-    deps: Annotated[UserOpsDeps, Depends()],
-) -> None:
-    """Delete user's profile picture."""
-    # Check ownership
-    check_owner_or_admin(user_id, deps.current_user, "profile picture")
-
-    # Delete picture
-    profile_service = ProfilePictureService(user_repo=deps.repo)
-    deleted = await profile_service.delete(user_id, deps.repo)
-
-    if not deleted:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail="No profile picture to delete",
-        )
-
-    # Invalidate cache
-    db_user = await deps.repo.get_by_id(user_id)
-    if db_user:
-        await get_cache_manager(request).delete(
-            user_id_key(user_id),
-            username_key(db_user.username),
-            users_list_key(0, 10),
-            namespace="users",
-        )
-```
-
----
-
-### Phase 6: Static Files Configuration (5 min)
-
-**Update:** [`app/main.py`](app/main.py:1)
-
-Add imports:
-
-```python
-from pathlib import Path
-
-from fastapi.staticfiles import StaticFiles
-```
-
-Add after app initialization:
-
-```python
-# Configure static files for local uploads
-if settings.STORAGE_PROVIDER == "local":
-    uploads_dir = Path("uploads")
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-
-    app.mount(
-        "/uploads",
-        StaticFiles(directory="uploads"),
-        name="uploads",
-    )
-```
-
----
-
-### Phase 7: Default Avatar Support (10 min)
-
-Update [`app/schemas/user.py`](app/schemas/user.py:281) to handle default avatars:
-
-```python
-class UserResponse(BaseModel):
-    """User response model with computed default avatar."""
-
-    # ... existing fields ...
-    profile_picture: HttpUrl | None = Field(default=None, alias="profilePicture")
-
-    @computed_field(alias="profilePicture")
-    @property
-    def computed_profile_picture(self) -> str:
-        """Return profile picture or default avatar."""
-        if self.profile_picture:
-            return str(self.profile_picture)
-        # Generate default avatar using DiceBear
-        return f"https://api.dicebear.com/7.x/avataaars/svg?seed={self.uuid}"
-```
-
----
-
-## OAuth Integration
-
-### Current Flow (Already Working)
-
-1. User authenticates with Google/WeChat → `auth_callback()`
-2. [`AuthService.get_or_create_oauth_user()`](app/services/auth.py:293) extracts `picture` from user info
-3. Picture URL stored in database via `UserCreate`
-
-### No Changes Required
-
-The OAuth flow is already fully functional. Profile pictures from OAuth providers are stored as external URLs.
-
----
-
-## Future Extensibility
-
-### For Blog Photos/Videos
-
-The storage service architecture supports adding new methods:
-
-```python
-# Add to StorageService protocol
-async def upload_blog_media(
-    self,
-    blog_id: UUID,
-    file_data: bytes,
-    content_type: str,
-    filename: str,
-) -> str: ...
-
-async def upload_review_media(
-    self,
-    review_id: UUID,
-    file_data: bytes,
-    content_type: str,
-) -> str: ...
-```
-
-### File Type Support Matrix
-
-| Feature | Images | Videos | Max Size |
-| ------- | ------ | ------ | -------- |
-| Profile Picture | ✅ JPEG, PNG, WebP | ❌ | 5MB |
-| Blog Images | ✅ JPEG, PNG, WebP, GIF | ❌ | 10MB |
-| Blog Videos | ❌ | ✅ MP4, WebM | 100MB |
-| Review Photos | ✅ JPEG, PNG, WebP | ❌ | 5MB |
-| Review Videos | ❌ | ✅ MP4, WebM | 50MB |
-
----
-
-## Testing Strategy
-
-### Unit Tests
-
-**File:** `tests/services/test_profile_picture.py`
-
-```python
-"""Tests for profile picture service."""
-
-from io import BytesIO
-from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
-
-import pytest
-from fastapi import UploadFile
-from PIL import Image
-
-from app.errors.upload import ImageTooLargeError, UnsupportedImageTypeError
-from app.services.profile_picture import ProfilePictureService
-
-
-def create_test_image(format: str = "JPEG", size: tuple[int, int] = (100, 100)) -> bytes:
-    """Create a test image."""
-    img = Image.new("RGB", size, color="red")
-    buffer = BytesIO()
-    img.save(buffer, format=format)
-    buffer.seek(0)
-    return buffer.read()
-
-
-@pytest.fixture
-def mock_storage() -> AsyncMock:
-    """Mock storage backend."""
-    storage = AsyncMock()
-    storage.upload_profile_picture.return_value = "/uploads/profile_pictures/test.jpg"
-    storage.delete_profile_picture.return_value = True
-    return storage
-
-
-class TestValidateImage:
-    """Tests for image validation."""
-
-    def test_valid_jpeg(self, mock_storage: AsyncMock) -> None:
-        """Test JPEG validation passes."""
-        service = ProfilePictureService(storage=mock_storage)
-        file = MagicMock(spec=UploadFile)
-        file.content_type = "image/jpeg"
-        image_data = create_test_image()
-
-        # Should not raise
-        service.validate_image(file, image_data)
-
-    def test_unsupported_type(self, mock_storage: AsyncMock) -> None:
-        """Test unsupported type fails."""
-        service = ProfilePictureService(storage=mock_storage)
-        file = MagicMock(spec=UploadFile)
-        file.content_type = "image/bmp"
-
-        with pytest.raises(UnsupportedImageTypeError):
-            service.validate_image(file, b"fake data")
-
-    def test_image_too_large(self, mock_storage: AsyncMock) -> None:
-        """Test oversized image fails."""
-        service = ProfilePictureService(storage=mock_storage)
-        file = MagicMock(spec=UploadFile)
-        file.content_type = "image/jpeg"
-        large_data = b"x" * (10 * 1024 * 1024)  # 10MB
-
-        with pytest.raises(ImageTooLargeError):
-            service.validate_image(file, large_data)
-```
-
-### Integration Tests
-
-**File:** `tests/routes/test_profile_picture.py`
-
-```python
-"""Integration tests for profile picture endpoints."""
-
-from io import BytesIO
-from uuid import uuid4
-
-import pytest
-from httpx import ASGITransport, AsyncClient
-from PIL import Image
-
-from app.main import app
-
-
-def create_test_image() -> BytesIO:
-    """Create test image file."""
-    img = Image.new("RGB", (100, 100), color="blue")
-    buffer = BytesIO()
-    img.save(buffer, format="JPEG")
-    buffer.seek(0)
-    return buffer
-
-
-@pytest.mark.asyncio
-async def test_upload_profile_picture(auth_headers: dict, test_user_id: str) -> None:
-    """Test uploading a profile picture."""
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        image = create_test_image()
-
-        response = await client.post(
-            f"/users/{test_user_id}/profile-picture",
-            headers=auth_headers,
-            files={"file": ("test.jpg", image, "image/jpeg")},
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert "profilePicture" in data
-```
-
----
-
-## Deployment Checklist
+## Deployment
 
 ### Development Setup
 
 ```bash
-# 1. Install dependencies
+# 1. Install dependencies (already done)
 uv add aiofiles Pillow cloudinary
 
-# 2. No env changes needed (uses local storage by default)
+# 2. Uses local storage by default (STORAGE_PROVIDER=local)
 
-# 3. Create uploads directory
-mkdir -p uploads/profile_pictures
+# 3. Uploads directory created automatically
 
-# 4. Run migrations (if needed)
-alembic upgrade head
-
-# 5. Test upload
+# 4. Test upload
 curl -X POST \
   -H "Authorization: Bearer $TOKEN" \
   -F "file=@test-photo.jpg" \
@@ -907,24 +657,19 @@ curl -X POST \
 ### Production Setup (Cloudinary)
 
 ```bash
-# 1. Create Cloudinary account at https://cloudinary.com
-
-# 2. Add to environment variables
+# Set environment variables
 export STORAGE_PROVIDER=cloudinary
 export CLOUDINARY_CLOUD_NAME=your_cloud_name
 export CLOUDINARY_API_KEY=your_api_key
 export CLOUDINARY_API_SECRET=your_api_secret
-
-# 3. Deploy
-# No local storage directory needed
 ```
 
 ---
 
-## Security Considerations
+## Security
 
 | Risk | Mitigation |
-| ------ | ---------- |
+| ---- | ---------- |
 | File type spoofing | Validate content-type AND image content with PIL |
 | Path traversal | Use UUID-based filenames, no user input in paths |
 | Oversized uploads | Size check before processing (5MB limit) |
@@ -935,20 +680,23 @@ export CLOUDINARY_API_SECRET=your_api_secret
 
 ---
 
-## Summary
+## Files Modified/Created
 
-| Component | Lines of Code | File |
-| --------- | ------------- | ---- |
-| Settings | +15 | [`app/configs/settings.py`](app/configs/settings.py) |
-| Storage protocol | +15 | [`app/services/storage/base.py`](app/services/storage/base.py) |
-| Local storage | +40 | [`app/services/storage/local.py`](app/services/storage/local.py) |
-| Cloudinary storage | +50 | [`app/services/storage/cloudinary.py`](app/services/storage/cloudinary.py) |
-| Storage factory | +15 | [`app/services/storage/__init__.py`](app/services/storage/__init__.py) |
-| Error classes | +25 | [`app/errors/upload.py`](app/errors/upload.py) |
-| Profile service | +80 | [`app/services/profile_picture.py`](app/services/profile_picture.py) |
-| Upload endpoint | +60 | [`app/routes/user.py`](app/routes/user.py) |
-| Static files | +8 | [`app/main.py`](app/main.py) |
-| **Total** | **~308** | **9 files** |
+| File | Status | Description |
+| ---- | ------ | ----------- |
+| `app/configs/settings.py` | Modified | Added storage configuration |
+| `.env.example` | Modified | Added Cloudinary env vars |
+| `app/services/storage/__init__.py` | Created | Storage factory |
+| `app/services/storage/base.py` | Created | StorageService protocol |
+| `app/services/storage/local.py` | Created | Local storage implementation |
+| `app/services/storage/cloudinary_storage.py` | Created | Cloudinary implementation |
+| `app/errors/upload.py` | Created | Upload error classes |
+| `app/errors/__init__.py` | Modified | Export upload errors |
+| `app/services/profile_picture.py` | Created | Profile picture service |
+| `app/services/__init__.py` | Modified | Export ProfilePictureService |
+| `app/routes/user.py` | Modified | Upload/delete endpoints |
+| `app/schemas/user.py` | Modified | Updated profile_picture field |
+| `app/main.py` | Modified | Static files mount |
 
 ---
 
@@ -957,4 +705,4 @@ export CLOUDINARY_API_SECRET=your_api_secret
 - [Cloudinary Python SDK](https://cloudinary.com/documentation/python_integration)
 - [FastAPI File Uploads](https://fastapi.tiangolo.com/tutorial/request-files/)
 - [Pillow Image Processing](https://pillow.readthedocs.io/)
-- [DiceBear Avatars](https://www.dicebear.com/)
+- [DiceBear Avatars v9](https://www.dicebear.com/styles/initials/)

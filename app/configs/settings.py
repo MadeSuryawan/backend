@@ -210,6 +210,31 @@ class Settings(BaseSettings):
     CACHE_TTL_QUERY: int = 3600  # 1 hour
     CACHE_TTL_CONTACT: int = 1800  # 30 minutes
 
+    # Storage Configuration
+    STORAGE_PROVIDER: Literal["local", "cloudinary"] = "local"
+    UPLOADS_DIR: Path = Path("uploads")
+
+    # Cloudinary Configuration (required when STORAGE_PROVIDER=cloudinary)
+    CLOUDINARY_CLOUD_NAME: str | None = None
+    CLOUDINARY_API_KEY: str | None = None
+    CLOUDINARY_API_SECRET: str | None = None
+
+    # Profile Picture Settings
+    PROFILE_PICTURE_MAX_SIZE_MB: int = 5
+    PROFILE_PICTURE_MAX_DIMENSION: int = 1024
+    PROFILE_PICTURE_QUALITY: int = 85
+    PROFILE_PICTURE_ALLOWED_TYPES: list[str] = ["image/jpeg", "image/png", "image/webp"]
+
+    @field_validator("CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET")
+    @classmethod
+    def validate_cloudinary_config(cls, v: str | None, info: ValidationInfo) -> str | None:
+        """Ensure Cloudinary credentials are set when using cloudinary storage."""
+        storage_provider = info.data.get("STORAGE_PROVIDER", "local")
+        if storage_provider == "cloudinary" and not v:
+            msg = f"{info.field_name} is required when STORAGE_PROVIDER=cloudinary"
+            raise ValueError(msg)
+        return v
+
     @property
     def redis_url(self) -> str:
         """Get Redis connection URL."""
