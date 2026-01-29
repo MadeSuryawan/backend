@@ -1,6 +1,6 @@
 from typing import cast
 
-from google.genai.types import Content, Part
+from google.genai.types import Content, ContentUnion, Part
 
 from app.clients.ai_client import AiClient
 from app.schemas.ai import ChatRequest, ChatResponse
@@ -25,7 +25,7 @@ async def chat_with_ai(chat: ChatRequest, client: AiClient) -> ChatResponse:
         ChatResponse with the AI-generated answer.
     """
     # Build content list from history
-    contents: list[Content] = [Content(**h.model_dump()) for h in chat.history]
+    contents: list[ContentUnion] = [Content(**h.model_dump()) for h in chat.history]
 
     # Append the current user query
     contents.append(Content(role="user", parts=[Part(text=chat.query)]))

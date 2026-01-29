@@ -172,7 +172,7 @@ class TestProfilePictureServiceDelete:
         """Test successful profile picture deletion."""
         result = await profile_picture_service.delete_profile_picture(sample_user_id)
         assert result is True
-        profile_picture_service.storage.delete_profile_picture.assert_called_once_with(
+        profile_picture_service.storage.delete_profile_picture.assert_called_once_with(  # type: ignore[union-attr]
             sample_user_id,
         )
 
