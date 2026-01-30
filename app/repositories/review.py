@@ -165,31 +165,27 @@ class ReviewRepository(BaseRepository[ReviewDB, ReviewCreate, ReviewUpdate]):
         await self.session.refresh(db_review)
         return db_review
 
-    async def remove_image(self, review_id: UUID, media_id: str) -> ReviewDB | None:
+    async def remove_image(self, review_id: UUID, image_url: str) -> ReviewDB | None:
         """
         Remove an image URL from a review.
 
         Args:
             review_id: Review UUID
-            media_id: Media UUID (part of the URL)
+            image_url: URL of the image to remove
 
         Returns:
-            ReviewDB | None: Updated review, or None if review not found
+            ReviewDB | None: Updated review or None if not found
         """
         db_review = await self.get_by_id(review_id)
         if not db_review:
             return None
 
-        if not db_review.images_url:
-            return db_review
-
-        # Filter out images containing the media_id
-        # URLs contain the media_id (UUID), so this is safe
-        original_count = len(db_review.images_url)
-        db_review.images_url = [url for url in db_review.images_url if media_id not in str(url)]
-
-        if len(db_review.images_url) < original_count:
+        images = db_review.images_url or []
+        if image_url in images:
+            images.remove(image_url)
+            db_review.images_url = images if images else None
             db_review.updated_at = datetime.now(tz=UTC).replace(second=0, microsecond=0)
+
             await self.session.commit()
             await self.session.refresh(db_review)
 

@@ -379,58 +379,54 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
         await self.session.refresh(blog)
         return blog
 
-    async def remove_image(self, blog_id: UUID, media_id: str) -> BlogDB | None:
+    async def remove_image(self, blog_id: UUID, image_url: str) -> BlogDB | None:
         """
-        Remove an image URL from a blog.
+        Remove an image URL from a blog's images_url list.
 
         Args:
             blog_id: Blog UUID
-            media_id: Media UUID (part of the URL)
+            image_url: URL of the image to remove
 
         Returns:
-            BlogDB | None: Updated blog, or None if blog not found
+            BlogDB | None: Updated blog or None if not found
         """
-        db_blog = await self.get_by_id(blog_id)
-        if not db_blog:
+        blog = await self.get_by_id(blog_id)
+        if not blog:
             return None
 
-        if not db_blog.images_url:
-            return db_blog
+        images = blog.images_url or []
+        if image_url in images:
+            images.remove(image_url)
+            blog.images_url = images if images else None
+            blog.updated_at = datetime.now(UTC)
 
-        original_count = len(db_blog.images_url)
-        db_blog.images_url = [url for url in db_blog.images_url if media_id not in str(url)]
-
-        if len(db_blog.images_url) < original_count:
-            db_blog.updated_at = datetime.now(tz=UTC).replace(second=0, microsecond=0)
             await self.session.commit()
-            await self.session.refresh(db_blog)
+            await self.session.refresh(blog)
 
-        return db_blog
+        return blog
 
-    async def remove_video(self, blog_id: UUID, media_id: str) -> BlogDB | None:
+    async def remove_video(self, blog_id: UUID, video_url: str) -> BlogDB | None:
         """
-        Remove a video URL from a blog.
+        Remove a video URL from a blog's videos_url list.
 
         Args:
             blog_id: Blog UUID
-            media_id: Media UUID (part of the URL)
+            video_url: URL of the video to remove
 
         Returns:
-            BlogDB | None: Updated blog, or None if blog not found
+            BlogDB | None: Updated blog or None if not found
         """
-        db_blog = await self.get_by_id(blog_id)
-        if not db_blog:
+        blog = await self.get_by_id(blog_id)
+        if not blog:
             return None
 
-        if not db_blog.videos_url:
-            return db_blog
+        videos = blog.videos_url or []
+        if video_url in videos:
+            videos.remove(video_url)
+            blog.videos_url = videos if videos else None
+            blog.updated_at = datetime.now(UTC)
 
-        original_count = len(db_blog.videos_url)
-        db_blog.videos_url = [url for url in db_blog.videos_url if media_id not in str(url)]
-
-        if len(db_blog.videos_url) < original_count:
-            db_blog.updated_at = datetime.now(tz=UTC).replace(second=0, microsecond=0)
             await self.session.commit()
-            await self.session.refresh(db_blog)
+            await self.session.refresh(blog)
 
-        return db_blog
+        return blog

@@ -1421,7 +1421,7 @@ async def upload_blog_video(
 @router.delete(
     "/{blog_id}/media/{media_id}",
     status_code=HTTP_204_NO_CONTENT,
-    summary="Delete a blog media",
+    summary="Delete media from a blog",
     operation_id="blogs_delete_media",
 )
 @timed("/blogs/{blog_id}/media/{media_id}")
@@ -1434,9 +1434,10 @@ async def delete_blog_media(
     current_user: UserDBDep,
 ) -> None:
     """
-    Delete a media file (image or video) from a blog post.
+    Delete media (image or video) from a blog post.
 
     Only the blog author or admin can delete media.
+    The media_id should be the UUID portion of the media URL.
     """
     db_blog = await repo.get_by_id(blog_id)
     if not db_blog:
@@ -1444,18 +1445,43 @@ async def delete_blog_media(
 
     check_owner_or_admin(db_blog.author_id, current_user)
 
+    # Try to find in images first
+    images = db_blog.images_url or []
+    media_url_to_delete = None
+    is_video = False
+    folder = "blog_images"
+
+    for url in images:
+        if media_id in str(url):
+            media_url_to_delete = str(url)
+            break
+
+    # If not found in images, check videos
+    if not media_url_to_delete:
+        videos = db_blog.videos_url or []
+        folder = "blog_videos"
+        for url in videos:
+            if media_id in str(url):
+                media_url_to_delete = str(url)
+                is_video = True
+                break
+
+    if not media_url_to_delete:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"Media with ID {media_id} not found in blog",
+        )
+
+    # Delete from storage
     media_service = MediaService()
+    await media_service.delete_media(
+        folder=folder,
+        entity_id=str(blog_id),
+        media_id=media_id,
+    )
 
-    # Check if media exists in images
-    if db_blog.images_url and any(media_id in str(url) for url in db_blog.images_url):
-        await media_service.delete_media("blog_images", str(blog_id), media_id)
-        await repo.remove_image(blog_id, media_id)
-        return
-
-    # Check if media exists in videos
-    if db_blog.videos_url and any(media_id in str(url) for url in db_blog.videos_url):
-        await media_service.delete_media("blog_videos", str(blog_id), media_id)
-        await repo.remove_video(blog_id, media_id)
-        return
-
-    raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Media not found in blog")
+    # Remove from database
+    if is_video:
+        await repo.remove_video(blog_id, media_url_to_delete)
+    else:
+        await repo.remove_image(blog_id, media_url_to_delete)

@@ -224,7 +224,8 @@ async def upload_review_image(
 @router.delete(
     "/{review_id}/images/{media_id}",
     status_code=HTTP_204_NO_CONTENT,
-    summary="Delete a review image",
+    summary="Delete an image from a review",
+    operation_id="reviews_delete_image",
 )
 @limiter.limit("10/minute")
 async def delete_review_image(
@@ -233,21 +234,38 @@ async def delete_review_image(
     media_id: str,
     deps: ReviewOpsDep,
 ) -> None:
-    """Delete an image from a review (owner only)."""
+    """
+    Delete an image from a review (owner or admin only).
+
+    The media_id should be the UUID portion of the image URL.
+    """
     db_review = await deps.repo.get_by_id(review_id)
     if not db_review:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Review not found")
 
     check_owner_or_admin(db_review.user_id, deps.current_user)
 
-    media_service = MediaService()
+    # Find the image URL that contains the media_id
+    images = db_review.images_url or []
+    image_url_to_delete = None
+    for url in images:
+        if media_id in str(url):
+            image_url_to_delete = str(url)
+            break
 
-    # Check if media exists in review images
-    if not db_review.images_url or not any(media_id in str(url) for url in db_review.images_url):
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Image not found in review")
+    if not image_url_to_delete:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"Image with ID {media_id} not found in review",
+        )
 
     # Delete from storage
-    await media_service.delete_media("review_images", str(review_id), media_id)
+    media_service = MediaService()
+    await media_service.delete_media(
+        folder="review_images",
+        entity_id=str(review_id),
+        media_id=media_id,
+    )
 
     # Remove from database
-    await deps.repo.remove_image(review_id, media_id)
+    await deps.repo.remove_image(review_id, image_url_to_delete)
