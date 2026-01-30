@@ -84,7 +84,7 @@ def _to_review_list_response(db_review: "ReviewDB") -> ReviewListResponse:
 async def create_review(
     request: Request,
     review_data: ReviewCreate,
-    deps: ReviewOpsDep,
+    deps: ReviewOpsDeps,
 ) -> ReviewResponse:
     """Create a new review."""
     db_review = await deps.repo.create(review_data, deps.current_user.uuid)
@@ -142,7 +142,7 @@ async def update_review(
     request: Request,
     review_id: UUID,
     review_data: ReviewUpdate,
-    deps: ReviewOpsDep,
+    deps: ReviewOpsDeps,
 ) -> ReviewResponse:
     """Update a review (owner only)."""
     db_review = await deps.repo.get_by_id(review_id)
@@ -167,7 +167,7 @@ async def update_review(
 async def delete_review(
     request: Request,
     review_id: UUID,
-    deps: ReviewOpsDep,
+    deps: ReviewOpsDeps,
 ) -> None:
     """Delete a review (owner or admin only)."""
     db_review = await deps.repo.get_by_id(review_id)
@@ -189,7 +189,7 @@ async def upload_review_image(
     request: Request,
     review_id: UUID,
     file: UploadFile,
-    deps: ReviewOpsDep,
+    deps: ReviewOpsDeps,
 ) -> MediaUploadResponse:
     """Upload an image to a review (owner only, max 5 images)."""
     db_review = await deps.repo.get_by_id(review_id)
@@ -219,53 +219,3 @@ async def upload_review_image(
     await deps.repo.add_image(review_id, url)
 
     return MediaUploadResponse(url=url, mediaType="image")
-
-
-@router.delete(
-    "/{review_id}/images/{media_id}",
-    status_code=HTTP_204_NO_CONTENT,
-    summary="Delete an image from a review",
-    operation_id="reviews_delete_image",
-)
-@limiter.limit("10/minute")
-async def delete_review_image(
-    request: Request,
-    review_id: UUID,
-    media_id: str,
-    deps: ReviewOpsDep,
-) -> None:
-    """
-    Delete an image from a review (owner or admin only).
-
-    The media_id should be the UUID portion of the image URL.
-    """
-    db_review = await deps.repo.get_by_id(review_id)
-    if not db_review:
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Review not found")
-
-    check_owner_or_admin(db_review.user_id, deps.current_user)
-
-    # Find the image URL that contains the media_id
-    images = db_review.images_url or []
-    image_url_to_delete = None
-    for url in images:
-        if media_id in str(url):
-            image_url_to_delete = str(url)
-            break
-
-    if not image_url_to_delete:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"Image with ID {media_id} not found in review",
-        )
-
-    # Delete from storage
-    media_service = MediaService()
-    await media_service.delete_media(
-        folder="review_images",
-        entity_id=str(review_id),
-        media_id=media_id,
-    )
-
-    # Remove from database
-    await deps.repo.remove_image(review_id, image_url_to_delete)
