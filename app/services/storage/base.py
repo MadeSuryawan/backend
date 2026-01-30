@@ -63,3 +63,46 @@ class StorageService(Protocol):
         """
         ...
 
+    @abstractmethod
+    async def upload_media(
+        self,
+        folder: str,
+        entity_id: str,
+        media_id: str,
+        file_data: bytes,
+        content_type: str,
+    ) -> str:
+        """
+        Upload media (image or video) to storage.
+
+        Args:
+            folder: Storage folder (e.g., "review_images", "blog_media")
+            entity_id: ID of the entity (review or blog)
+            media_id: Unique ID for the media file
+            file_data: Raw file bytes
+            content_type: MIME type of the file
+
+        Returns:
+            str: URL or path to the uploaded media
+        """
+        ...
+
+    @abstractmethod
+    async def delete_media(
+        self,
+        folder: str,
+        entity_id: str,
+        media_id: str,
+    ) -> bool:
+        """
+        Delete a media file from storage.
+
+        Args:
+            folder: Storage folder
+            entity_id: ID of the entity
+            media_id: ID of the media file
+
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        ...

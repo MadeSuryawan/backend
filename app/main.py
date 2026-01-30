@@ -51,6 +51,7 @@ from app.routes import (
     email_router,
     items_router,
     limiter_router,
+    review_router,
     user_router,
 )
 from app.schemas import HealthCheckResponse
@@ -88,6 +89,7 @@ routes = [
     user_router,
     blog_router,
     items_router,
+    review_router,
     cache_router,
     limiter_router,
 ]

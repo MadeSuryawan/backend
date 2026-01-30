@@ -99,7 +99,12 @@ class BlogDB(SQLModel, table=True):
     images_url: list[str] | None = Field(
         default=None,
         sa_column=Column(JSONB),
-        description="List of image URLs",
+        description="List of image URLs (max 10)",
+    )
+    videos_url: list[str] | None = Field(
+        default=None,
+        sa_column=Column(JSONB),
+        description="List of video URLs (max 3)",
     )
 
     # Timestamps (timezone-aware)

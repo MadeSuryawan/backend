@@ -34,7 +34,7 @@ from logging import getLogger
 from typing import Annotated, Literal, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, UploadFile
 from fastapi.responses import ORJSONResponse
 from pydantic import ValidationError
 from starlette.responses import Response
@@ -51,9 +51,20 @@ from app.decorators.caching import cache_busting, cached, get_cache_manager
 from app.decorators.metrics import timed
 from app.dependencies import BlogListQuery, BlogQueryListDep, BlogRepoDep, UserDBDep
 from app.errors.database import DatabaseError, DuplicateEntryError
+from app.errors.upload import (
+    ImageProcessingError,
+    ImageTooLargeError,
+    InvalidImageError,
+    MediaLimitExceededError,
+    UnsupportedImageTypeError,
+    UnsupportedVideoTypeError,
+    VideoTooLargeError,
+)
 from app.managers.rate_limiter import limiter
 from app.models import BlogDB
 from app.schemas import BlogCreate, BlogListResponse, BlogResponse, BlogSchema, BlogUpdate
+from app.schemas.review import MediaUploadResponse
+from app.services import MediaService
 from app.utils.helpers import file_logger, response_datetime
 
 router = APIRouter(prefix="/blogs", tags=["📝 Blogs"])
@@ -1300,3 +1311,151 @@ async def bust_blogs_all(
 ) -> ORJSONResponse:
     await get_cache_manager(request).clear(namespace="blogs")
     return ORJSONResponse(content={"status": "cleared"})
+
+
+# =============================================================================
+# Media Upload Endpoints
+# =============================================================================
+
+
+@router.post(
+    "/{blog_id}/images",
+    response_class=ORJSONResponse,
+    status_code=HTTP_201_CREATED,
+    summary="Upload an image to a blog",
+    operation_id="blogs_upload_image",
+)
+@timed("/blogs/{blog_id}/images")
+@limiter.limit("10/minute")
+async def upload_blog_image(
+    request: Request,
+    blog_id: UUID,
+    file: UploadFile,
+    repo: BlogRepoDep,
+    current_user: UserDBDep,
+) -> MediaUploadResponse:
+    """
+    Upload an image to a blog post.
+
+    Only the blog author or admin can upload images.
+    Maximum 10 images per blog post.
+    """
+    db_blog = await repo.get_by_id(blog_id)
+    if not db_blog:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Blog not found")
+
+    check_owner_or_admin(db_blog.author_id, current_user)
+
+    current_count = len(db_blog.images_url) if db_blog.images_url else 0
+    media_service = MediaService()
+
+    try:
+        url = await media_service.upload_blog_image(
+            blog_id=str(blog_id),
+            file=file,
+            current_count=current_count,
+        )
+    except (
+        UnsupportedImageTypeError,
+        ImageTooLargeError,
+        InvalidImageError,
+        ImageProcessingError,
+        MediaLimitExceededError,
+    ) as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
+
+    await repo.add_image(blog_id, url)
+
+    return MediaUploadResponse(url=url, mediaType="image")
+
+
+@router.post(
+    "/{blog_id}/videos",
+    response_class=ORJSONResponse,
+    status_code=HTTP_201_CREATED,
+    summary="Upload a video to a blog",
+    operation_id="blogs_upload_video",
+)
+@timed("/blogs/{blog_id}/videos")
+@limiter.limit("5/minute")
+async def upload_blog_video(
+    request: Request,
+    blog_id: UUID,
+    file: UploadFile,
+    repo: BlogRepoDep,
+    current_user: UserDBDep,
+) -> MediaUploadResponse:
+    """
+    Upload a video to a blog post.
+
+    Only the blog author or admin can upload videos.
+    Maximum 3 videos per blog post.
+    """
+    db_blog = await repo.get_by_id(blog_id)
+    if not db_blog:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Blog not found")
+
+    check_owner_or_admin(db_blog.author_id, current_user)
+
+    current_count = len(db_blog.videos_url) if db_blog.videos_url else 0
+    media_service = MediaService()
+
+    try:
+        url = await media_service.upload_blog_video(
+            blog_id=str(blog_id),
+            file=file,
+            current_count=current_count,
+        )
+    except (
+        UnsupportedVideoTypeError,
+        VideoTooLargeError,
+        MediaLimitExceededError,
+    ) as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
+
+    await repo.add_video(blog_id, url)
+
+    return MediaUploadResponse(url=url, mediaType="video")
+
+
+@router.delete(
+    "/{blog_id}/media/{media_id}",
+    status_code=HTTP_204_NO_CONTENT,
+    summary="Delete a blog media",
+    operation_id="blogs_delete_media",
+)
+@timed("/blogs/{blog_id}/media/{media_id}")
+@limiter.limit("10/minute")
+async def delete_blog_media(
+    request: Request,
+    blog_id: UUID,
+    media_id: str,
+    repo: BlogRepoDep,
+    current_user: UserDBDep,
+) -> None:
+    """
+    Delete a media file (image or video) from a blog post.
+
+    Only the blog author or admin can delete media.
+    """
+    db_blog = await repo.get_by_id(blog_id)
+    if not db_blog:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Blog not found")
+
+    check_owner_or_admin(db_blog.author_id, current_user)
+
+    media_service = MediaService()
+
+    # Check if media exists in images
+    if db_blog.images_url and any(media_id in str(url) for url in db_blog.images_url):
+        await media_service.delete_media("blog_images", str(blog_id), media_id)
+        await repo.remove_image(blog_id, media_id)
+        return
+
+    # Check if media exists in videos
+    if db_blog.videos_url and any(media_id in str(url) for url in db_blog.videos_url):
+        await media_service.delete_media("blog_videos", str(blog_id), media_id)
+        await repo.remove_video(blog_id, media_id)
+        return
+
+    raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Media not found in blog")

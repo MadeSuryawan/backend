@@ -18,6 +18,7 @@ from starlette.routing import BaseRoute, Match, Route
 
 from app.configs.settings import settings
 from app.models.blog import BlogDB
+from app.models.review import ReviewDB
 from app.models.user import UserDB
 
 
@@ -78,7 +79,7 @@ def get_summary(request: Request) -> str | None:
     return summary
 
 
-def response_datetime(db: UserDB | BlogDB) -> dict[str, Any]:
+def response_datetime(db: UserDB | BlogDB | ReviewDB) -> dict[str, Any]:
     """
     Format datetime for response.
 

@@ -20,7 +20,7 @@ from app.managers.login_attempt_tracker import LoginAttemptTracker, get_login_tr
 from app.managers.token_blacklist import TokenBlacklist, get_token_blacklist
 from app.managers.token_manager import decode_access_token
 from app.models import UserDB
-from app.repositories import BlogRepository, UserRepository
+from app.repositories import BlogRepository, ReviewRepository, UserRepository
 from app.schemas.user import UserResponse
 from app.services import AuthService
 
@@ -185,6 +185,28 @@ def get_blog_repository(
 
 
 BlogRepoDep = Annotated[BlogRepository, Depends(get_blog_repository)]
+
+
+async def get_review_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ReviewRepository:
+    """
+    Dependency to get ReviewRepository.
+
+    Parameters
+    ----------
+    session : AsyncSession
+        Database session from dependency injection.
+
+    Returns
+    -------
+    ReviewRepository
+        Repository instance bound to the session.
+    """
+    return ReviewRepository(session)
+
+
+ReviewRepoDep = Annotated[ReviewRepository, Depends(get_review_repository)]
 
 
 @dataclass(frozen=True)

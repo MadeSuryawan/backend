@@ -122,3 +122,84 @@ class LocalStorage:
                 return f"/uploads/profile_pictures/{user_id}.{ext}"
         return None
 
+    def _get_media_extension(self, content_type: str) -> str:
+        """
+        Get file extension from content type for media files.
+
+        Args:
+            content_type: MIME type of the file
+
+        Returns:
+            str: File extension
+        """
+        extensions = {
+            # Images
+            "image/jpeg": "jpg",
+            "image/png": "png",
+            "image/webp": "webp",
+            # Videos
+            "video/mp4": "mp4",
+            "video/webm": "webm",
+            "video/quicktime": "mov",
+        }
+        return extensions.get(content_type, "bin")
+
+    async def upload_media(
+        self,
+        folder: str,
+        entity_id: str,
+        media_id: str,
+        file_data: bytes,
+        content_type: str,
+    ) -> str:
+        """
+        Upload media (image or video) to local filesystem.
+
+        Args:
+            folder: Storage folder (e.g., "review_images", "blog_media")
+            entity_id: ID of the entity (review or blog)
+            media_id: Unique ID for the media file
+            file_data: Raw file bytes
+            content_type: MIME type of the file
+
+        Returns:
+            str: URL path to the uploaded media
+        """
+        # Create folder structure: uploads/{folder}/{entity_id}/
+        media_dir = settings.UPLOADS_DIR / folder / entity_id
+        media_dir.mkdir(parents=True, exist_ok=True)
+
+        extension = self._get_media_extension(content_type)
+        file_path = media_dir / f"{media_id}.{extension}"
+
+        async with aiofiles.open(file_path, "wb") as f:
+            await f.write(file_data)
+
+        return f"/uploads/{folder}/{entity_id}/{media_id}.{extension}"
+
+    async def delete_media(
+        self,
+        folder: str,
+        entity_id: str,
+        media_id: str,
+    ) -> bool:
+        """
+        Delete a media file from local filesystem.
+
+        Args:
+            folder: Storage folder
+            entity_id: ID of the entity
+            media_id: ID of the media file
+
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        media_dir = settings.UPLOADS_DIR / folder / entity_id
+
+        # Check for all possible extensions
+        for ext in ["jpg", "png", "webp", "mp4", "webm", "mov"]:
+            file_path = media_dir / f"{media_id}.{ext}"
+            if file_path.exists():
+                file_path.unlink()
+                return True
+        return False

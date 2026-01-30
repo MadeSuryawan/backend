@@ -80,6 +80,12 @@ class BlogCreate(BaseModel):
         max_length=10,
         description="List of image URLs (max 10)",
     )
+    videos_url: list[HttpUrl] | None = Field(
+        default=None,
+        alias="videosUrl",
+        max_length=3,
+        description="List of video URLs (max 3)",
+    )
     status: Literal["draft", "published", "archived"] = Field(
         default="draft",
         description="Blog status",
@@ -179,6 +185,12 @@ class BlogSchema(BaseModel):
         alias="imagesUrl",
         max_length=10,
         description="List of image URLs (max 10)",
+    )
+    videos_url: list[HttpUrl] | None = Field(
+        default=None,
+        alias="videosUrl",
+        max_length=3,
+        description="List of video URLs (max 3)",
     )
     created_at: str = Field(
         alias="createdAt",
@@ -304,6 +316,7 @@ class BlogUpdate(BaseModel):
     tags: list[str] | None = None
     status: Literal["draft", "published", "archived"] | None = None
     images_url: list[HttpUrl] | None = None
+    videos_url: list[HttpUrl] | None = None
 
     @field_validator("title", mode="before")
     @classmethod
@@ -345,6 +358,7 @@ class BlogResponse(BaseModel):
     tags: list[str]
     status: str
     images_url: list[HttpUrl] | None = Field(default=None, alias="imagesUrl")
+    videos_url: list[HttpUrl] | None = Field(default=None, alias="videosUrl")
     created_at: str = Field(alias="createdAt")
     updated_at: str = Field(alias="updatedAt")
 

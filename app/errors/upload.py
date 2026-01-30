@@ -92,6 +92,50 @@ class NoProfilePictureError(UploadError):
         )
 
 
+class MediaLimitExceededError(UploadError):
+    """Exception raised when media count limit is exceeded."""
+
+    def __init__(
+        self,
+        media_type: str = "media",
+        max_count: int = 5,
+    ) -> None:
+        detail = f"Maximum {media_type} limit of {max_count} exceeded"
+        super().__init__(detail=detail, status_code=HTTP_400_BAD_REQUEST)
+        self.media_type = media_type
+        self.max_count = max_count
+
+
+class VideoTooLargeError(UploadError):
+    """Exception raised when uploaded video exceeds size limit."""
+
+    def __init__(
+        self,
+        max_size_mb: int = 50,
+        actual_size_mb: float | None = None,
+    ) -> None:
+        detail = f"Video size exceeds maximum allowed size of {max_size_mb}MB"
+        if actual_size_mb is not None:
+            detail += f" (uploaded: {actual_size_mb:.2f}MB)"
+        super().__init__(detail=detail, status_code=HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+        self.max_size_mb = max_size_mb
+        self.actual_size_mb = actual_size_mb
+
+
+class UnsupportedVideoTypeError(UploadError):
+    """Exception raised when uploaded video type is not supported."""
+
+    def __init__(
+        self,
+        content_type: str,
+        allowed_types: list[str] | None = None,
+    ) -> None:
+        allowed = allowed_types or ["video/mp4", "video/webm", "video/quicktime"]
+        detail = f"Unsupported video type: {content_type}. Allowed types: {', '.join(allowed)}"
+        super().__init__(detail=detail, status_code=HTTP_415_UNSUPPORTED_MEDIA_TYPE)
+        self.content_type = content_type
+        self.allowed_types = allowed
+
+
 # Create exception handler for upload errors
 upload_exception_handler = create_exception_handler(logger)
-

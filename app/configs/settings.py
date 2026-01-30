@@ -225,6 +225,15 @@ class Settings(BaseSettings):
     PROFILE_PICTURE_QUALITY: int = 85
     PROFILE_PICTURE_ALLOWED_TYPES: list[str] = ["image/jpeg", "image/png", "image/webp"]
 
+    # Media Upload Settings (for reviews and blogs)
+    MEDIA_IMAGE_MAX_SIZE_MB: int = 5
+    MEDIA_IMAGE_MAX_COUNT_REVIEW: int = 5
+    MEDIA_IMAGE_MAX_COUNT_BLOG: int = 10
+    MEDIA_VIDEO_MAX_SIZE_MB: int = 50
+    MEDIA_VIDEO_MAX_COUNT_BLOG: int = 3
+    MEDIA_IMAGE_ALLOWED_TYPES: list[str] = ["image/jpeg", "image/png", "image/webp"]
+    MEDIA_VIDEO_ALLOWED_TYPES: list[str] = ["video/mp4", "video/webm", "video/quicktime"]
+
     @field_validator("CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET")
     @classmethod
     def validate_cloudinary_config(cls, v: str | None, info: ValidationInfo) -> str | None:

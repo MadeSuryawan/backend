@@ -108,6 +108,7 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
             status=schema.status if hasattr(schema, "status") and schema.status else "draft",
             tags=schema.tags,
             images_url=[str(url) for url in schema.images_url] if schema.images_url else None,
+            videos_url=[str(url) for url in schema.videos_url] if schema.videos_url else None,
             created_at=datetime.now(tz=UTC).replace(second=0, microsecond=0),
             updated_at=datetime.now(tz=UTC).replace(second=0, microsecond=0),
         )
@@ -222,6 +223,10 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
         if "images_url" in update_data and update_data["images_url"]:
             update_data["images_url"] = [str(url) for url in update_data["images_url"]]
 
+        # Convert video URLs to strings
+        if "videos_url" in update_data and update_data["videos_url"]:
+            update_data["videos_url"] = [str(url) for url in update_data["videos_url"]]
+
         # Recalculate word count and reading time if content is updated
         if "content" in update_data:
             word_count = calculate_word_count(update_data["content"])
@@ -327,3 +332,105 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
 
         result = await self.session.execute(query)
         return list(result.scalars().all())
+
+    async def add_image(self, blog_id: UUID, image_url: str) -> BlogDB | None:
+        """
+        Add an image URL to a blog's images_url list.
+
+        Args:
+            blog_id: Blog UUID
+            image_url: URL of the uploaded image
+
+        Returns:
+            BlogDB | None: Updated blog or None if not found
+        """
+        blog = await self.get_by_id(blog_id)
+        if not blog:
+            return None
+
+        current_images = blog.images_url or []
+        blog.images_url = [*current_images, image_url]
+        blog.updated_at = datetime.now(UTC)
+
+        await self.session.commit()
+        await self.session.refresh(blog)
+        return blog
+
+    async def add_video(self, blog_id: UUID, video_url: str) -> BlogDB | None:
+        """
+        Add a video URL to a blog's videos_url list.
+
+        Args:
+            blog_id: Blog UUID
+            video_url: URL of the uploaded video
+
+        Returns:
+            BlogDB | None: Updated blog or None if not found
+        """
+        blog = await self.get_by_id(blog_id)
+        if not blog:
+            return None
+
+        current_videos = blog.videos_url or []
+        blog.videos_url = [*current_videos, video_url]
+        blog.updated_at = datetime.now(UTC)
+
+        await self.session.commit()
+        await self.session.refresh(blog)
+        return blog
+
+    async def remove_image(self, blog_id: UUID, media_id: str) -> BlogDB | None:
+        """
+        Remove an image URL from a blog.
+
+        Args:
+            blog_id: Blog UUID
+            media_id: Media UUID (part of the URL)
+
+        Returns:
+            BlogDB | None: Updated blog, or None if blog not found
+        """
+        db_blog = await self.get_by_id(blog_id)
+        if not db_blog:
+            return None
+
+        if not db_blog.images_url:
+            return db_blog
+
+        original_count = len(db_blog.images_url)
+        db_blog.images_url = [url for url in db_blog.images_url if media_id not in str(url)]
+
+        if len(db_blog.images_url) < original_count:
+            db_blog.updated_at = datetime.now(tz=UTC).replace(second=0, microsecond=0)
+            await self.session.commit()
+            await self.session.refresh(db_blog)
+
+        return db_blog
+
+    async def remove_video(self, blog_id: UUID, media_id: str) -> BlogDB | None:
+        """
+        Remove a video URL from a blog.
+
+        Args:
+            blog_id: Blog UUID
+            media_id: Media UUID (part of the URL)
+
+        Returns:
+            BlogDB | None: Updated blog, or None if blog not found
+        """
+        db_blog = await self.get_by_id(blog_id)
+        if not db_blog:
+            return None
+
+        if not db_blog.videos_url:
+            return db_blog
+
+        original_count = len(db_blog.videos_url)
+        db_blog.videos_url = [url for url in db_blog.videos_url if media_id not in str(url)]
+
+        if len(db_blog.videos_url) < original_count:
+            db_blog.updated_at = datetime.now(tz=UTC).replace(second=0, microsecond=0)
+            await self.session.commit()
+            await self.session.refresh(db_blog)
+
+        return db_blog
