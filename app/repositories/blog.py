@@ -356,6 +356,48 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
         await self.session.refresh(blog)
         return blog
 
+    async def remove_image_by_media_id(self, blog_id: UUID, media_id: str) -> bool:
+        """Remove an image URL from a blog by media_id."""
+        blog = await self.get_by_id(blog_id)
+        if not blog:
+            return False
+
+        if not blog.images_url:
+            return False
+
+        original = list(blog.images_url)
+        updated = [url for url in original if media_id not in url]
+        if len(updated) == len(original):
+            return False
+
+        blog.images_url = updated or None
+        blog.updated_at = datetime.now(UTC)
+
+        await self.session.commit()
+        await self.session.refresh(blog)
+        return True
+
+    async def remove_video_by_media_id(self, blog_id: UUID, media_id: str) -> bool:
+        """Remove a video URL from a blog by media_id."""
+        blog = await self.get_by_id(blog_id)
+        if not blog:
+            return False
+
+        if not blog.videos_url:
+            return False
+
+        original = list(blog.videos_url)
+        updated = [url for url in original if media_id not in url]
+        if len(updated) == len(original):
+            return False
+
+        blog.videos_url = updated or None
+        blog.updated_at = datetime.now(UTC)
+
+        await self.session.commit()
+        await self.session.refresh(blog)
+        return True
+
     async def add_video(self, blog_id: UUID, video_url: str) -> BlogDB | None:
         """
         Add a video URL to a blog's videos_url list.

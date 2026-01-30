@@ -150,6 +150,28 @@ class ReviewRepository(BaseRepository[ReviewDB, ReviewCreate, ReviewUpdate]):
         await self.session.refresh(db_review)
         return db_review
 
+    async def remove_image_by_media_id(self, review_id: UUID, media_id: str) -> bool:
+        """Remove an image URL from a review by media_id."""
+        db_review = await self.get_by_id(review_id)
+        if not db_review:
+            return False
+
+        if not db_review.images_url:
+            return False
+
+        original = list(db_review.images_url)
+        updated = [url for url in original if media_id not in url]
+
+        if len(updated) == len(original):
+            return False
+
+        db_review.images_url = updated or None
+        db_review.updated_at = datetime.now(tz=UTC).replace(second=0, microsecond=0)
+
+        await self.session.commit()
+        await self.session.refresh(db_review)
+        return True
+
     async def add_image(self, review_id: UUID, image_url: str) -> ReviewDB | None:
         """Add an image URL to a review."""
         db_review = await self.get_by_id(review_id)

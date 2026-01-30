@@ -1350,7 +1350,7 @@ async def upload_blog_image(
     media_service = MediaService()
 
     try:
-        url = await media_service.upload_blog_image(
+        media_id, url = await media_service.upload_blog_image(
             blog_id=str(blog_id),
             file=file,
             current_count=current_count,
@@ -1366,7 +1366,7 @@ async def upload_blog_image(
 
     await repo.add_image(blog_id, url)
 
-    return MediaUploadResponse(url=url, mediaType="image")
+    return MediaUploadResponse(mediaId=media_id, url=url, mediaType="image")
 
 
 @router.post(
@@ -1401,7 +1401,7 @@ async def upload_blog_video(
     media_service = MediaService()
 
     try:
-        url = await media_service.upload_blog_video(
+        media_id, url = await media_service.upload_blog_video(
             blog_id=str(blog_id),
             file=file,
             current_count=current_count,
@@ -1415,4 +1415,63 @@ async def upload_blog_video(
 
     await repo.add_video(blog_id, url)
 
-    return MediaUploadResponse(url=url, mediaType="video")
+    return MediaUploadResponse(mediaId=media_id, url=url, mediaType="video")
+
+
+@router.delete(
+    "/{blog_id}/media/{media_id}",
+    status_code=HTTP_204_NO_CONTENT,
+    summary="Delete media from a blog",
+    operation_id="blogs_delete_media",
+)
+@timed("/blogs/{blog_id}/media")
+@limiter.limit("10/minute")
+async def delete_blog_media(
+    request: Request,
+    blog_id: UUID,
+    media_id: str,
+    repo: BlogRepoDep,
+    current_user: UserDBDep,
+) -> None:
+    """Delete an image/video from a blog post (author/admin only)."""
+    db_blog = await repo.get_by_id(blog_id)
+    if not db_blog:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Blog not found")
+
+    check_owner_or_admin(db_blog.author_id, current_user)
+
+    folder: str | None = None
+    if db_blog.images_url and any(f"/{media_id}" in url for url in db_blog.images_url):
+        folder = "blog_images"
+    if (
+        folder is None
+        and db_blog.videos_url
+        and any(f"/{media_id}" in url for url in db_blog.videos_url)
+    ):
+        folder = "blog_videos"
+
+    if folder is None:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Media not found")
+
+    media_service = MediaService()
+    deleted = await media_service.delete_media(
+        folder=folder,
+        entity_id=str(blog_id),
+        media_id=media_id,
+    )
+    if not deleted:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Media not found")
+
+    if folder == "blog_images":
+        removed = await repo.remove_image_by_media_id(
+            blog_id,
+            media_id,
+        )
+    else:
+        removed = await repo.remove_video_by_media_id(
+            blog_id,
+            media_id,
+        )
+
+    if not removed:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Media not found")

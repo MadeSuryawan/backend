@@ -164,3 +164,78 @@ class TestLocalStorage:
         """Test URL retrieval when no picture exists."""
         url = await local_storage.get_profile_picture_url("nonexistent-user")
         assert url is None
+
+    @pytest.mark.asyncio
+    async def test_upload_media_image_success(
+        self,
+        local_storage: LocalStorage,
+        sample_image_bytes: bytes,
+    ) -> None:
+        """Test successful media image upload."""
+        folder = "review_images"
+        entity_id = "review-123"
+        media_id = "media-abc"
+
+        url = await local_storage.upload_media(
+            folder=folder,
+            entity_id=entity_id,
+            media_id=media_id,
+            file_data=sample_image_bytes,
+            content_type="image/jpeg",
+        )
+
+        assert url == f"/uploads/{folder}/{entity_id}/{media_id}.jpg"
+        expected_path = local_storage.base_path.parent / folder / entity_id / f"{media_id}.jpg"
+        assert expected_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_upload_media_video_success(
+        self,
+        local_storage: LocalStorage,
+    ) -> None:
+        """Test successful media video upload."""
+        folder = "blog_videos"
+        entity_id = "blog-123"
+        media_id = "media-vid"
+        video_bytes = b"0" * 1024
+
+        url = await local_storage.upload_media(
+            folder=folder,
+            entity_id=entity_id,
+            media_id=media_id,
+            file_data=video_bytes,
+            content_type="video/mp4",
+        )
+
+        assert url == f"/uploads/{folder}/{entity_id}/{media_id}.mp4"
+        expected_path = local_storage.base_path.parent / folder / entity_id / f"{media_id}.mp4"
+        assert expected_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_media_success(
+        self,
+        local_storage: LocalStorage,
+        sample_image_bytes: bytes,
+    ) -> None:
+        """Test successful media deletion."""
+        folder = "review_images"
+        entity_id = "review-del"
+        media_id = "media-del"
+
+        await local_storage.upload_media(
+            folder=folder,
+            entity_id=entity_id,
+            media_id=media_id,
+            file_data=sample_image_bytes,
+            content_type="image/jpeg",
+        )
+
+        deleted = await local_storage.delete_media(
+            folder=folder,
+            entity_id=entity_id,
+            media_id=media_id,
+        )
+
+        assert deleted is True
+        expected_path = local_storage.base_path.parent / folder / entity_id / f"{media_id}.jpg"
+        assert not expected_path.exists()

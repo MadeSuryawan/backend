@@ -94,6 +94,10 @@ class MediaUploadResponse(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
+    media_id: str = Field(alias="mediaId", description="ID of uploaded media")
     url: HttpUrl = Field(description="URL of the uploaded media")
-    media_type: str = Field(alias="mediaType", description="Type of media (image/video)")
-
+    media_type: str | None = Field(
+        default=None,
+        alias="mediaType",
+        description="Type of media (image/video)",
+    )

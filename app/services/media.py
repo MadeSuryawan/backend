@@ -116,7 +116,7 @@ class MediaService:
         review_id: str,
         file: UploadFile,
         current_count: int,
-    ) -> str:
+    ) -> tuple[str, str]:
         """
         Upload an image for a review.
 
@@ -126,7 +126,7 @@ class MediaService:
             current_count: Current number of images on the review
 
         Returns:
-            str: URL to the uploaded image
+            tuple[str, str]: (media_id, url)
         """
         if current_count >= self.image_max_count_review:
             raise MediaLimitExceededError(
@@ -141,20 +141,21 @@ class MediaService:
         processed_data, content_type = self._process_image(img)
 
         media_id = str(uuid4())
-        return await self.storage.upload_media(
+        url = await self.storage.upload_media(
             folder="review_images",
             entity_id=review_id,
             media_id=media_id,
             file_data=processed_data,
             content_type=content_type,
         )
+        return media_id, url
 
     async def upload_blog_image(
         self,
         blog_id: str,
         file: UploadFile,
         current_count: int,
-    ) -> str:
+    ) -> tuple[str, str]:
         """
         Upload an image for a blog.
 
@@ -164,7 +165,7 @@ class MediaService:
             current_count: Current number of images on the blog
 
         Returns:
-            str: URL to the uploaded image
+            tuple[str, str]: (media_id, url)
         """
         if current_count >= self.image_max_count_blog:
             raise MediaLimitExceededError(
@@ -179,20 +180,21 @@ class MediaService:
         processed_data, content_type = self._process_image(img)
 
         media_id = str(uuid4())
-        return await self.storage.upload_media(
+        url = await self.storage.upload_media(
             folder="blog_images",
             entity_id=blog_id,
             media_id=media_id,
             file_data=processed_data,
             content_type=content_type,
         )
+        return media_id, url
 
     async def upload_blog_video(
         self,
         blog_id: str,
         file: UploadFile,
         current_count: int,
-    ) -> str:
+    ) -> tuple[str, str]:
         """
         Upload a video for a blog.
 
@@ -202,7 +204,7 @@ class MediaService:
             current_count: Current number of videos on the blog
 
         Returns:
-            str: URL to the uploaded video
+            tuple[str, str]: (media_id, url)
         """
         if current_count >= self.video_max_count_blog:
             raise MediaLimitExceededError(
@@ -215,13 +217,14 @@ class MediaService:
         self._validate_video_size(file_data)
 
         media_id = str(uuid4())
-        return await self.storage.upload_media(
+        url = await self.storage.upload_media(
             folder="blog_videos",
             entity_id=blog_id,
             media_id=media_id,
             file_data=file_data,
             content_type=file.content_type or "video/mp4",
         )
+        return media_id, url
 
     async def delete_media(
         self,

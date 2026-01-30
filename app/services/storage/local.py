@@ -22,7 +22,8 @@ class LocalStorage:
 
     def __init__(self) -> None:
         """Initialize local storage with configured paths."""
-        self.base_path = settings.UPLOADS_DIR / "profile_pictures"
+        self.uploads_dir = settings.UPLOADS_DIR
+        self.base_path = self.uploads_dir / "profile_pictures"
         self._ensure_directory()
 
     def _ensure_directory(self) -> None:
@@ -166,7 +167,7 @@ class LocalStorage:
             str: URL path to the uploaded media
         """
         # Create folder structure: uploads/{folder}/{entity_id}/
-        media_dir = settings.UPLOADS_DIR / folder / entity_id
+        media_dir = self.uploads_dir / folder / entity_id
         media_dir.mkdir(parents=True, exist_ok=True)
 
         extension = self._get_media_extension(content_type)
@@ -194,7 +195,7 @@ class LocalStorage:
         Returns:
             bool: True if deletion was successful, False otherwise
         """
-        media_dir = settings.UPLOADS_DIR / folder / entity_id
+        media_dir = self.uploads_dir / folder / entity_id
 
         # Check for all possible extensions
         for ext in ["jpg", "png", "webp", "mp4", "webm", "mov"]:
