@@ -848,7 +848,7 @@ async def delete_user(
 )
 async def upload_profile_picture(
     request: Request,
-    response: Response,  # noqa: ARG001 - Required by decorators
+    response: Response,
     user_id: UUID,
     file: UploadFile,
     deps: Annotated[UserOpsDeps, Depends()],
@@ -952,7 +952,7 @@ async def upload_profile_picture(
 )
 async def delete_profile_picture(
     request: Request,
-    response: Response,  # noqa: ARG001 - Required by decorators
+    response: Response,
     user_id: UUID,
     deps: Annotated[UserOpsDeps, Depends()],
 ) -> None:

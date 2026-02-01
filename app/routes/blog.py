@@ -29,9 +29,10 @@ limits apply when `X-API-Key` is present, offering higher throughput for
 authenticated/identified clients.
 """
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from logging import getLogger
-from typing import Annotated, Literal, cast
+from typing import Annotated, Literal, Never, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, UploadFile
@@ -76,6 +77,7 @@ logger = file_logger(getLogger(__name__))
 class BlogOpsDeps:
     """Dependencies for authenticated blog operations."""
 
+    blog_id: UUID
     repo: BlogRepoDep
     current_user: UserDBDep
 
@@ -112,6 +114,41 @@ class BustListGridQuery:
 
     limits: list[int]
     skips: list[int]
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+
+def _404_not_found(value: UUID | str, by: str = "id") -> Never:
+    raise HTTPException(status_code=404, detail=f"Blog with {by} '{value}' not found")
+
+
+async def _get_blog_or_404(blog_id: UUID, repo: BlogRepoDep) -> BlogDB:
+    """
+    Get a blog by ID or raise a 404 error.
+
+    Parameters
+    ----------
+    blog_id : UUID
+        The ID of the blog to retrieve.
+    repo : BlogRepoDep
+        The blog repository.
+
+    Returns
+    -------
+    BlogDB
+        The blog entity.
+
+    Raises
+    ------
+    HTTPException
+        404 if the blog is not found.
+    """
+    if not (blog := await repo.get_by_id(blog_id)):
+        _404_not_found(blog_id, by="id")
+    return blog
 
 
 def db_blog_to_response(db_blog: BlogDB) -> BlogResponse:
@@ -269,6 +306,68 @@ def blogs_search_tags_key(tags: list[str], pagination: PaginationQuery) -> str:
     return f"blogs_search_{tags_part}_{pagination.skip}_{pagination.limit}"
 
 
+async def delete_cache_keys(
+    existing: BlogDB,
+    db_blog: BlogDB | None,
+    request: Request,
+) -> None:
+    """
+    Delete cache keys for a blog.
+
+    Parameters
+    ----------
+    existing : BlogDB
+        Existing blog entity.
+    db_blog : BlogDB | None
+        Database blog entity.
+    request : Request
+        Request object.
+    """
+    keys: list[str] = []
+    keys.extend(
+        [
+            blog_slug_key(existing.slug),
+            blogs_by_author_key(existing.author_id, PaginationQuery(skip=0, limit=10)),
+            blogs_list_key(
+                BlogListQuery(
+                    skip=0,
+                    limit=10,
+                    status_filter=cast(
+                        Literal["draft", "published", "archived"] | None,
+                        existing.status,
+                    ),
+                ),
+            ),
+            blogs_search_tags_key(existing.tags, PaginationQuery(skip=0, limit=10)),
+        ],
+    )
+    if db_blog:
+        keys.extend(
+            [
+                blog_slug_key(db_blog.slug),
+                blogs_by_author_key(db_blog.author_id, PaginationQuery(skip=0, limit=10)),
+                blogs_list_key(
+                    BlogListQuery(
+                        skip=0,
+                        limit=10,
+                        status_filter=cast(
+                            Literal["draft", "published", "archived"] | None,
+                            db_blog.status,
+                        ),
+                    ),
+                ),
+                blogs_search_tags_key(db_blog.tags, PaginationQuery(skip=0, limit=10)),
+            ],
+        )
+    if keys:
+        await get_cache_manager(request).delete(*keys, namespace="blogs")
+
+
+# =============================================================================
+# Blog Endpoints
+# =============================================================================
+
+
 @router.post(
     "/create",
     response_class=ORJSONResponse,
@@ -371,10 +470,13 @@ async def create_blog(
         db_blog = await repo.create(blog_full, author_id=blog.author_id)
         return db_blog_to_response(db_blog)
     except DuplicateEntryError as e:
+        logger.exception(f"Duplicate slug '{blog.slug}' detected on blog creation")
         raise HTTPException(status_code=HTTP_409_CONFLICT, detail=e.detail) from e
     except DatabaseError as e:
+        logger.exception("Database error on blog creation")
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail) from e
     except ValueError as e:
+        logger.exception("Value error on blog creation")
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
 
@@ -444,12 +546,8 @@ async def get_blog(
     HTTPException
         If blog not found.
     """
-    db_blog = await repo.increment_view_count(blog_id)
-    if not db_blog:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"Blog with ID {blog_id} not found",
-        )
+    if not (db_blog := await repo.increment_view_count(blog_id)):
+        _404_not_found(blog_id, by="id")
     return db_blog_to_response(db_blog)
 
 
@@ -525,12 +623,8 @@ async def get_blog_by_slug(
     HTTPException
         If blog not found.
     """
-    db_blog = await repo.get_by_slug(slug)
-    if not db_blog:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"Blog with slug '{slug}' not found",
-        )
+    if not (db_blog := await repo.get_by_slug(slug)):
+        _404_not_found(slug, by="slug")
     return db_blog_to_response(db_blog)
 
 
@@ -828,7 +922,6 @@ async def search_blogs_by_tags(
 async def update_blog(
     request: Request,
     response: Response,
-    blog_id: UUID,
     blog_update: Annotated[
         BlogUpdate,
         Body(
@@ -854,12 +947,10 @@ async def update_blog(
         Current request context.
     response : Response
         Response object for middleware/decorators.
-    blog_id : UUID
-        Blog identifier.
     blog_update : BlogUpdate
         Partial update payload.
     deps : BlogOpsDeps
-        Operation dependencies (repo + current_user).
+        Operation dependencies (blog_id + repo + current_user).
 
     Returns
     -------
@@ -871,62 +962,14 @@ async def update_blog(
     HTTPException
         If blog not found or invalid update.
     """
-    try:
-        existing = await deps.repo.get_by_id(blog_id)
-        if not existing:
-            raise HTTPException(
-                status_code=HTTP_404_NOT_FOUND,
-                detail=f"Blog with ID {blog_id} not found",
-            )
-        # Check if user is owner or admin
-        check_owner_or_admin(existing.author_id, deps.current_user, "blog")
-        db_blog = await deps.repo.update(blog_id, blog_update)
-        if not db_blog:
-            raise HTTPException(
-                status_code=HTTP_404_NOT_FOUND,
-                detail=f"Blog with ID {blog_id} not found",
-            )
-        keys: list[str] = []
-        if existing:
-            keys.extend(
-                [
-                    blog_slug_key(existing.slug),
-                    blogs_by_author_key(existing.author_id, PaginationQuery(skip=0, limit=10)),
-                    blogs_list_key(
-                        BlogListQuery(
-                            skip=0,
-                            limit=10,
-                            status_filter=cast(
-                                Literal["draft", "published", "archived"] | None,
-                                existing.status,
-                            ),
-                        ),
-                    ),
-                    blogs_search_tags_key(existing.tags, PaginationQuery(skip=0, limit=10)),
-                ],
-            )
-        keys.extend(
-            [
-                blog_slug_key(db_blog.slug),
-                blogs_by_author_key(db_blog.author_id, PaginationQuery(skip=0, limit=10)),
-                blogs_list_key(
-                    BlogListQuery(
-                        skip=0,
-                        limit=10,
-                        status_filter=cast(
-                            Literal["draft", "published", "archived"] | None,
-                            db_blog.status,
-                        ),
-                    ),
-                ),
-                blogs_search_tags_key(db_blog.tags, PaginationQuery(skip=0, limit=10)),
-            ],
-        )
-        if keys:
-            await get_cache_manager(request).delete(*keys, namespace="blogs")
-        return db_blog_to_response(db_blog)
-    except ValueError as e:
-        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    existing = await _get_blog_or_404(deps.blog_id, deps.repo)
+    check_owner_or_admin(existing.author_id, deps.current_user, "blog")
+
+    if not (db_blog := await deps.repo.update(deps.blog_id, blog_update)):
+        _404_not_found(deps.blog_id, by="id")
+
+    await delete_cache_keys(existing, db_blog, request)
+    return db_blog_to_response(db_blog)
 
 
 @router.delete(
@@ -961,9 +1004,7 @@ async def update_blog(
 async def delete_blog(
     request: Request,
     response: Response,
-    blog_id: UUID,
-    repo: BlogRepoDep,
-    current_user: UserDBDep,
+    deps: Annotated[BlogOpsDeps, Depends()],
 ) -> None:
     """
     Delete blog by ID.
@@ -974,49 +1015,26 @@ async def delete_blog(
         Current request context.
     response : Response
         Response object for middleware/decorators.
-    blog_id : UUID
-        Blog identifier.
-    repo : BlogRepository
-        Repository dependency.
-    current_user : UserDB
-        Authenticated user.
+    deps : BlogOpsDeps
+        Operation dependencies (blog_id + repo + current_user).
 
     Raises
     ------
     HTTPException
         If blog not found.
     """
-    existing = await repo.get_by_id(blog_id)
-    if not existing:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"Blog with ID {blog_id} not found",
-        )
-    # Check if user is owner or admin
-    check_owner_or_admin(existing.author_id, current_user, "blog")
-    deleted = await repo.delete(blog_id)
-    if not deleted:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"Blog with ID {blog_id} not found",
-        )
-    if existing:
-        keys = [
-            blog_slug_key(existing.slug),
-            blogs_by_author_key(existing.author_id, PaginationQuery(skip=0, limit=10)),
-            blogs_list_key(
-                BlogListQuery(
-                    skip=0,
-                    limit=10,
-                    status_filter=cast(
-                        Literal["draft", "published", "archived"] | None,
-                        existing.status,
-                    ),
-                ),
-            ),
-            blogs_search_tags_key(existing.tags, PaginationQuery(skip=0, limit=10)),
-        ]
-        await get_cache_manager(request).delete(*keys, namespace="blogs")
+    existing = await _get_blog_or_404(deps.blog_id, deps.repo)
+    check_owner_or_admin(existing.author_id, deps.current_user, "blog")
+
+    if not await deps.repo.delete(deps.blog_id):
+        _404_not_found(deps.blog_id, by="id")
+
+    await delete_cache_keys(existing, None, request)
+
+
+# =============================================================================
+# Cache Busting Endpoints
+# =============================================================================
 
 
 @router.post(
@@ -1314,131 +1332,56 @@ async def bust_blogs_all(
 
 
 # =============================================================================
-# Media Upload Endpoints
+# Media Helper Functions
 # =============================================================================
 
-
-@router.post(
-    "/{blog_id}/images",
-    response_class=ORJSONResponse,
-    status_code=HTTP_201_CREATED,
-    summary="Upload an image to a blog",
-    operation_id="blogs_upload_image",
+MediaUploadFunc = Callable[[str, UploadFile, int], Awaitable[tuple[str, str]]]
+RepoAddFunc = Callable[[UUID, str], Awaitable[None]]
+UPLOAD_EXCEPTIONS = (
+    UnsupportedImageTypeError,
+    ImageTooLargeError,
+    InvalidImageError,
+    ImageProcessingError,
+    MediaLimitExceededError,
+    UnsupportedVideoTypeError,
+    VideoTooLargeError,
 )
-@timed("/blogs/{blog_id}/images")
-@limiter.limit("10/minute")
-async def upload_blog_image(
-    request: Request,
+
+
+async def _upload_media(
+    db_blog: BlogDB,
+    repo: BlogRepoDep,
     blog_id: UUID,
     file: UploadFile,
-    repo: BlogRepoDep,
-    current_user: UserDBDep,
+    media_type: Literal["image", "video"],
 ) -> MediaUploadResponse:
-    """
-    Upload an image to a blog post.
+    """Upload media (image/video) to a blog post."""
 
-    Only the blog author or admin can upload images.
-    Maximum 10 images per blog post.
-    """
-    db_blog = await repo.get_by_id(blog_id)
-    if not db_blog:
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Blog not found")
+    current_count = 0
+    if url_list := getattr(db_blog, f"{media_type}s_url"):
+        current_count = len(url_list)
 
-    check_owner_or_admin(db_blog.author_id, current_user)
-
-    current_count = len(db_blog.images_url) if db_blog.images_url else 0
     media_service = MediaService()
+    media_func: MediaUploadFunc = getattr(media_service, f"upload_blog_{media_type}")
+    repo_func: RepoAddFunc = getattr(repo, f"add_{media_type}")
 
     try:
-        media_id, url = await media_service.upload_blog_image(
-            blog_id=str(blog_id),
-            file=file,
-            current_count=current_count,
-        )
-    except (
-        UnsupportedImageTypeError,
-        ImageTooLargeError,
-        InvalidImageError,
-        ImageProcessingError,
-        MediaLimitExceededError,
-    ) as e:
+        media_id, url = await media_func(f"{blog_id}", file, current_count)
+    except UPLOAD_EXCEPTIONS as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail) from e
 
-    await repo.add_image(blog_id, url)
+    await repo_func(blog_id, url)
 
-    return MediaUploadResponse(mediaId=media_id, url=url, mediaType="image")
+    return MediaUploadResponse(mediaId=media_id, url=url, mediaType=media_type)
 
 
-@router.post(
-    "/{blog_id}/videos",
-    response_class=ORJSONResponse,
-    status_code=HTTP_201_CREATED,
-    summary="Upload a video to a blog",
-    operation_id="blogs_upload_video",
-)
-@timed("/blogs/{blog_id}/videos")
-@limiter.limit("5/minute")
-async def upload_blog_video(
-    request: Request,
-    blog_id: UUID,
-    file: UploadFile,
+async def _delete_media(
+    db_blog: BlogDB,
     repo: BlogRepoDep,
-    current_user: UserDBDep,
-) -> MediaUploadResponse:
-    """
-    Upload a video to a blog post.
-
-    Only the blog author or admin can upload videos.
-    Maximum 3 videos per blog post.
-    """
-    db_blog = await repo.get_by_id(blog_id)
-    if not db_blog:
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Blog not found")
-
-    check_owner_or_admin(db_blog.author_id, current_user)
-
-    current_count = len(db_blog.videos_url) if db_blog.videos_url else 0
-    media_service = MediaService()
-
-    try:
-        media_id, url = await media_service.upload_blog_video(
-            blog_id=str(blog_id),
-            file=file,
-            current_count=current_count,
-        )
-    except (
-        UnsupportedVideoTypeError,
-        VideoTooLargeError,
-        MediaLimitExceededError,
-    ) as e:
-        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
-
-    await repo.add_video(blog_id, url)
-
-    return MediaUploadResponse(mediaId=media_id, url=url, mediaType="video")
-
-
-@router.delete(
-    "/{blog_id}/media/{media_id}",
-    status_code=HTTP_204_NO_CONTENT,
-    summary="Delete media from a blog",
-    operation_id="blogs_delete_media",
-)
-@timed("/blogs/{blog_id}/media")
-@limiter.limit("10/minute")
-async def delete_blog_media(
-    request: Request,
     blog_id: UUID,
     media_id: str,
-    repo: BlogRepoDep,
-    current_user: UserDBDep,
 ) -> None:
-    """Delete an image/video from a blog post (author/admin only)."""
-    db_blog = await repo.get_by_id(blog_id)
-    if not db_blog:
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Blog not found")
-
-    check_owner_or_admin(db_blog.author_id, current_user)
+    """Delete media (image/video) from a blog post."""
 
     folder: str | None = None
     if db_blog.images_url and any(f"/{media_id}" in url for url in db_blog.images_url):
@@ -1475,3 +1418,103 @@ async def delete_blog_media(
 
     if not removed:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Media not found")
+
+
+# =============================================================================
+# Media Upload Endpoints
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class MediaUpDeps:
+    """Dependencies for authenticated media operations."""
+
+    blog_id: UUID
+    file: UploadFile
+    repo: BlogRepoDep
+    current_user: UserDBDep
+
+
+@dataclass(frozen=True)
+class MediaDelDeps:
+    """Dependencies for authenticated media operations."""
+
+    blog_id: UUID
+    media_id: str
+    repo: BlogRepoDep
+    current_user: UserDBDep
+
+
+@router.post(
+    "/{blog_id}/images",
+    response_class=ORJSONResponse,
+    status_code=HTTP_201_CREATED,
+    summary="Upload an image to a blog",
+    operation_id="blogs_upload_image",
+)
+@timed("/blogs/{blog_id}/images")
+@limiter.limit("10/minute")
+async def upload_blog_image(
+    request: Request,
+    response: Response,
+    deps: Annotated[MediaUpDeps, Depends()],
+) -> MediaUploadResponse:
+    """
+    Upload an image to a blog post.
+
+    Only the blog author or admin can upload images.
+    Maximum 10 images per blog post.
+    """
+    db_blog = await _get_blog_or_404(deps.blog_id, deps.repo)
+
+    check_owner_or_admin(db_blog.author_id, deps.current_user)
+
+    return await _upload_media(db_blog, deps.repo, deps.blog_id, deps.file, "image")
+
+
+@router.post(
+    "/{blog_id}/videos",
+    response_class=ORJSONResponse,
+    status_code=HTTP_201_CREATED,
+    summary="Upload a video to a blog",
+    operation_id="blogs_upload_video",
+)
+@timed("/blogs/{blog_id}/videos")
+@limiter.limit("5/minute")
+async def upload_blog_video(
+    request: Request,
+    response: Response,
+    deps: Annotated[MediaUpDeps, Depends()],
+) -> MediaUploadResponse:
+    """
+    Upload a video to a blog post.
+
+    Only the blog author or admin can upload videos.
+    Maximum 3 videos per blog post.
+    """
+    db_blog = await _get_blog_or_404(deps.blog_id, deps.repo)
+
+    check_owner_or_admin(db_blog.author_id, deps.current_user)
+
+    return await _upload_media(db_blog, deps.repo, deps.blog_id, deps.file, "video")
+
+
+@router.delete(
+    "/{blog_id}/media/{media_id}",
+    status_code=HTTP_204_NO_CONTENT,
+    summary="Delete media from a blog",
+    operation_id="blogs_delete_media",
+)
+@timed("/blogs/{blog_id}/media")
+@limiter.limit("10/minute")
+async def delete_blog_media(
+    request: Request,
+    response: Response,
+    deps: Annotated[MediaDelDeps, Depends()],
+) -> None:
+    """Delete an image/video from a blog post (author/admin only)."""
+    db_blog = await _get_blog_or_404(deps.blog_id, deps.repo)
+
+    check_owner_or_admin(db_blog.author_id, deps.current_user)
+
+    await _delete_media(db_blog, deps.repo, deps.blog_id, deps.media_id)
