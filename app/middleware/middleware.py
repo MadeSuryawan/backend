@@ -17,7 +17,6 @@ from time import perf_counter
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pythonjsonlogger.json import JsonFormatter
 from rich.logging import RichHandler
 from rich.traceback import install
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -32,9 +31,6 @@ from app.managers.rate_limiter import close_limiter
 from app.managers.token_blacklist import init_token_blacklist
 from app.utils.helpers import file_logger, get_summary, host
 
-if log_to_file := settings.LOG_TO_FILE:
-    Path("logs").mkdir(parents=True, exist_ok=True)
-
 # --- Logging Configuration ---
 basicConfig(
     level="NOTSET",
@@ -44,8 +40,6 @@ basicConfig(
 )
 logger = getLogger("rich")
 file_logger(logger)
-for handler in logger.handlers:
-    handler.setFormatter(JsonFormatter())
 
 install()
 
@@ -59,7 +53,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Initialize services
     try:
-        if log_to_file:
+        if settings.LOG_TO_FILE:
+            Path("logs").mkdir(parents=True, exist_ok=True)
             logger.info("Logging to file enabled.")
 
         await init_db()
