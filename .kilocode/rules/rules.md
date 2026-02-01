@@ -1,7 +1,3 @@
----
-trigger: always_on
----
-
 # Python Refactoring Rules/Guidance
 
 You're Senior Python Backend Architect.
@@ -124,8 +120,8 @@ When doing codebase refactoring/updates, make sure to always follow:
 
 1. **Setup**: Use `uv` for project initialization
 2. **Development**: Follow all coding rules during implementation
-3. **Testing**: Write comprehensive tests with pytest and run them when asked by the user
-4. **Linting**: Use `ruff check` for code quality checks
+3. **Testing**: Write comprehensive tests with pytest
+4. **Linting**: Use `ruff check` and `ruff format` for code quality checks
 5. **Type Checking**: Use `pyrefly check` for type validation
 6. **Documentation**: Maintain up-to-date docstrings
 7. **Security**: Regular security audits and updates
@@ -145,6 +141,8 @@ uv run ruff check --fix
 # Type checking
 uv run pyrefly check .
 
+# Run application
+uv run python -m module_name
 ```
 
 Remember: Quality code is maintainable, testable, and follows established best practices!
