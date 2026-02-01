@@ -18,7 +18,7 @@ Refactor the existing custom monitoring solution to a robust, production-grade O
 * **Action:**
     1. Install `prometheus-client` and `prometheus-fastapi-instrumentator`.
     2. Create `app/monitoring/prometheus.py`.
-    3. Implement the `Instrumentator` to expose metrics at `/metrics`.
+    3. Implement the `Instrumentator` using `lifespan` async context manager (not deprecated `@app.on_event`).
     4. **Refactor:** Deprecate or modify the existing `app/managers/metrics.py`. Instead of manual counters, custom logic should update Prometheus Gauges/Counters.
     5. **Custom Metrics:** Ensure the following are tracked via Prometheus:
         * Cache Hit/Miss Rates.
@@ -29,28 +29,35 @@ Refactor the existing custom monitoring solution to a robust, production-grade O
 ### **Phase 2: Structured Logging (Structlog)**
 
 * **Action:**
-    1. Install `structlog`.
+    1. Install `structlog` and `orjson`.
     2. Create `app/monitoring/logging.py` to configure `structlog`.
     3. **Requirements:**
-        * Output must be JSON formatted for production.
+        * Output must be JSON formatted for production (use `orjson` for performance).
         * Include `request_id` (correlation ID) in every log entry.
         * Include context (User ID, IP) where available.
+        * Use `structlog.contextvars.merge_contextvars` processor for async context propagation.
+        * Inject OpenTelemetry trace context (`trace_id`, `span_id`) into logs for trace-log correlation.
     4. **Refactor:** Replace `LoggingMiddleware` in `app/middleware/middleware.py` to use `structlog`. Update `file_logger` utility to be compatible or replace it.
 
 ### **Phase 3: Distributed Tracing (OpenTelemetry)**
 
 * **Action:**
-    1. Install `opentelemetry-api`, `opentelemetry-sdk`, `opentelemetry-instrumentation-fastapi`.
+    1. Install `opentelemetry-api`, `opentelemetry-sdk`, `opentelemetry-instrumentation-fastapi`, `opentelemetry-exporter-otlp`.
     2. Create `app/monitoring/tracing.py`.
     3. Configure the `TracerProvider` and `BatchSpanProcessor`.
     4. Instrument the FastAPI app in `app/main.py`.
-    5. *Goal:* Ensure traces connect HTTP requests to internal Database/Redis calls (where libraries support auto-instrumentation).
+    5. Configure `OTEL_PYTHON_FASTAPI_EXCLUDED_URLS` to exclude `/metrics,/health.*` from tracing.
+    6. Configure sampling rate via environment variable (`OTEL_TRACES_SAMPLER_ARG`) for production cost control.
+    7. *Goal:* Ensure traces connect HTTP requests to internal Database/Redis calls (where libraries support auto-instrumentation).
 
-### **Phase 4: Enhanced Health Checks**
+### **Phase 4: Enhanced Health Checks (Kubernetes-Compatible)**
 
 * **Action:**
-    1. Refactor the `/health` endpoint in `app/main.py`.
-    2. Add specific checks for:
+    1. Implement Kubernetes-compatible health endpoints:
+        * `/health/live` (Liveness): Basic app responsiveness check only—**no external dependencies**. Kubernetes restarts pod on failure.
+        * `/health/ready` (Readiness): Database, Redis, and dependency checks. Kubernetes stops routing traffic on failure.
+        * `/health` (optional): Combined status for backward compatibility.
+    2. Specific checks for **readiness** endpoint:
         * **Database:** Execute a `SELECT 1` (using `app.db` or `sqlmodel`).
         * **Redis:** Ping check.
         * **System:** Disk space & Memory usage (utilize logic from `app/managers/metrics.py` if needed).
@@ -65,14 +72,15 @@ Refactor the existing custom monitoring solution to a robust, production-grade O
 * **Optional Tracing:**
   * Ensure that if the OpenTelemetry Collector endpoint (Jaeger/Zipkin) is unreachable, the app **does not crash**. It should simply log a warning or fail silently.
 * **Docker:**
-  * Add Prometheus/Grafana/Jaeger to `docker-compose.yaml` but ensure they are **not required** for the `backend` service to start healthy.
+  * Add an **OTLP Collector** to `docker-compose.yaml` as the single telemetry gateway. Optionally add Prometheus/Jaeger behind it for local visualization.
+  * Ensure observability services are **not required** for the `backend` service to start healthy.
 
 ## **Dependencies to Add:**
 
 Run the following before coding:
 
 ```bash
-uv add prometheus-client prometheus-fastapi-instrumentator structlog opentelemetry-api opentelemetry-sdk opentelemetry-instrumentation-fastapi
+uv add prometheus-client prometheus-fastapi-instrumentator structlog orjson opentelemetry-api opentelemetry-sdk opentelemetry-instrumentation-fastapi opentelemetry-exporter-otlp
 ```
 
 ## **Deliverables:**
