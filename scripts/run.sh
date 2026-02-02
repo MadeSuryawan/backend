@@ -16,6 +16,7 @@ PROJECT_NAME="baliblissed"
 
 DB_NAME=""
 DB_USER=""
+IS_NEON=false
 
 PID_FILE="uvicorn.pid"
 
@@ -47,13 +48,41 @@ load_env() {
     fi
 }
 
+# Detect if using Neon Postgres (cloud-hosted)
+is_neon_postgres() {
+    if echo "$DATABASE_URL" | grep -q "neon.tech"; then
+        return 0  # true - is Neon
+    else
+        return 1  # false - not Neon
+    fi
+}
+
+# Convert asyncpg URL to standard psql URL for CLI tools
+# Transforms: postgresql+asyncpg://... -> postgresql://...
+# Also converts ssl=require to sslmode=require (psql CLI syntax)
+get_psql_url() {
+    echo "$DATABASE_URL" | sed 's/postgresql+asyncpg/postgresql/' | sed 's/ssl=require/sslmode=require/'
+}
+
 # Extract database name from DATABASE_URL
+# Handles both local and Neon connection strings with ?ssl=require
 get_db_name() {
-    DB_NAME=$(echo $DATABASE_URL | sed -n 's/.*\/\([^?]*\).*/\1/p')
-    DB_USER=$(echo $DATABASE_URL | sed -n 's/.*:\/\/\([^:]*\):.*/\1/p')
+    # Extract DB name (handles ?ssl=require suffix)
+    DB_NAME=$(echo "$DATABASE_URL" | sed -n 's/.*\/\([^?]*\).*/\1/p')
+    # Extract username from URL
+    DB_USER=$(echo "$DATABASE_URL" | sed -n 's/.*:\/\/\([^:]*\):.*/\1/p')
     
+    # Set Neon flag for use throughout script
+    if is_neon_postgres; then
+        IS_NEON=true
+        log_info "Detected Neon Postgres (cloud)"
+    else
+        IS_NEON=false
+        log_info "Detected local Postgres"
+    fi
+
     if [ -z "$DB_NAME" ]; then
-    DB_NAME="baliblissed"
+        DB_NAME="baliblissed"
     fi
 
     if [ -z "$DB_USER" ]; then
@@ -62,42 +91,81 @@ get_db_name() {
 }
 
 # Checking Postgres connection
+# Handles both local Postgres and Neon Postgres (cloud)
 check_postgres() {
     log_info "Checking Postgres connection..."
     if command -v psql &> /dev/null; then
-        # Try to connect to PostgreSQL
-        if psql -U $DB_USER -c '\q' 2>/dev/null; then
-            log_success "✅ Postgres connection successful"
+        if [ "$IS_NEON" = true ]; then
+            # Neon Postgres: use full connection string with SSL
+            PSQL_URL=$(get_psql_url)
+            if psql "$PSQL_URL" -c '\q' 2>/dev/null; then
+                log_success "✅ Neon Postgres connection successful"
+            else
+                log_error "❌ Could not connect to Neon PostgreSQL"
+                log_error "   Check your DATABASE_URL and network connection"
+                log_error "   Ensure the Neon project is active and not suspended"
+                exit 1
+            fi
         else
-            log_error "❌ Could not connect to PostgreSQL"
-            log_error "   Make sure PostgreSQL is running:"
-            log_error "   - macOS: brew services start postgresql"
-            log_error "   - Linux: sudo service postgresql start"
-            exit 1
+            # Local Postgres: use username-based auth
+            if psql -U "$DB_USER" -c '\q' 2>/dev/null; then
+                log_success "✅ Local Postgres connection successful"
+            else
+                log_error "❌ Could not connect to local PostgreSQL"
+                log_error "   Make sure PostgreSQL is running:"
+                log_error "   - macOS: brew services start postgresql"
+                log_error "   - Linux: sudo service postgresql start"
+                exit 1
+            fi
         fi
     else
         log_error "❌ psql command not found"
-        log_error "   Please install PostgreSQL"
+        log_error "   Please install PostgreSQL client"
         exit 1
     fi
     log_info ""
 }
 
 # Ask user if they want to recreate the database
+# For Neon: drops all tables (database is managed by Neon)
+# For Local: drops and recreates the entire database
 ask_recreate_db() {
     log_info "🗄️  Database Setup"
     log_info "Current database: $DB_NAME"
+    if [ "$IS_NEON" = true ]; then
+        log_info "Mode: Neon Postgres (cloud-managed)"
+    else
+        log_info "Mode: Local Postgres"
+    fi
     log_info ""
     read -p "Do you want to recreate the database? This will DELETE all existing data! (y/N): " -n 1 -r
     log_info ""
 
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        log_info "⚠️  Dropping existing database..."
-        dropdb -U $DB_USER --if-exists $DB_NAME 2>/dev/null || true
+        if [ "$IS_NEON" = true ]; then
+            # Neon Postgres: drop all tables (can't drop/create database directly)
+            log_info "⚠️  Dropping all tables in Neon database..."
+            PSQL_URL=$(get_psql_url)
+            # Drop all tables in public schema
+            psql "$PSQL_URL" -c "
+                DO \$\$ DECLARE
+                    r RECORD;
+                BEGIN
+                    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                        EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
+                    END LOOP;
+                END \$\$;
+            " 2>/dev/null || log_warning "Some tables may not have been dropped"
+            log_info "✅ Tables dropped"
+        else
+            # Local Postgres: drop and recreate database
+            log_info "⚠️  Dropping existing database..."
+            dropdb -U "$DB_USER" --if-exists "$DB_NAME" 2>/dev/null || true
 
-        log_info "📦 Creating new database..."
-        createdb -U $DB_USER $DB_NAME
-        log_info "✅ Database created"
+            log_info "📦 Creating new database..."
+            createdb -U "$DB_USER" "$DB_NAME"
+            log_info "✅ Database created"
+        fi
         log_info ""
 
         log_info "🔧 Initializing database tables..."
