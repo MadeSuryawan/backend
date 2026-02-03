@@ -5,13 +5,13 @@ This module provides a Cloudinary-based storage backend for production
 use. Offers automatic image optimization, CDN delivery, and transformations.
 """
 
-import asyncio
+from asyncio import get_event_loop
 from functools import partial
 from logging import getLogger
 
-import cloudinary
-import cloudinary.api
-import cloudinary.uploader
+from cloudinary import config, exceptions
+from cloudinary.api import delete_resources_by_prefix, resource
+from cloudinary.uploader import destroy, upload
 
 from app.configs.settings import settings
 from app.utils.helpers import file_logger
@@ -29,7 +29,7 @@ class CloudinaryStorage:
 
     def __init__(self) -> None:
         """Initialize Cloudinary with configured credentials."""
-        cloudinary.config(
+        config(
             cloud_name=settings.CLOUDINARY_CLOUD_NAME,
             api_key=settings.CLOUDINARY_API_KEY,
             api_secret=settings.CLOUDINARY_API_SECRET,
@@ -69,11 +69,11 @@ class CloudinaryStorage:
         public_id = self._get_public_id(user_id)
 
         # Run blocking Cloudinary upload in thread pool
-        loop = asyncio.get_event_loop()
+        loop = get_event_loop()
         result = await loop.run_in_executor(
             None,
             partial(
-                cloudinary.uploader.upload,
+                upload,
                 file_data,
                 public_id=public_id,
                 overwrite=True,
@@ -104,10 +104,10 @@ class CloudinaryStorage:
         """
         public_id = self._get_public_id(user_id)
 
-        loop = asyncio.get_event_loop()
+        loop = get_event_loop()
         result = await loop.run_in_executor(
             None,
-            partial(cloudinary.uploader.destroy, public_id),
+            partial(destroy, public_id),
         )
 
         return result.get("result") == "ok"
@@ -125,13 +125,13 @@ class CloudinaryStorage:
         public_id = self._get_public_id(user_id)
 
         try:
-            loop = asyncio.get_event_loop()
+            loop = get_event_loop()
             result = await loop.run_in_executor(
                 None,
-                partial(cloudinary.api.resource, public_id),
+                partial(resource, public_id),
             )
             return result.get("secure_url")
-        except cloudinary.exceptions.NotFound:
+        except exceptions.NotFound:
             return None
 
     def _get_media_public_id(self, folder: str, entity_id: str, media_id: str) -> str:
@@ -189,10 +189,10 @@ class CloudinaryStorage:
                 {"quality": "auto:good", "fetch_format": "auto"},
             ]
 
-        loop = asyncio.get_event_loop()
+        loop = get_event_loop()
         result = await loop.run_in_executor(
             None,
-            partial(cloudinary.uploader.upload, file_data, **upload_options),
+            partial(upload, file_data, **upload_options),
         )
 
         return result["secure_url"]
@@ -217,12 +217,12 @@ class CloudinaryStorage:
         public_id = self._get_media_public_id(folder, entity_id, media_id)
 
         # Try deleting as image first, then as video
-        loop = asyncio.get_event_loop()
+        loop = get_event_loop()
 
         # Try image deletion
         result = await loop.run_in_executor(
             None,
-            partial(cloudinary.uploader.destroy, public_id, resource_type="image"),
+            partial(destroy, public_id, resource_type="image"),
         )
         if result.get("result") == "ok":
             return True
@@ -230,7 +230,7 @@ class CloudinaryStorage:
         # Try video deletion
         result = await loop.run_in_executor(
             None,
-            partial(cloudinary.uploader.destroy, public_id, resource_type="video"),
+            partial(destroy, public_id, resource_type="video"),
         )
         return result.get("result") == "ok"
 
@@ -251,13 +251,13 @@ class CloudinaryStorage:
         """
         prefix = f"baliblissed/{folder}/{entity_id}/"
 
-        loop = asyncio.get_event_loop()
+        loop = get_event_loop()
         try:
             # Delete images by prefix
             await loop.run_in_executor(
                 None,
                 partial(
-                    cloudinary.api.delete_resources_by_prefix,
+                    delete_resources_by_prefix,
                     prefix,
                     resource_type="image",
                 ),
@@ -266,7 +266,7 @@ class CloudinaryStorage:
             await loop.run_in_executor(
                 None,
                 partial(
-                    cloudinary.api.delete_resources_by_prefix,
+                    delete_resources_by_prefix,
                     prefix,
                     resource_type="video",
                 ),
