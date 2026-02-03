@@ -175,6 +175,15 @@ async def delete_review(
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Review not found")
 
     check_owner_or_admin(db_review.user_id, deps.current_user)
+
+    # [NEW] Cleanup all associated media
+    if db_review.images_url:
+        media_service = MediaService()
+        try:
+            await media_service.delete_all_media("review_images", str(review_id))
+        except Exception:
+            logger.exception("Failed to cleanup media for review %s during deletion", review_id)
+
     await deps.repo.delete(review_id)
 
 

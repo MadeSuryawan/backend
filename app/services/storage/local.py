@@ -6,6 +6,7 @@ and testing purposes. Files are stored in the local filesystem.
 """
 
 from pathlib import Path
+from shutil import rmtree
 
 import aiofiles
 
@@ -203,4 +204,25 @@ class LocalStorage:
             if file_path.exists():
                 file_path.unlink()
                 return True
+        return False
+
+    async def delete_all_media(
+        self,
+        folder: str,
+        entity_id: str,
+    ) -> bool:
+        """
+        Delete all media files for an entity from local filesystem.
+
+        Args:
+            folder: Storage folder
+            entity_id: ID of the entity
+
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        media_dir = self.uploads_dir / folder / entity_id
+        if media_dir.exists() and media_dir.is_dir():
+            rmtree(media_dir)
+            return True
         return False

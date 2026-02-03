@@ -244,3 +244,20 @@ class MediaService:
             bool: True if deletion was successful
         """
         return await self.storage.delete_media(folder, entity_id, media_id)
+
+    async def delete_all_media(
+        self,
+        folder: str,
+        entity_id: str,
+    ) -> bool:
+        """
+        Delete all media files for an entity.
+
+        Args:
+            folder: Storage folder
+            entity_id: Entity ID
+
+        Returns:
+            bool: True if deletion was successful
+        """
+        return await self.storage.delete_all_media(folder, entity_id)

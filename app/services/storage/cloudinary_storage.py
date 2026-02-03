@@ -7,12 +7,16 @@ use. Offers automatic image optimization, CDN delivery, and transformations.
 
 import asyncio
 from functools import partial
+from logging import getLogger
 
 import cloudinary
 import cloudinary.api
 import cloudinary.uploader
 
 from app.configs.settings import settings
+from app.utils.helpers import file_logger
+
+logger = file_logger(getLogger(__name__))
 
 
 class CloudinaryStorage:
@@ -229,3 +233,45 @@ class CloudinaryStorage:
             partial(cloudinary.uploader.destroy, public_id, resource_type="video"),
         )
         return result.get("result") == "ok"
+
+    async def delete_all_media(
+        self,
+        folder: str,
+        entity_id: str,
+    ) -> bool:
+        """
+        Delete all media files for an entity from Cloudinary.
+
+        Args:
+            folder: Storage folder
+            entity_id: ID of the entity
+
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        prefix = f"baliblissed/{folder}/{entity_id}/"
+
+        loop = asyncio.get_event_loop()
+        try:
+            # Delete images by prefix
+            await loop.run_in_executor(
+                None,
+                partial(
+                    cloudinary.api.delete_resources_by_prefix,
+                    prefix,
+                    resource_type="image",
+                ),
+            )
+            # Delete videos by prefix
+            await loop.run_in_executor(
+                None,
+                partial(
+                    cloudinary.api.delete_resources_by_prefix,
+                    prefix,
+                    resource_type="video",
+                ),
+            )
+            return True
+        except Exception:
+            logger.exception(f"Failed to delete all media for {folder}/{entity_id} from Cloudinary")
+            return False

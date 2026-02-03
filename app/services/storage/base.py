@@ -106,3 +106,21 @@ class StorageService(Protocol):
             bool: True if deletion was successful, False otherwise
         """
         ...
+
+    @abstractmethod
+    async def delete_all_media(
+        self,
+        folder: str,
+        entity_id: str,
+    ) -> bool:
+        """
+        Delete all media files for an entity from storage.
+
+        Args:
+            folder: Storage folder
+            entity_id: ID of the entity
+
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        ...

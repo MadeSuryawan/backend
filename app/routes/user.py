@@ -770,6 +770,15 @@ async def delete_user(
     existing = await _get_user_or_404(repo, user_id)
     check_owner_or_admin(user_id, current_user, "user")
 
+    # Delete profile picture if it exists
+    if existing.profile_picture:
+        try:
+            await _get_profile_picture_service().delete_profile_picture(str(user_id))
+        except Exception:
+            logger.exception(
+                "Failed to delete profile picture for user %s during deletion", user_id,
+            )
+
     # Delete the user
     await repo.delete(user_id)
 

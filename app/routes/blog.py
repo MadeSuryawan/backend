@@ -996,7 +996,7 @@ async def update_blog(
 @timed("/blogs/delete")
 @limiter.limit(lambda key: "10/minute" if "apikey" in key else "2/minute")
 @cache_busting(
-    key_builder=lambda blog_id, **kw: [
+    key_builder=lambda *args, **kwargs: [
         blogs_list_key(BlogListQuery(skip=0, limit=10)),
     ],
     namespace="blogs",
@@ -1025,6 +1025,16 @@ async def delete_blog(
     """
     existing = await _get_blog_or_404(deps.blog_id, deps.repo)
     check_owner_or_admin(existing.author_id, deps.current_user, "blog")
+
+    # [NEW] Cleanup all associated media
+    media_service = MediaService()
+    try:
+        if existing.images_url:
+            await media_service.delete_all_media("blog_images", str(deps.blog_id))
+        if existing.videos_url:
+            await media_service.delete_all_media("blog_videos", str(deps.blog_id))
+    except Exception:
+        logger.exception("Failed to cleanup media for blog %s during deletion", deps.blog_id)
 
     if not await deps.repo.delete(deps.blog_id):
         _404_not_found(deps.blog_id, by="id")
