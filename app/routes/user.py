@@ -46,6 +46,7 @@ from starlette.status import (
     HTTP_409_CONFLICT,
     HTTP_413_REQUEST_ENTITY_TOO_LARGE,
     HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+    HTTP_500_INTERNAL_SERVER_ERROR,
 )
 
 from app.auth.permissions import AdminUserDep, check_owner_or_admin
@@ -744,7 +745,7 @@ async def delete_user(
     user_id: UUID,
     repo: UserRepoDep,
     current_user: UserDBDep,
-) -> None:
+) -> ORJSONResponse:
     """
     Delete user by ID.
 
@@ -776,14 +777,20 @@ async def delete_user(
             await _get_profile_picture_service().delete_profile_picture(str(user_id))
         except Exception:
             logger.exception(
-                "Failed to delete profile picture for user %s during deletion", user_id,
+                "Failed to delete profile picture for user %s during deletion",
+                user_id,
             )
 
     # Delete the user
-    await repo.delete(user_id)
+    if not await repo.delete(user_id):
+        raise HTTPException(
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete user, Please try again later.",
+        )
 
     # Invalidate cache for deleted user
     await _invalidate_user_cache(request, user_id, existing.username)
+    return ORJSONResponse({"detail": "Your account has been deleted successfully"})
 
 
 @router.post(
@@ -964,7 +971,7 @@ async def delete_profile_picture(
     response: Response,
     user_id: UUID,
     deps: Annotated[UserOpsDeps, Depends()],
-) -> None:
+) -> ORJSONResponse:
     """
     Delete a user's profile picture.
 
@@ -995,7 +1002,11 @@ async def delete_profile_picture(
         )
 
     # Delete from storage
-    await _get_profile_picture_service().delete_profile_picture(str(user_id))
+    if not await _get_profile_picture_service().delete_profile_picture(str(user_id)):
+        raise HTTPException(
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete profile picture, Please try again later.",
+        )
 
     # Update user's profile_picture field to None
     update_data = UserUpdateSchema(profile_picture=None)
@@ -1003,6 +1014,7 @@ async def delete_profile_picture(
 
     # Invalidate cache
     await _invalidate_user_cache(request, user_id, db_user.username)
+    return ORJSONResponse({"detail": "Profile picture deleted successfully"})
 
 
 @router.post(

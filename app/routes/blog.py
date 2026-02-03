@@ -1005,7 +1005,7 @@ async def delete_blog(
     request: Request,
     response: Response,
     deps: Annotated[BlogOpsDeps, Depends()],
-) -> None:
+) -> ORJSONResponse:
     """
     Delete blog by ID.
 
@@ -1040,6 +1040,8 @@ async def delete_blog(
         _404_not_found(deps.blog_id, by="id")
 
     await delete_cache_keys(existing, None, request)
+    logger.info("Blog '%s' deleted by user '%s'", existing.title, deps.current_user.email)
+    return ORJSONResponse(content={"status": f"Blog '{existing.title}' deleted successfully"})
 
 
 # =============================================================================
@@ -1390,7 +1392,7 @@ async def _delete_media(
     repo: BlogRepoDep,
     blog_id: UUID,
     media_id: str,
-) -> None:
+) -> dict[str, str]:
     """Delete media (image/video) from a blog post."""
 
     folder: str | None = None
@@ -1428,6 +1430,8 @@ async def _delete_media(
 
     if not removed:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Media not found")
+
+    return {"status": f"{folder} deleted"}
 
 
 # =============================================================================
@@ -1514,6 +1518,7 @@ async def upload_blog_video(
     status_code=HTTP_204_NO_CONTENT,
     summary="Delete media from a blog",
     operation_id="blogs_delete_media",
+    response_class=ORJSONResponse,
 )
 @timed("/blogs/{blog_id}/media")
 @limiter.limit("10/minute")
@@ -1521,10 +1526,12 @@ async def delete_blog_media(
     request: Request,
     response: Response,
     deps: Annotated[MediaDelDeps, Depends()],
-) -> None:
+) -> ORJSONResponse:
     """Delete an image/video from a blog post (author/admin only)."""
     db_blog = await _get_blog_or_404(deps.blog_id, deps.repo)
 
     check_owner_or_admin(db_blog.author_id, deps.current_user)
 
-    await _delete_media(db_blog, deps.repo, deps.blog_id, deps.media_id)
+    result = await _delete_media(db_blog, deps.repo, deps.blog_id, deps.media_id)
+
+    return ORJSONResponse(content=result)
