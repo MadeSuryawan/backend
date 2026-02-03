@@ -34,6 +34,9 @@ class ReviewCreate(BaseModel):
         min_length=10,
         max_length=2000,
         description="Review content",
+        examples=[
+            "I had an amazing experience with BaliBlissed. The tour package was well-organized, and the guides were knowledgeable and friendly. The temples and beaches were breathtaking, and I would highly recommend this company to anyone planning a trip to Bali.",
+        ],
     )
 
     @field_validator("rating")
@@ -95,7 +98,7 @@ class MediaUploadResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     media_id: str = Field(alias="mediaId", description="ID of uploaded media")
-    url: HttpUrl = Field(description="URL of the uploaded media")
+    url: HttpUrl | str = Field(description="URL of the uploaded media")
     media_type: str | None = Field(
         default=None,
         alias="mediaType",

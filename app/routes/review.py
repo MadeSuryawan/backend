@@ -11,6 +11,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile
 from fastapi.responses import ORJSONResponse
+from starlette.responses import Response
 from starlette.status import (
     HTTP_201_CREATED,
     HTTP_204_NO_CONTENT,
@@ -75,14 +76,41 @@ def _to_review_list_response(db_review: "ReviewDB") -> ReviewListResponse:
 
 
 @router.post(
-    "",
+    "/create",
     response_class=ORJSONResponse,
+    response_model=ReviewResponse,
     status_code=HTTP_201_CREATED,
     summary="Create a new review",
+    responses={
+        201: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "123e4567-e89b-12d3-a456-426614174000",
+                        "userId": "123e4567-e89b-12d3-a456-426614174000",
+                        "itemId": None,
+                        "rating": 5,
+                        "comment": "Great product!",
+                        "imagesUrl": [],
+                        "createdAt": "2022-01-01T00:00:00Z",
+                        "updatedAt": "2022-01-01T00:00:00Z",
+                    },
+                },
+            },
+        },
+        400: {"content": {"application/json": {"example": {"detail": "Invalid request data"}}}},
+        401: {"content": {"application/json": {"example": {"detail": "Not authenticated"}}}},
+        403: {"content": {"application/json": {"example": {"detail": "Not authorized"}}}},
+        404: {"content": {"application/json": {"example": {"detail": "Review not found"}}}},
+        429: {"content": {"application/json": {"example": {"detail": "Too many requests"}}}},
+        500: {"content": {"application/json": {"example": {"detail": "Internal server error"}}}},
+    },
+    operation_id="reviews_create",
 )
 @limiter.limit("10/minute")
 async def create_review(
     request: Request,
+    response: Response,
     review_data: ReviewCreate,
     deps: ReviewOpsDep,
 ) -> ReviewResponse:
@@ -95,10 +123,33 @@ async def create_review(
     "/{review_id}",
     response_class=ORJSONResponse,
     summary="Get a review by ID",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "123e4567-e89b-12d3-a456-426614174000",
+                        "userId": "123e4567-e89b-12d3-a456-426614174000",
+                        "itemId": None,
+                        "rating": 5,
+                        "comment": "Great product!",
+                        "imagesUrl": [],
+                        "createdAt": "2022-01-01T00:00:00Z",
+                        "updatedAt": "2022-01-01T00:00:00Z",
+                    },
+                },
+            },
+        },
+        404: {"content": {"application/json": {"example": {"detail": "Review not found"}}}},
+        429: {"content": {"application/json": {"example": {"detail": "Too many requests"}}}},
+        500: {"content": {"application/json": {"example": {"detail": "Internal server error"}}}},
+    },
+    operation_id="reviews_get",
 )
 @limiter.limit("60/minute")
 async def get_review(
     request: Request,
+    response: Response,
     review_id: UUID,
     repo: ReviewRepoDep,
 ) -> ReviewResponse:
@@ -110,36 +161,89 @@ async def get_review(
     return _to_review_response(db_review)
 
 
+@dataclass(frozen=True)
+class ReviewListQuery:
+    item_id: Annotated[UUID | None, Query(description="Filter by item ID")] = None
+    skip: Annotated[int, Query(ge=0)] = 0
+    limit: Annotated[int, Query(ge=1, le=100)] = 10
+
+
 @router.get(
-    "",
+    "/list",
     response_class=ORJSONResponse,
     summary="List reviews",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "id": "123e4567-e89b-12d3-a456-426614174000",
+                            "userId": "123e4567-e89b-12d3-a456-426614174000",
+                            "itemId": None,
+                            "rating": 5,
+                            "comment": "Great product!",
+                            "imagesUrl": [],
+                            "createdAt": "2022-01-01T00:00:00Z",
+                            "updatedAt": "2022-01-01T00:00:00Z",
+                        },
+                    ],
+                },
+            },
+        },
+        404: {"content": {"application/json": {"example": {"detail": "Review not found"}}}},
+        429: {"content": {"application/json": {"example": {"detail": "Too many requests"}}}},
+        500: {"content": {"application/json": {"example": {"detail": "Internal server error"}}}},
+    },
+    operation_id="reviews_list",
 )
 @limiter.limit("30/minute")
 async def list_reviews(
     request: Request,
+    response: Response,
     repo: ReviewRepoDep,
-    item_id: Annotated[UUID | None, Query(description="Filter by item ID")] = None,
-    skip: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=100)] = 10,
+    deps: ReviewListQuery,
 ) -> list[ReviewListResponse]:
     """List reviews with optional item filter."""
-    if item_id:
-        reviews = await repo.get_by_item(item_id, skip=skip, limit=limit)
+    if deps.item_id:
+        reviews = await repo.get_by_item(deps.item_id, skip=deps.skip, limit=deps.limit)
     else:
-        reviews = await repo.get_all(skip=skip, limit=limit)
+        reviews = await repo.get_all(skip=deps.skip, limit=deps.limit)
 
     return [_to_review_list_response(r) for r in reviews]
 
 
 @router.patch(
-    "/{review_id}",
+    "/update/{review_id}",
     response_class=ORJSONResponse,
     summary="Update a review",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "123e4567-e89b-12d3-a456-426614174000",
+                        "userId": "123e4567-e89b-12d3-a456-426614174000",
+                        "itemId": None,
+                        "rating": 5,
+                        "comment": "Great product!",
+                        "imagesUrl": [],
+                        "createdAt": "2022-01-01T00:00:00Z",
+                        "updatedAt": "2022-01-01T00:00:00Z",
+                    },
+                },
+            },
+        },
+        404: {"content": {"application/json": {"example": {"detail": "Review not found"}}}},
+        429: {"content": {"application/json": {"example": {"detail": "Too many requests"}}}},
+        500: {"content": {"application/json": {"example": {"detail": "Internal server error"}}}},
+    },
+    operation_id="reviews_update",
 )
 @limiter.limit("10/minute")
 async def update_review(
     request: Request,
+    response: Response,
     review_id: UUID,
     review_data: ReviewUpdate,
     deps: ReviewOpsDep,
@@ -159,16 +263,57 @@ async def update_review(
 
 
 @router.delete(
-    "/{review_id}",
+    "/delete/{review_id}",
     status_code=HTTP_204_NO_CONTENT,
+    response_class=ORJSONResponse,
     summary="Delete a review",
+    responses={
+        204: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Review deleted successfully",
+                    },
+                },
+            },
+        },
+        404: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Review not found",
+                    },
+                },
+            },
+        },
+        429: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Too many requests",
+                    },
+                },
+            },
+        },
+        500: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Internal server error",
+                    },
+                },
+            },
+        },
+    },
+    operation_id="reviews_delete",
 )
 @limiter.limit("5/minute")
 async def delete_review(
     request: Request,
+    response: Response,
     review_id: UUID,
     deps: ReviewOpsDep,
-) -> None:
+) -> ORJSONResponse:
     """Delete a review (owner or admin only)."""
     db_review = await deps.repo.get_by_id(review_id)
     if not db_review:
@@ -184,11 +329,14 @@ async def delete_review(
         except Exception:
             logger.exception("Failed to cleanup media for review %s during deletion", review_id)
 
-    await deps.repo.delete(review_id)
+    if not await deps.repo.delete(review_id):
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Review not found")
+
+    return ORJSONResponse({"detail": "Review deleted successfully"})
 
 
 @router.post(
-    "/{review_id}/images",
+    "/upload-images/{review_id}",
     response_class=ORJSONResponse,
     status_code=HTTP_201_CREATED,
     summary="Upload an image to a review",
@@ -196,6 +344,7 @@ async def delete_review(
 @limiter.limit("10/minute")
 async def upload_review_image(
     request: Request,
+    response: Response,
     review_id: UUID,
     file: UploadFile,
     deps: ReviewOpsDep,
@@ -231,17 +380,19 @@ async def upload_review_image(
 
 
 @router.delete(
-    "/{review_id}/images/{media_id}",
+    "/delete-images/{review_id}/{media_id}",
     status_code=HTTP_204_NO_CONTENT,
     summary="Delete an image from a review",
+    response_class=ORJSONResponse,
 )
 @limiter.limit("10/minute")
 async def delete_review_image(
     request: Request,
+    response: Response,
     review_id: UUID,
     media_id: str,
     deps: ReviewOpsDep,
-) -> None:
+) -> ORJSONResponse:
     """Delete an image from a review (owner or admin only)."""
     db_review = await deps.repo.get_by_id(review_id)
     if not db_review:
@@ -264,3 +415,5 @@ async def delete_review_image(
     removed = await deps.repo.remove_image_by_media_id(review_id, media_id)
     if not removed:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Media not found")
+
+    return ORJSONResponse({"detail": "Image deleted successfully"})
