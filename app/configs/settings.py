@@ -177,7 +177,7 @@ class Settings(BaseSettings):
     POOL_RECYCLE: int = 3600  # Recycle connections after 1 hour
 
     # Security settings (SECRET_KEY validated to be secure in production)
-    SECRET_KEY: str = "dev-only-insecure-key-replace-in-prod"  # noqa: S105
+    SECRET_KEY: str = "dev-only-insecure-key-replace-in-prod"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
