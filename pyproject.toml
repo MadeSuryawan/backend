@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "BaliBlissed Backend"
 readme = "README.md"
 requires-python = ">=3.13"
-license = { text = "MIT" }
+license = "LicenseRef-MIT-Style-1"
 authors = [{ name = "Made Suryawan", email = "madesuryawan@bali-blissed.com" }]
 keywords = ["cache", "fastapi", "rate-limiting", "redis", "slowapi"]
 classifiers = [

@@ -160,3 +160,5 @@ redis/
 *.db
 
 logs/
+
+uploads/
