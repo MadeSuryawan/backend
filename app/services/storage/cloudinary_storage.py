@@ -85,7 +85,8 @@ class CloudinaryStorage:
                         "crop": "fill",
                         "gravity": "face",
                     },
-                    {"quality": "auto:good", "fetch_format": "auto"},
+                    {"quality": "auto:good"},
+                    {"fetch_format": "auto"},
                 ],
             ),
         )
@@ -186,7 +187,8 @@ class CloudinaryStorage:
         # Add transformations for images
         if not is_video:
             upload_options["transformation"] = [
-                {"quality": "auto:good", "fetch_format": "auto"},
+                {"quality": "auto:good"},
+                {"fetch_format": "auto"},
             ]
 
         loop = get_event_loop()

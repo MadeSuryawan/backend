@@ -12,9 +12,9 @@ from asyncio import get_event_loop
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from logging import basicConfig, getLogger
-from pathlib import Path
 from time import perf_counter
 
+from anyio import Path as AsyncPath
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from rich.logging import RichHandler
@@ -54,7 +54,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Initialize services
     try:
         if settings.LOG_TO_FILE:
-            Path("logs").mkdir(parents=True, exist_ok=True)
+            await AsyncPath("logs").mkdir(parents=True, exist_ok=True)
             logger.info("Logging to file enabled.")
 
         await init_db()

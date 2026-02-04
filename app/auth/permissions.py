@@ -1,7 +1,7 @@
 """Role-based access control (RBAC) permissions and dependencies."""
 
 from collections.abc import Awaitable, Callable
-from enum import Enum
+from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
 
@@ -12,7 +12,7 @@ from app.dependencies.dependencies import get_current_user
 from app.models import UserDB
 
 
-class Permission(str, Enum):
+class Permission(StrEnum):
     """Granular permissions for fine-grained access control."""
 
     # Read permissions

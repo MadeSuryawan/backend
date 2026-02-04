@@ -41,7 +41,7 @@ class TestLocalStorageCleanup:
 
 class TestCloudinaryStorageCleanup:
     @pytest.mark.asyncio
-    @patch("cloudinary.api.delete_resources_by_prefix")
+    @patch("app.services.storage.cloudinary_storage.delete_resources_by_prefix")
     async def test_delete_all_media_cloudinary(self, mock_delete: MagicMock) -> None:
         # Mock results
         mock_delete.return_value = {"deleted": {"res1": "deleted"}}
@@ -60,7 +60,7 @@ class TestCloudinaryStorageCleanup:
         mock_delete.assert_any_call(prefix, resource_type="video")
 
     @pytest.mark.asyncio
-    @patch("cloudinary.api.delete_resources_by_prefix")
+    @patch("app.services.storage.cloudinary_storage.delete_resources_by_prefix")
     async def test_delete_all_media_cloudinary_error(self, mock_delete: MagicMock) -> None:
         mock_delete.side_effect = Exception("Cloudinary error")
 
