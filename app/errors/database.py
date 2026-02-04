@@ -1,3 +1,4 @@
+import re
 from logging import getLogger
 
 from starlette.status import (
@@ -10,6 +11,35 @@ from app.errors.base import BaseAppError, create_exception_handler
 from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
+
+
+def parse_unique_violation(error_msg: str) -> str:
+    """
+    Parse PostgreSQL unique violation error message to a user-friendly format.
+
+    Extracts the field name and value from the DETAIL part of the error message.
+
+    Example:
+    Input: "Key (email)=(johndoe@gmail.com) already exists."
+    Output: "User with email 'johndoe@gmail.com' already exists"
+
+    Args:
+        error_msg: The raw error message from the database driver.
+
+    Returns:
+        str: A formatted, user-friendly error message or the original message if parsing fails.
+    """
+    # Regex to match the DETAIL pattern in PostgreSQL unique violation errors
+    # Pattern: Key (field_name)=(value) already exists.
+    pattern = r"Key \((?P<field>.*)\)=\((?P<value>.*)\) already exists"
+    match = re.search(pattern, error_msg)
+
+    if match:
+        field = match.group("field")
+        value = match.group("value")
+        return f"User with {field} '{value}' already exists"
+
+    return error_msg
 
 
 class DatabaseError(BaseAppError):

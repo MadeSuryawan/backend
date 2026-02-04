@@ -15,6 +15,7 @@ from app.errors.database import (
     DatabaseError,
     DuplicateEntryError,
     RecordNotFoundError,
+    parse_unique_violation,
 )
 
 type FilterValue = str | int | float | bool | UUID | datetime | None
@@ -230,7 +231,7 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT: BaseModel, UpdateSchemaT: 
             await self.session.rollback()
             error_msg = str(e.orig) if e.orig else str(e)
             if "unique" in error_msg.lower() or "duplicate" in error_msg.lower():
-                raise DuplicateEntryError(detail=error_msg) from e
+                raise DuplicateEntryError(detail=parse_unique_violation(error_msg)) from e
             raise DatabaseError(detail=f"Database integrity error: {error_msg}") from e
         except Exception as e:
             await self.session.rollback()
