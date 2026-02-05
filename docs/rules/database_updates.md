@@ -1,6 +1,3 @@
----
-alwaysApply: false
----
 # **Agent Knowledge: Database Refactoring & Migrations (Alembic)**
 
 **Current State:**
