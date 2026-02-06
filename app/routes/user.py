@@ -63,7 +63,6 @@ from app.errors.upload import (
 from app.managers.rate_limiter import limiter
 from app.models import UserDB
 from app.schemas import TestimonialUpdate, UserCreate, UserResponse, UserUpdate
-from app.schemas.user import UserUpdate as UserUpdateSchema
 from app.services.profile_picture import ProfilePictureService
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
 from app.utils.helpers import file_logger, host, response_datetime
@@ -911,8 +910,7 @@ async def upload_profile_picture(
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail) from e
 
     # Update user's profile_picture field in database
-    update_data = UserUpdateSchema(profile_picture=picture_url)
-    updated_user = await deps.repo.update(deps.user_id, update_data)
+    updated_user = await deps.repo.update(deps.user_id, {"profile_picture": picture_url})
 
     if not updated_user:
         raise HTTPException(
@@ -1005,8 +1003,7 @@ async def delete_profile_picture(
         )
 
     # Update user's profile_picture field to None
-    update_data = UserUpdateSchema(profile_picture=None)
-    await deps.repo.update(deps.user_id, update_data)
+    await deps.repo.update(deps.user_id, {"profile_picture": None})
 
     # Invalidate cache
     await _invalidate_user_cache(request, deps.user_id, db_user.username)

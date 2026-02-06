@@ -220,11 +220,6 @@ class UserUpdate(UserValidationMixin, BaseModel):
         default=None,
         description="Confirmed new password",
     )
-    profile_picture: HttpUrl | str | None = Field(
-        alias="profilePicture",
-        default=None,
-        description="Profile picture URL (can be full URL or relative path)",
-    )
     bio: str | None = Field(
         default=None,
         description="User bio",
