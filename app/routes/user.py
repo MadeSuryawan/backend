@@ -62,7 +62,7 @@ from app.errors.upload import (
 )
 from app.managers.rate_limiter import limiter
 from app.models import UserDB
-from app.schemas import UserCreate, UserResponse, UserUpdate
+from app.schemas import TestimonialUpdate, UserCreate, UserResponse, UserUpdate
 from app.schemas.user import UserUpdate as UserUpdateSchema
 from app.services.profile_picture import ProfilePictureService
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
@@ -110,6 +110,7 @@ def db_user_to_response(db_user: UserDB) -> UserResponse:
 class UserOpsDeps:
     """Dependencies for authenticated user operations."""
 
+    user_id: UUID
     repo: UserRepoDep
     current_user: UserDBDep
 
@@ -255,6 +256,11 @@ def _get_profile_picture_service() -> ProfilePictureService:
         Service instance for profile picture operations.
     """
     return ProfilePictureService()
+
+
+# =============================================================================
+# User Endpoints
+# =============================================================================
 
 
 @router.post(
@@ -634,13 +640,12 @@ async def get_user_by_username(
 @timed("/users/update")
 @limiter.limit(lambda key: "20/minute" if "apikey" in key else "5/minute")
 @cache_busting(
-    key_builder=lambda user_id, **kw: [user_id_key(user_id), users_list_key(0, 10)],
+    key_builder=lambda deps, **kw: [user_id_key(deps.user_id), users_list_key(0, 10)],
     namespace="users",
 )
 async def update_user(
     request: Request,
     response: Response,
-    user_id: UUID,
     user_update: Annotated[
         UserUpdate,
         Body(
@@ -667,8 +672,6 @@ async def update_user(
         Current request context.
     response : Response
         Response object for middleware/decorators.
-    user_id : UUID
-        User identifier.
     user_update : UserUpdate
         Update payload (partial updates accepted).
     deps : UserOpsDeps
@@ -685,15 +688,15 @@ async def update_user(
         If user not found or invalid update.
     """
     # Check if user is owner or admin
-    check_owner_or_admin(user_id, deps.current_user, "user")
+    check_owner_or_admin(deps.user_id, deps.current_user, "user")
     try:
         # Get existing user for cache invalidation (username may change)
-        existing = await _get_user_or_404(deps.repo, user_id)
-        db_user = await deps.repo.update(user_id, user_update)
+        existing = await _get_user_or_404(deps.repo, deps.user_id)
+        db_user = await deps.repo.update(deps.user_id, user_update)
         if not db_user:
             raise HTTPException(
                 status_code=HTTP_404_NOT_FOUND,
-                detail=f"User with ID {user_id} not found",
+                detail=f"User with ID {deps.user_id} not found",
             )
 
         # Invalidate old username cache if username changed
@@ -704,7 +707,7 @@ async def update_user(
             )
 
         # Invalidate cache for the updated user
-        await _invalidate_user_cache(request, user_id, db_user.username)
+        await _invalidate_user_cache(request, deps.user_id, db_user.username)
         return db_user_to_response(db_user)
     except DuplicateEntryError as e:
         raise HTTPException(status_code=HTTP_409_CONFLICT, detail=e.detail) from e
@@ -736,16 +739,14 @@ async def update_user(
 @timed("/users/delete")
 @limiter.limit(lambda key: "10/minute" if "apikey" in key else "2/minute")
 @cache_busting(
-    key_builder=lambda user_id, **kw: [user_id_key(user_id), users_list_key(0, 10)],
+    key_builder=lambda deps, **kw: [user_id_key(deps.user_id), users_list_key(0, 10)],
     namespace="users",
 )
 async def delete_user(
     request: Request,
     response: Response,
-    user_id: UUID,
-    repo: UserRepoDep,
-    current_user: UserDBDep,
-) -> ORJSONResponse:
+    deps: Annotated[UserOpsDeps, Depends()],
+) -> Response:
     """
     Delete user by ID.
 
@@ -755,12 +756,8 @@ async def delete_user(
         Current request context.
     response : Response
         Response object for middleware/decorators.
-    user_id : UUID
-        User identifier.
-    repo : UserRepository
-        Repository dependency.
-    current_user : UserDB
-        Authenticated user.
+    deps : UserOpsDeps
+        Operation dependencies (repo + current_user).
 
     Raises
     ------
@@ -768,29 +765,34 @@ async def delete_user(
         If user not found.
     """
     # Get user and verify authorization
-    existing = await _get_user_or_404(repo, user_id)
-    check_owner_or_admin(user_id, current_user, "user")
+    existing = await _get_user_or_404(deps.repo, deps.user_id)
+    check_owner_or_admin(deps.user_id, deps.current_user, "user")
 
     # Delete profile picture if it exists
     if existing.profile_picture:
         try:
-            await _get_profile_picture_service().delete_profile_picture(str(user_id))
+            await _get_profile_picture_service().delete_profile_picture(str(deps.user_id))
         except Exception:
             logger.exception(
                 "Failed to delete profile picture for user %s during deletion",
-                user_id,
+                deps.user_id,
             )
 
     # Delete the user
-    if not await repo.delete(user_id):
+    if not await deps.repo.delete(deps.user_id):
         raise HTTPException(
             status_code=HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete user, Please try again later.",
         )
 
     # Invalidate cache for deleted user
-    await _invalidate_user_cache(request, user_id, existing.username)
-    return ORJSONResponse({"detail": "Your account has been deleted successfully"})
+    await _invalidate_user_cache(request, deps.user_id, existing.username)
+    return Response(status_code=HTTP_204_NO_CONTENT)
+
+
+# =============================================================================
+# User Profile Picture Endpoints
+# =============================================================================
 
 
 @router.post(
@@ -859,13 +861,12 @@ async def delete_user(
 @timed("/users/{user_id}/profile-picture")
 @limiter.limit("10/hour")
 @cache_busting(
-    key_builder=lambda user_id, **kw: [user_id_key(user_id), users_list_key(0, 10)],
+    key_builder=lambda deps, **kw: [user_id_key(deps.user_id), users_list_key(0, 10)],
     namespace="users",
 )
 async def upload_profile_picture(
     request: Request,
     response: Response,
-    user_id: UUID,
     file: UploadFile,
     deps: Annotated[UserOpsDeps, Depends()],
 ) -> UserResponse:
@@ -878,8 +879,6 @@ async def upload_profile_picture(
         Current request context.
     response : Response
         Response object for middleware/decorators.
-    user_id : UUID
-        User identifier.
     file : UploadFile
         Uploaded image file.
     deps : UserOpsDeps
@@ -896,12 +895,12 @@ async def upload_profile_picture(
         If user not found, unauthorized, or invalid image.
     """
     # Get user and verify authorization
-    db_user = await _get_authorized_user(deps.repo, user_id, deps.current_user)
+    db_user = await _get_authorized_user(deps.repo, deps.user_id, deps.current_user)
 
     # Upload profile picture
     try:
         picture_url = await _get_profile_picture_service().upload_profile_picture(
-            user_id=str(user_id),
+            user_id=str(deps.user_id),
             file=file,
         )
     except UnsupportedImageTypeError as e:
@@ -913,16 +912,16 @@ async def upload_profile_picture(
 
     # Update user's profile_picture field in database
     update_data = UserUpdateSchema(profile_picture=picture_url)
-    updated_user = await deps.repo.update(user_id, update_data)
+    updated_user = await deps.repo.update(deps.user_id, update_data)
 
     if not updated_user:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found",
+            detail=f"User with ID {deps.user_id} not found",
         )
 
     # Invalidate cache
-    await _invalidate_user_cache(request, user_id, db_user.username)
+    await _invalidate_user_cache(request, deps.user_id, db_user.username)
 
     return db_user_to_response(updated_user)
 
@@ -963,15 +962,14 @@ async def upload_profile_picture(
 @timed("/users/{user_id}/profile-picture")
 @limiter.limit("10/hour")
 @cache_busting(
-    key_builder=lambda user_id, **kw: [user_id_key(user_id), users_list_key(0, 10)],
+    key_builder=lambda deps, **kw: [user_id_key(deps.user_id), users_list_key(0, 10)],
     namespace="users",
 )
 async def delete_profile_picture(
     request: Request,
     response: Response,
-    user_id: UUID,
     deps: Annotated[UserOpsDeps, Depends()],
-) -> ORJSONResponse:
+) -> Response:
     """
     Delete a user's profile picture.
 
@@ -981,8 +979,6 @@ async def delete_profile_picture(
         Current request context.
     response : Response
         Response object for middleware/decorators.
-    user_id : UUID
-        User identifier.
     deps : UserOpsDeps
         Operation dependencies (repo + current_user).
 
@@ -992,7 +988,7 @@ async def delete_profile_picture(
         If user not found, unauthorized, or no picture to delete.
     """
     # Get user and verify authorization
-    db_user = await _get_authorized_user(deps.repo, user_id, deps.current_user)
+    db_user = await _get_authorized_user(deps.repo, deps.user_id, deps.current_user)
 
     # Check if user has a profile picture
     if not db_user.profile_picture:
@@ -1002,7 +998,7 @@ async def delete_profile_picture(
         )
 
     # Delete from storage
-    if not await _get_profile_picture_service().delete_profile_picture(str(user_id)):
+    if not await _get_profile_picture_service().delete_profile_picture(str(deps.user_id)):
         raise HTTPException(
             status_code=HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete profile picture, Please try again later.",
@@ -1010,11 +1006,95 @@ async def delete_profile_picture(
 
     # Update user's profile_picture field to None
     update_data = UserUpdateSchema(profile_picture=None)
-    await deps.repo.update(user_id, update_data)
+    await deps.repo.update(deps.user_id, update_data)
 
     # Invalidate cache
-    await _invalidate_user_cache(request, user_id, db_user.username)
-    return ORJSONResponse({"detail": "Profile picture deleted successfully"})
+    await _invalidate_user_cache(request, deps.user_id, db_user.username)
+    return Response(status_code=HTTP_204_NO_CONTENT)
+
+
+# =============================================================================
+# User Testimonial Endpoints
+# =============================================================================
+
+
+@router.patch(
+    "/{user_id}/testimonial",
+    response_class=ORJSONResponse,
+    response_model=UserResponse,
+    status_code=HTTP_200_OK,
+    summary="Update user testimonial",
+    description="Update testimonial for an authenticated user.",
+    responses={
+        200: {"description": "Testimonial updated successfully"},
+        403: {"description": "Not authorized to update this user's testimonial"},
+        404: {"description": "User not found"},
+        429: {"description": "Rate limit exceeded"},
+    },
+    operation_id="users_update_testimonial",
+)
+@timed("/users/{user_id}/testimonial")
+@limiter.limit(lambda key: "10/hour" if "apikey" in key else "5/hour")
+@cache_busting(
+    key_builder=lambda deps, **kw: [user_id_key(deps.user_id)],
+    namespace="users",
+)
+async def update_testimonial(
+    request: Request,
+    response: Response,
+    payload: Annotated[TestimonialUpdate, Body(...)],
+    deps: Annotated[UserOpsDeps, Depends()],
+) -> UserResponse:
+    """Update user testimonial."""
+    db_user = await _get_authorized_user(deps.repo, deps.user_id, deps.current_user, "testimonial")
+    updated_user = await deps.repo.update(deps.user_id, {"testimonial": payload.testimonial})
+    if not updated_user:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"User with ID {deps.user_id} not found",
+        )
+    await _invalidate_user_cache(request, deps.user_id, db_user.username)
+    return db_user_to_response(updated_user)
+
+
+@router.delete(
+    "/{user_id}/testimonial",
+    status_code=HTTP_204_NO_CONTENT,
+    summary="Delete user testimonial",
+    description="Remove a testimonial. Accessible by the owner or an administrator.",
+    responses={
+        204: {"description": "Testimonial deleted successfully"},
+        403: {"description": "Not authorized to delete this user's testimonial"},
+        404: {"description": "User not found"},
+        429: {"description": "Rate limit exceeded"},
+    },
+    operation_id="users_delete_testimonial",
+)
+@timed("/users/{user_id}/testimonial")
+@limiter.limit("5/hour")
+@cache_busting(
+    key_builder=lambda deps, **kw: [user_id_key(deps.user_id)],
+    namespace="users",
+)
+async def delete_testimonial(
+    request: Request,
+    response: Response,
+    deps: Annotated[UserOpsDeps, Depends()],
+) -> Response:
+    """Delete user testimonial."""
+    db_user = await _get_authorized_user(deps.repo, deps.user_id, deps.current_user, "testimonial")
+    if not await deps.repo.update(deps.user_id, {"testimonial": None}):
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"User with ID {deps.user_id} not found",
+        )
+    await _invalidate_user_cache(request, deps.user_id, db_user.username)
+    return Response(status_code=HTTP_204_NO_CONTENT)
+
+
+# =============================================================================
+# Cache Busting Endpoints
+# =============================================================================
 
 
 @router.post(

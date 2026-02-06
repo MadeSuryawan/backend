@@ -113,13 +113,13 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
         """
         return await self.get_by_field("email", email)
 
-    async def update(self, record_id: UUID, schema: UserUpdate) -> UserDB | None:
+    async def update(self, record_id: UUID, schema: UserUpdate | dict[str, Any]) -> UserDB | None:
         """
         Update user information.
 
         Args:
             record_id: User UUID
-            schema: User update schema with fields to update
+            schema: User update schema or dict with fields to update
 
         Returns:
             UserDB | None: Updated user if found, None otherwise
@@ -132,9 +132,12 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
         if not db_user:
             return None
 
-        update_data = schema.model_dump(exclude_unset=True, exclude_none=True)
+        if isinstance(schema, dict):
+            update_data = schema
+        else:
+            update_data = schema.model_dump(exclude_unset=True, exclude_none=True)
 
-        if schema.password:
+        if not isinstance(schema, dict) and schema.password:
             password_hash = await hash_password(schema.password.get_secret_value())
             update_data["password_hash"] = password_hash
             update_data.pop("password", None)

@@ -128,7 +128,7 @@ async def test_delete_review_triggers_cleanup(client: AsyncClient) -> None:
         mock_media_instance = AsyncMock()
         mock_media_service.return_value = mock_media_instance
 
-        response = await client.delete(f"/reviews/{review_id}")
+        response = await client.delete(f"/reviews/delete/{review_id}")
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
         mock_media_instance.delete_all_media.assert_called_once_with(

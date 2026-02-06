@@ -124,6 +124,13 @@ class UserDB(SQLModel, table=True):
         description="User role (user, moderator, admin)",
     )
 
+    # Testimonial
+    testimonial: str | None = Field(
+        default=None,
+        sa_column=Column(String(500)),
+        description="User testimonial or review text",
+    )
+
     # Timestamps (timezone-aware)
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(tz=UTC).replace(second=0, microsecond=0),
@@ -147,6 +154,7 @@ class UserDB(SQLModel, table=True):
                 "is_active": True,
                 "is_verified": False,
                 "role": "user",
+                "testimonial": "Great service!",
             },
         },
     )

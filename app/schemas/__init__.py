@@ -15,7 +15,7 @@ from app.schemas.limiter import (
     LimiterResetRequest,
     LimiterResetResponse,
 )
-from app.schemas.user import UserCreate, UserResponse, UserUpdate
+from app.schemas.user import TestimonialUpdate, UserCreate, UserResponse, UserUpdate
 
 __all__ = [
     "BlogSchema",
@@ -33,6 +33,7 @@ __all__ = [
     "UserCreate",
     "UserResponse",
     "UserUpdate",
+    "TestimonialUpdate",
     "BlogCreate",
     "BlogListResponse",
     "BlogResponse",

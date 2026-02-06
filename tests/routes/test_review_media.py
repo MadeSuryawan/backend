@@ -13,7 +13,7 @@ class TestUploadReviewImage:
     async def test_upload_requires_authentication(self, client: AsyncClient) -> None:
         review_id = str(uuid4())
         response = await client.post(
-            f"/reviews/{review_id}/images",
+            f"/reviews/upload-images/{review_id}",
             files={"file": ("test.jpg", b"fake", "image/jpeg")},
         )
         assert response.status_code == 401
@@ -21,7 +21,7 @@ class TestUploadReviewImage:
     @pytest.mark.asyncio
     async def test_upload_invalid_uuid(self, client: AsyncClient) -> None:
         response = await client.post(
-            "/reviews/invalid-uuid/images",
+            "/reviews/upload-images/invalid-uuid",
             files={"file": ("test.jpg", b"fake", "image/jpeg")},
         )
         assert response.status_code in [401, 422]
@@ -33,10 +33,10 @@ class TestDeleteReviewImage:
     @pytest.mark.asyncio
     async def test_delete_requires_authentication(self, client: AsyncClient) -> None:
         review_id = str(uuid4())
-        response = await client.delete(f"/reviews/{review_id}/images/media-1")
+        response = await client.delete(f"/reviews/delete-images/{review_id}/media-1")
         assert response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_delete_invalid_uuid(self, client: AsyncClient) -> None:
-        response = await client.delete("/reviews/invalid-uuid/images/media-1")
+        response = await client.delete("/reviews/delete-images/invalid-uuid/media-1")
         assert response.status_code in [401, 422]

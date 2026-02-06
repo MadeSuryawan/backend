@@ -261,6 +261,21 @@ class UserUpdate(UserValidationMixin, BaseModel):
         return self
 
 
+class TestimonialUpdate(BaseModel):
+    """Testimonial update model for user testimonial."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    testimonial: str | None = Field(
+        default=None,
+        max_length=500,
+        description="User testimonial or review text",
+        examples=[
+            "I had an amazing experience with BaliBlissed. The tour package was well-organized, and the guides were knowledgeable and friendly. The temples and beaches were breathtaking, and I would highly recommend this company to anyone planning a trip to Bali.",
+        ],
+    )
+
+
 class UserResponse(BaseModel):
     """User response model (without sensitive information)."""
 
@@ -287,6 +302,10 @@ class UserResponse(BaseModel):
         default=None,
         alias="displayName",
         description="Display name (stored in database, computed if missing)",
+    )
+    testimonial: str | None = Field(
+        default=None,
+        description="User testimonial or review text",
     )
 
     @field_validator("first_name", "last_name", "bio", "country", mode="before")

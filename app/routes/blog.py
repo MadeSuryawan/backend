@@ -1005,7 +1005,7 @@ async def delete_blog(
     request: Request,
     response: Response,
     deps: Annotated[BlogOpsDeps, Depends()],
-) -> ORJSONResponse:
+) -> Response:
     """
     Delete blog by ID.
 
@@ -1041,7 +1041,7 @@ async def delete_blog(
 
     await delete_cache_keys(existing, None, request)
     logger.info("Blog '%s' deleted by user '%s'", existing.title, deps.current_user.email)
-    return ORJSONResponse(content={"status": f"Blog '{existing.title}' deleted successfully"})
+    return Response(status_code=HTTP_204_NO_CONTENT)
 
 
 # =============================================================================

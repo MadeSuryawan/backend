@@ -313,7 +313,7 @@ async def delete_review(
     response: Response,
     review_id: UUID,
     deps: ReviewOpsDep,
-) -> ORJSONResponse:
+) -> Response:
     """Delete a review (owner or admin only)."""
     db_review = await deps.repo.get_by_id(review_id)
     if not db_review:
@@ -332,7 +332,7 @@ async def delete_review(
     if not await deps.repo.delete(review_id):
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Review not found")
 
-    return ORJSONResponse({"detail": "Review deleted successfully"})
+    return Response(status_code=HTTP_204_NO_CONTENT)
 
 
 @router.post(
@@ -392,7 +392,7 @@ async def delete_review_image(
     review_id: UUID,
     media_id: str,
     deps: ReviewOpsDep,
-) -> ORJSONResponse:
+) -> Response:
     """Delete an image from a review (owner or admin only)."""
     db_review = await deps.repo.get_by_id(review_id)
     if not db_review:
@@ -416,4 +416,4 @@ async def delete_review_image(
     if not removed:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Media not found")
 
-    return ORJSONResponse({"detail": "Image deleted successfully"})
+    return Response(status_code=HTTP_204_NO_CONTENT)
