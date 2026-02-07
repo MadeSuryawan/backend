@@ -121,7 +121,7 @@ curl -X 'POST' \
 **Error Responses:**
 
 | Status | Error | Description |
-|--------|-------|-------------|
+| ------ | ----- | ----------- |
 | 401 | Invalid token | Token is malformed, expired, or signature invalid |
 | 401 | Token already used | Token was previously used for verification |
 | 401 | Email mismatch | User's email changed since token was issued |
@@ -226,7 +226,7 @@ uv run pytest tests/auth/test_registration_flow.py -v
 
 #### Complete Flow Test
 
-**Step 1: Register a new user**
+## **Step 1: Register a new user**
 
 ```bash
 curl -X 'POST' \
@@ -243,14 +243,15 @@ curl -X 'POST' \
   }'
 ```
 
-**Step 2: Check email for verification link**
+## **Step 2: Check email for verification link**
 
 The verification email contains a link like:
-```
+
+```text
 http://localhost:3000/verify-email?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
-**Step 3: Extract and verify the token**
+## **Step 3: Extract and verify the token**
 
 Copy the token value from the email URL and verify:
 
@@ -264,7 +265,7 @@ curl -X 'POST' \
   }'
 ```
 
-**Step 4: Verify token cannot be reused**
+## **Step 4: Verify token cannot be reused**
 
 Try the same request again - it should fail:
 
@@ -281,7 +282,7 @@ curl -X 'POST' \
 # {"detail": "Verification token has already been used"}
 ```
 
-#### Test Email Change (Re-verification)
+### Test Email Change (Re-verification)
 
 ```bash
 # Step 1: Login to get access token
@@ -342,7 +343,7 @@ curl -X 'POST' \
 ### Expected Behaviors
 
 | Scenario | Expected Result |
-|----------|-----------------|
+| -------- | --------------- |
 | First verification attempt | ✅ `200 OK` - "Email verified successfully" |
 | Second attempt with same token | ❌ `401 Unauthorized` - "Token has already been used" |
 | Invalid token | ❌ `401 Unauthorized` - "Invalid or expired verification token" |
@@ -359,21 +360,22 @@ curl -X 'POST' \
 ### Environment Variables
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+| -------- | ------- | ----------- |
 | `VERIFICATION_TOKEN_EXPIRE_HOURS` | 24 | Token validity period |
 | `VERIFICATION_RESEND_LIMIT` | 3 | Max resend attempts per 24h |
-| `FRONTEND_URL` | http://localhost:3000 | Base URL for verification links in emails |
+| `FRONTEND_URL` | <http://localhost:3000> | Base URL for verification links in emails |
 
 ### Redis Key Format
 
 Used tokens are tracked in Redis with the following key pattern:
 
-```
+```text
 verification_token:used:<jti> → "1" (TTL: 24 hours)
 ```
 
 Example:
-```
+
+```text
 verification_token:used:85683e20-ee7e-42de-9d28-7be6e6dec32a
 ```
 
@@ -388,6 +390,7 @@ When building the frontend, implement a `/verify-email` page that:
 3. Displays success/error messages based on the response
 
 Example URL handling:
+
 ```javascript
 // React/Vue/Angular example
 const urlParams = new URLSearchParams(window.location.search);
