@@ -27,6 +27,8 @@ limits apply when `X-API-Key` is present, offering higher throughput for
 authenticated/identified clients.
 """
 
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from logging import getLogger
 from typing import Annotated
@@ -114,45 +116,60 @@ class UserOpsDeps:
     current_user: UserDBDep
 
 
-@dataclass(frozen=True)
-class BustListGridDeps:
-    """Dependencies for bust users list grid operation."""
-
-    query: UserQueryListDep
-    limits: list[int]
-    skips: list[int]
+def handle_db_error(e: DatabaseError) -> HTTPException:
+    """Convert database errors to HTTP exceptions."""
+    if isinstance(e, DuplicateEntryError):
+        return HTTPException(status_code=HTTP_409_CONFLICT, detail=e.detail)
+    return HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail)
 
 
-def get_bust_list_grid_deps(
-    query: UserQueryListDep,
-    limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
-    skips: Annotated[list[int], Query(description="List of skip values to invalidate.")],
-) -> BustListGridDeps:
-    """
-    Build dependencies for bust users list grid operation.
-
-    Parameters
-    ----------
-    query : UserListQuery
-        Query parameters for pagination.
-    limits : list[int]
-        List of limit values to invalidate.
-    skips : list[int]
-        List of skip values to invalidate.
-
-    Returns
-    -------
-    BustListGridDeps
-        Bundled dependencies.
-    """
-    return BustListGridDeps(query=query, limits=limits, skips=skips)
+def handle_image_error(e: Exception) -> HTTPException:
+    """Convert image processing errors to HTTP exceptions."""
+    match e:
+        case UnsupportedImageTypeError():
+            return HTTPException(status_code=HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=e.detail)
+        case ImageTooLargeError():
+            return HTTPException(status_code=HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=e.detail)
+        case InvalidImageError() | ImageProcessingError():
+            return HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail)
+        case _:
+            return HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-BustListGridDepsDep = Annotated[BustListGridDeps, Depends(get_bust_list_grid_deps)]
+@asynccontextmanager
+async def db_operation_context() -> AsyncGenerator[None]:
+    """Context manager for database operations with standardized error handling."""
+    try:
+        yield
+    except DuplicateEntryError as e:
+        raise handle_db_error(e) from e
+    except DatabaseError as e:
+        raise handle_db_error(e) from e
+
 
 # =============================================================================
 # Helper Functions
 # =============================================================================
+
+
+async def _handle_email_change(
+    db_user: UserDB,
+    existing_user: UserDB,
+    auth_service: AuthServiceDep,
+    repo: UserRepoDep,
+) -> None:
+    """Handle email change: mark user unverified and send verification email."""
+    logger.info(
+        "Email changed for user %s: %s -> %s. Re-verification required.",
+        db_user.uuid,
+        existing_user.email,
+        db_user.email,
+    )
+    db_user.is_verified = False
+    await repo._add_and_refresh(db_user)
+    await auth_service.send_verification_email(db_user)
+    await auth_service.record_verification_sent(db_user.uuid)
+    logger.info("Verification email sent to new address: %s", db_user.email)
 
 
 async def _get_user_or_404(repo: UserRepoDep, user_id: UUID) -> UserDB:
@@ -245,7 +262,12 @@ async def _invalidate_user_cache(
     )
 
 
-def _get_profile_picture_service() -> ProfilePictureService:
+def _success_response(message: str = "success") -> ORJSONResponse:
+    """Create a standardized success response for cache operations."""
+    return ORJSONResponse(content={"status": message})
+
+
+def _get_pp_service() -> ProfilePictureService:
     """
     Get ProfilePictureService instance.
 
@@ -255,6 +277,25 @@ def _get_profile_picture_service() -> ProfilePictureService:
         Service instance for profile picture operations.
     """
     return ProfilePictureService()
+
+
+async def _upload_pp(
+    user_id: str,
+    file: UploadFile,
+) -> str:
+    """Upload profile picture with standardized error handling."""
+    try:
+        return await _get_pp_service().upload_profile_picture(
+            user_id=user_id,
+            file=file,
+        )
+    except (
+        UnsupportedImageTypeError,
+        ImageTooLargeError,
+        InvalidImageError,
+        ImageProcessingError,
+    ) as e:
+        raise handle_image_error(e) from e
 
 
 # =============================================================================
@@ -356,14 +397,10 @@ async def create_user(
     HTTPException
         If username or email already exists.
     """
-    try:
+    async with db_operation_context():
         db_user = await repo.create(user)
         await _invalidate_user_cache(request, db_user.uuid, db_user.username)
         return db_user_to_response(db_user)
-    except DuplicateEntryError as e:
-        raise HTTPException(status_code=HTTP_409_CONFLICT, detail=e.detail) from e
-    except DatabaseError as e:
-        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail) from e
 
 
 @router.get(
@@ -699,16 +736,13 @@ async def update_user(
     HTTPException
         If user not found or invalid update.
     """
-    # Check if user is owner or admin
     check_owner_or_admin(deps.user_id, deps.current_user, "user")
-    try:
-        # Get existing user for cache invalidation (username may change)
-        existing = await _get_user_or_404(deps.repo, deps.user_id)
 
-        # Check if email is being changed
-        email_changed = False
-        if user_update.email and user_update.email != existing.email:
-            email_changed = True
+    async with db_operation_context():
+        existing = await _get_user_or_404(deps.repo, deps.user_id)
+        email_changed = bool(
+            user_update.email and user_update.email != existing.email,
+        )
 
         db_user = await deps.repo.update(deps.user_id, user_update)
         if not db_user:
@@ -717,35 +751,17 @@ async def update_user(
                 detail=f"User with ID {deps.user_id} not found",
             )
 
-        # Handle email change: mark unverified and send verification
         if email_changed:
-            logger.info(
-                f"Email changed for user {db_user.uuid}: {existing.email} -> {db_user.email}. "
-                "Re-verification required.",
-            )
-            # Mark as unverified
-            db_user.is_verified = False
-            await deps.repo._add_and_refresh(db_user)
+            await _handle_email_change(db_user, existing, auth_service, deps.repo)
 
-            # Send verification email to new address
-            await auth_service.send_verification_email(db_user)
-            await auth_service.record_verification_sent(db_user.uuid)
-            logger.info(f"Verification email sent to new address: {db_user.email}")
-
-        # Invalidate old username cache if username changed
         if existing.username != db_user.username:
             await get_cache_manager(request).delete(
                 username_key(existing.username),
                 namespace="users",
             )
 
-        # Invalidate cache for the updated user
         await _invalidate_user_cache(request, deps.user_id, db_user.username)
         return db_user_to_response(db_user)
-    except DuplicateEntryError as e:
-        raise HTTPException(status_code=HTTP_409_CONFLICT, detail=e.detail) from e
-    except DatabaseError as e:
-        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail) from e
 
 
 @router.delete(
@@ -804,7 +820,7 @@ async def delete_user(
     # Delete profile picture if it exists
     if existing.profile_picture:
         try:
-            await _get_profile_picture_service().delete_profile_picture(str(deps.user_id))
+            await _get_pp_service().delete_profile_picture(str(deps.user_id))
         except Exception:
             logger.exception(
                 "Failed to delete profile picture for user %s during deletion",
@@ -927,34 +943,17 @@ async def upload_profile_picture(
     HTTPException
         If user not found, unauthorized, or invalid image.
     """
-    # Get user and verify authorization
     db_user = await _get_authorized_user(deps.repo, deps.user_id, deps.current_user)
+    picture_url = await _upload_pp(str(deps.user_id), file)
 
-    # Upload profile picture
-    try:
-        picture_url = await _get_profile_picture_service().upload_profile_picture(
-            user_id=str(deps.user_id),
-            file=file,
-        )
-    except UnsupportedImageTypeError as e:
-        raise HTTPException(status_code=HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=e.detail) from e
-    except ImageTooLargeError as e:
-        raise HTTPException(status_code=HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=e.detail) from e
-    except (InvalidImageError, ImageProcessingError) as e:
-        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail) from e
-
-    # Update user's profile_picture field in database
     updated_user = await deps.repo.update(deps.user_id, {"profile_picture": picture_url})
-
     if not updated_user:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
             detail=f"User with ID {deps.user_id} not found",
         )
 
-    # Invalidate cache
     await _invalidate_user_cache(request, deps.user_id, db_user.username)
-
     return db_user_to_response(updated_user)
 
 
@@ -1030,7 +1029,7 @@ async def delete_profile_picture(
         )
 
     # Delete from storage
-    if not await _get_profile_picture_service().delete_profile_picture(str(deps.user_id)):
+    if not await _get_pp_service().delete_profile_picture(str(deps.user_id)):
         raise HTTPException(
             status_code=HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete profile picture, Please try again later.",
@@ -1157,26 +1156,8 @@ async def bust_users_list(
     skip: Annotated[int, Query(ge=0, description="Number of records to skip.")],
     limit: Annotated[int, Query(ge=1, le=100, description="Maximum number of records to return.")],
 ) -> ORJSONResponse:
-    """
-    Bust users list cache page.
-
-    Parameters
-    ----------
-    request : Request
-        Current request context.
-    response : Response
-        Current response context.
-    skip : int
-        Number of records to skip.
-    limit : int
-        Maximum number of records to return.
-
-    Returns
-    -------
-    ORJSONResponse
-        Status message indicating success.
-    """
-    return ORJSONResponse(content={"status": "success"})
+    """Bust users list cache page."""
+    return _success_response()
 
 
 @router.post(
@@ -1213,7 +1194,7 @@ async def bust_user_by_id(
     user_id: UUID,
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
-    return ORJSONResponse(content={"status": "success"})
+    return _success_response()
 
 
 @router.post(
@@ -1250,7 +1231,7 @@ async def bust_user_by_username(
     username: str,
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
-    return ORJSONResponse(content={"status": "success"})
+    return _success_response()
 
 
 @router.post(
@@ -1294,7 +1275,7 @@ async def bust_users_list_multi(
             status_code=HTTP_403_FORBIDDEN,
             detail="Admin access required (localhost only)",
         )
-    return ORJSONResponse(content={"status": "success"})
+    return _success_response()
 
 
 @router.post(
@@ -1322,20 +1303,18 @@ async def bust_users_list_multi(
 @timed("/users/bust-list-grid")
 @limiter.limit("10/minute")
 @cache_busting(
-    key_builder=lambda deps, **kw: [
-        users_list_key(skip_value, limit_value)
-        for limit_value in deps.limits
-        for skip_value in deps.skips
-    ],
+    key_builder=lambda skip, limit, **kw: [users_list_key(s, lim) for lim in limit for s in skip],
     namespace="users",
 )
 async def bust_users_list_grid(
     request: Request,
     response: Response,
-    deps: BustListGridDepsDep,
+    skip: Annotated[list[int], Query(description="List of skip values to invalidate.")],
+    limit: Annotated[list[int], Query(description="List of limit values to invalidate.")],
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
-    return ORJSONResponse(content={"status": "success"})
+    """Bust users list cache pages across multiple skip/limit combinations."""
+    return _success_response()
 
 
 @router.delete(
@@ -1368,4 +1347,4 @@ async def bust_users_all(
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
     await get_cache_manager(request).clear(namespace="users")
-    return ORJSONResponse(content={"status": "cleared"})
+    return _success_response("cleared")
