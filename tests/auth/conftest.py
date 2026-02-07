@@ -31,6 +31,16 @@ def mock_redis_client() -> MagicMock:
 
 
 @fixture
+def mock_cache_manager() -> MagicMock:
+    """Create a mock cache manager."""
+    mock = MagicMock()
+    mock.delete = AsyncMock()
+    mock.get = AsyncMock(return_value=None)
+    mock.set = AsyncMock()
+    return mock
+
+
+@fixture
 def token_blacklist(mock_redis_client: MagicMock) -> TokenBlacklist:
     """Create a token blacklist with mocked Redis."""
     return TokenBlacklist(mock_redis_client)
@@ -135,3 +145,19 @@ async def client() -> AsyncGenerator[AsyncClient]:
 def auth_headers(sample_access_token: str) -> dict[str, str]:
     """Create auth headers with a valid access token."""
     return {"Authorization": f"Bearer {sample_access_token}"}
+
+
+@fixture
+def admin_access_token(admin_user: UserDB) -> str:
+    """Create a sample access token for admin."""
+    return create_access_token(
+        user_id=admin_user.uuid,
+        username=admin_user.username,
+        expires_delta=timedelta(minutes=30),
+    )
+
+
+@fixture
+def admin_auth_headers(admin_access_token: str) -> dict[str, str]:
+    """Create auth headers with a valid admin access token."""
+    return {"Authorization": f"Bearer {admin_access_token}"}

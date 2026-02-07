@@ -138,6 +138,17 @@ class RedisClient:
             mssg = f"Cache ttl operation failed for key {key}: {e}"
             raise RedisConnectionError(mssg) from e
 
+    @with_retry(max_retries=3, base_delay=0.1)
+    async def incr(self, key: str) -> int:
+        """Increment value atomically with automatic retry."""
+        try:
+            return await self.client.incr(key)
+        except RedisError as e:
+            if logger.isEnabledFor(DEBUG):
+                logger.debug("Failed to increment key %s: %s", key, e)
+            mssg = f"Cache incr operation failed for key {key}: {e}"
+            raise RedisConnectionError(mssg) from e
+
     async def flush_db(self) -> bool:
         """Flush current database."""
         try:

@@ -52,7 +52,7 @@ from starlette.status import (
 from app.auth.permissions import AdminUserDep, check_owner_or_admin
 from app.decorators.caching import cache_busting, cached, get_cache_manager
 from app.decorators.metrics import timed
-from app.dependencies import UserDBDep, UserQueryListDep, UserRepoDep
+from app.dependencies import AuthServiceDep, UserDBDep, UserQueryListDep, UserRepoDep
 from app.errors.database import DatabaseError, DuplicateEntryError
 from app.errors.upload import (
     ImageProcessingError,
@@ -330,6 +330,7 @@ async def create_user(
         ),
     ],
     repo: UserRepoDep,
+    _admin: AdminUserDep,
 ) -> UserResponse:
     """
     Create a new user and return the safe response model.
@@ -657,13 +658,23 @@ async def update_user(
                         "bio": "Globetrotter",
                     },
                 },
+                "email_change": {
+                    "summary": "Update email (triggers re-verification)",
+                    "value": {
+                        "email": "newemail@example.com",
+                    },
+                },
             },
         ),
     ],
     deps: Annotated[UserOpsDeps, Depends()],
+    auth_service: AuthServiceDep,
 ) -> UserResponse:
     """
     Update user information and return the safe response model.
+
+    If the email is changed, the user will be marked as unverified and
+    a new verification email will be sent to the new address.
 
     Parameters
     ----------
@@ -675,6 +686,8 @@ async def update_user(
         Update payload (partial updates accepted).
     deps : UserOpsDeps
         Operation dependencies (repo + current_user).
+    auth_service : AuthServiceDep
+        Authentication service for sending verification emails.
 
     Returns
     -------
@@ -691,12 +704,33 @@ async def update_user(
     try:
         # Get existing user for cache invalidation (username may change)
         existing = await _get_user_or_404(deps.repo, deps.user_id)
+
+        # Check if email is being changed
+        email_changed = False
+        if user_update.email and user_update.email != existing.email:
+            email_changed = True
+
         db_user = await deps.repo.update(deps.user_id, user_update)
         if not db_user:
             raise HTTPException(
                 status_code=HTTP_404_NOT_FOUND,
                 detail=f"User with ID {deps.user_id} not found",
             )
+
+        # Handle email change: mark unverified and send verification
+        if email_changed:
+            logger.info(
+                f"Email changed for user {db_user.uuid}: {existing.email} -> {db_user.email}. "
+                "Re-verification required.",
+            )
+            # Mark as unverified
+            db_user.is_verified = False
+            await deps.repo._add_and_refresh(db_user)
+
+            # Send verification email to new address
+            await auth_service.send_verification_email(db_user)
+            await auth_service.record_verification_sent(db_user.uuid)
+            logger.info(f"Verification email sent to new address: {db_user.email}")
 
         # Invalidate old username cache if username changed
         if existing.username != db_user.username:

@@ -69,3 +69,24 @@ class MessageResponse(BaseModel):
 
     message: str
     success: bool = True
+
+
+class VerificationTokenData(BaseModel):
+    """
+    Token data schema for email verification tokens.
+
+    Attributes:
+        user_id: User's UUID from token
+        email: Email address the token was issued for (for validation)
+        jti: JWT ID for token identification
+    """
+
+    user_id: UUID
+    email: str
+    jti: str | None = None
+
+
+class ResendVerificationRequest(BaseModel):
+    """Request schema for resending verification email."""
+
+    email: EmailStr = Field(..., description="Email address to send verification to")

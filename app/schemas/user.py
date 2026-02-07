@@ -131,22 +131,24 @@ class UserCreate(UserValidationMixin, BaseModel):
         min_length=3,
         max_length=50,
         description="Username",
-        examples=["johndoe"],
+        examples=["kusumasegara"],
     )
     first_name: str | None = Field(
         alias="firstName",
         default=None,
         description="User first name",
+        examples=["Kusuma"],
     )
     last_name: str | None = Field(
         alias="lastName",
         default=None,
         description="User last name",
+        examples=["Segara"],
     )
     email: EmailStr = Field(
         ...,
         description="Email address",
-        examples=["johndoe@gmail.com"],
+        examples=["kusumasegara000@gmail.com"],
     )
     password: SecretStr | None = Field(
         default=None,
@@ -177,6 +179,7 @@ class UserCreate(UserValidationMixin, BaseModel):
     gender: str | None = Field(
         default=None,
         description="User gender",
+        examples=["Male"],
     )
     phone_number: str | None = Field(
         alias="phoneNumber",
@@ -184,7 +187,11 @@ class UserCreate(UserValidationMixin, BaseModel):
         pattern=r"^\+?1?\d{9,15}$",
         description="User phone number",
     )
-    country: str | None = Field(default=None, description="User country")
+    country: str | None = Field(
+        default=None,
+        description="User country",
+        examples=["Indonesia"],
+    )
 
 
 class UserUpdate(UserValidationMixin, BaseModel):

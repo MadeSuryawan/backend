@@ -188,6 +188,11 @@ class Settings(BaseSettings):
     MAX_LOGIN_ATTEMPTS: int = 5
     LOCKOUT_DURATION_MINUTES: int = 15
 
+    # Email Verification Settings
+    VERIFICATION_TOKEN_EXPIRE_HOURS: int = 24  # 24 hours
+    VERIFICATION_RESEND_LIMIT: int = 3  # Max resends per 24 hours
+    FRONTEND_URL: str = "http://localhost:3000"  # Override in production
+
     # Pagination defaults
     DEFAULT_PAGE_SIZE: int = 10
     MAX_PAGE_SIZE: int = 100

@@ -1,5 +1,6 @@
 """Authentication routes for handling user login, registration, and token management."""
 
+from logging import getLogger
 from typing import Annotated
 
 from authlib.integrations.starlette_client import OAuth
@@ -11,28 +12,36 @@ from starlette.status import (
     HTTP_201_CREATED,
     HTTP_400_BAD_REQUEST,
     HTTP_404_NOT_FOUND,
+    HTTP_429_TOO_MANY_REQUESTS,
 )
 
 from app.configs import settings
 from app.decorators.caching import get_cache_manager
 from app.decorators.metrics import timed
 from app.dependencies import AuthServiceDep, UserRepoDep, UserRespDep
-from app.errors.auth import EmailVerificationError, PasswordResetError
+from app.errors.auth import (
+    EmailVerificationError,
+    PasswordResetError,
+    VerificationTokenUsedError,
+)
 from app.managers.rate_limiter import limiter
-from app.managers.token_manager import decode_access_token
+from app.managers.token_manager import decode_access_token, decode_verification_token
 from app.schemas.auth import (
     EmailVerificationRequest,
     LogoutRequest,
     MessageResponse,
     PasswordResetConfirm,
     PasswordResetRequest,
+    ResendVerificationRequest,
     Token,
     TokenRefreshRequest,
 )
 from app.schemas.user import UserCreate, UserResponse
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
+from app.utils.helpers import file_logger
 
 router = APIRouter(prefix="/auth", tags=["🔐 Auth"])
+logger = file_logger(getLogger(__name__))
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 # OAuth Configuration
@@ -191,6 +200,14 @@ async def logout(
                 },
             },
         },
+        401: {
+            "description": "Token already used",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Verification token has already been used"},
+                },
+            },
+        },
     },
     operation_id="auth_verify_email",
 )
@@ -202,16 +219,95 @@ async def verify_email(
     body: EmailVerificationRequest,
     auth_service: AuthServiceDep,
 ) -> MessageResponse:
-    """Verify email with token."""
-    token_data = decode_access_token(body.token)
+    """Verify email with dedicated verification token."""
+    # Use dedicated verification token decoder
+    token_data = decode_verification_token(body.token)
     if not token_data:
         raise EmailVerificationError
 
-    success = await auth_service.verify_email(token_data.user_id)
+    # Security: Check if token has already been used
+    if token_data.jti and await auth_service.is_verification_token_used(token_data.jti):
+        raise VerificationTokenUsedError
+
+    # Verify email - passes full token_data for email claim validation
+    success = await auth_service.verify_email(token_data)
     if not success:
         raise EmailVerificationError
 
+    # Security: Mark token as used to prevent reuse
+    if token_data.jti:
+        await auth_service.mark_verification_token_used(
+            token_data.jti,
+            expires_hours=settings.VERIFICATION_TOKEN_EXPIRE_HOURS,
+        )
+
     return MessageResponse(message="Email verified successfully", success=True)
+
+
+@router.post(
+    "/resend-verification",
+    response_class=ORJSONResponse,
+    response_model=MessageResponse,
+    summary="Resend verification email",
+    description="Resend the verification email to the user.",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "If your email is registered and unverified, a new verification email has been sent",
+                        "success": True,
+                    },
+                },
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {
+                "application/json": {"example": {"detail": "Too Many Requests"}},
+            },
+        },
+    },
+    operation_id="auth_resend_verification",
+)
+@timed("/auth/resend-verification")
+@limiter.limit("3/hour")
+async def resend_verification(
+    request: Request,
+    response: Response,
+    body: ResendVerificationRequest,
+    auth_service: AuthServiceDep,
+    repo: UserRepoDep,
+) -> MessageResponse:
+    """
+    Resend verification email.
+
+    Always returns success to prevent email enumeration.
+    """
+    # Look up user by email (always return success regardless)
+    user = await repo.get_by_email(body.email)
+
+    if user and not user.is_verified:
+        # Check rate limit
+        can_send = await auth_service.check_verification_rate_limit(user.uuid)
+        if not can_send:
+            raise HTTPException(
+                status_code=HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many verification email requests. Please try again later.",
+            )
+
+        # Generate and send verification token
+        _verification_token = await auth_service.send_verification_email(user)
+        await auth_service.record_verification_sent(user.uuid)
+
+        # TODO: Send actual email with _verification_token
+        # For now, token is logged in development
+
+    # Always return success to prevent email enumeration
+    return MessageResponse(
+        message="If your email is registered and unverified, a new verification email has been sent",
+        success=True,
+    )
 
 
 @router.post(
@@ -346,10 +442,16 @@ async def register_user(
     response: Response,
     user_create: UserCreate,
     repo: UserRepoDep,
+    auth_service: AuthServiceDep,
 ) -> UserResponse:
     """Register a new user."""
     try:
         user = await repo.create(user_create)
+
+        # Trigger verification email
+        await auth_service.send_verification_email(user)
+        await auth_service.record_verification_sent(user.uuid)
+
         await get_cache_manager(request).delete(
             user_id_key(user.uuid),
             username_key(user.username),

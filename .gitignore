@@ -24,7 +24,9 @@ secrets/
 .idx/postgres_data/
 
 .qodo
-.ruff_cache
+.ruff_cache/
+
+Icon?
 
 # Distribution / packaging
 .Python

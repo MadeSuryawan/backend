@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from jose import JWTError, jwt
 
 from app.configs import settings
-from app.schemas.auth import TokenData
+from app.schemas.auth import TokenData, VerificationTokenData
 
 
 def create_access_token(
@@ -191,5 +191,79 @@ def get_token_jti(token: str) -> str | None:
             options={"verify_aud": False, "verify_iss": False},
         )
         return payload.get("jti")
+    except JWTError:
+        return None
+
+
+def create_verification_token(
+    user_id: UUID,
+    email: str,
+    expires_delta: timedelta | None = None,
+) -> str:
+    """
+    Create email verification token with email claim binding.
+
+    The token includes the email claim to ensure verification tokens
+    cannot be reused if the user changes their email address.
+
+    Args:
+        user_id: User's UUID
+        email: User's email address (bound to token)
+        expires_delta: Optional expiration time delta (default: 24 hours)
+
+    Returns:
+        str: Encoded JWT verification token
+    """
+    now = datetime.now(UTC)
+    expire = now + (expires_delta or timedelta(hours=settings.VERIFICATION_TOKEN_EXPIRE_HOURS))
+
+    to_encode = {
+        "sub": str(user_id),
+        "user_id": str(user_id),
+        "email": email,
+        "jti": str(uuid4()),
+        "iat": now,
+        "exp": expire,
+        "iss": settings.JWT_ISSUER,
+        "aud": settings.JWT_AUDIENCE,
+        "type": "verification",
+    }
+
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def decode_verification_token(token: str) -> VerificationTokenData | None:
+    """
+    Decode and validate email verification token.
+
+    Args:
+        token: JWT token string
+
+    Returns:
+        VerificationTokenData | None: Decoded token data or None if invalid
+    """
+
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
+        )
+
+        token_type: str | None = payload.get("type")
+        user_id: str | None = payload.get("user_id")
+        email: str | None = payload.get("email")
+        jti: str | None = payload.get("jti")
+
+        if token_type != "verification" or not user_id or not email:
+            return None
+
+        return VerificationTokenData(
+            user_id=UUID(user_id),
+            email=email,
+            jti=jti,
+        )
     except JWTError:
         return None

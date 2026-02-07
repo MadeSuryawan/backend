@@ -14,6 +14,7 @@ from starlette.status import HTTP_400_BAD_REQUEST, HTTP_401_UNAUTHORIZED, HTTP_4
 
 from app.clients.ai_client import AiClient
 from app.clients.email_client import EmailClient
+from app.clients.redis_client import RedisClient
 from app.db import get_session
 from app.managers.cache_manager import CacheManager
 from app.managers.login_attempt_tracker import LoginAttemptTracker, get_login_tracker
@@ -41,6 +42,7 @@ def get_auth_service(
     # Try to get blacklist and tracker, but don't fail if not available
     blacklist: TokenBlacklist | None = None
     tracker: LoginAttemptTracker | None = None
+    redis_client: RedisClient | None = None
 
     with suppress(RuntimeError):
         blacklist = get_token_blacklist()
@@ -48,7 +50,19 @@ def get_auth_service(
     with suppress(RuntimeError):
         tracker = get_login_tracker()
 
-    return AuthService(repo, token_blacklist=blacklist, login_tracker=tracker)
+    # Get Redis client from app state cache_manager
+    with suppress(AttributeError):
+        cache_manager = request.app.state.cache_manager
+        if cache_manager and cache_manager.is_redis_available:
+            redis_client = cache_manager.redis_client
+
+    return AuthService(
+        repo,
+        token_blacklist=blacklist,
+        login_tracker=tracker,
+        redis_client=redis_client,
+        email_client=EmailClient(),
+    )
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]

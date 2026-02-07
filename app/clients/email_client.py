@@ -271,6 +271,7 @@ class EmailClient:
         subject: str,
         body: str,
         reply_to: str,
+        to: str | None = None,
         *,
         is_html: bool = False,
     ) -> dict[str, Any]:
@@ -283,6 +284,7 @@ class EmailClient:
             subject: Email subject.
             body: Email body content.
             reply_to: Reply-to email address.
+            to: Recipient email address. Defaults to COMPANY_TARGET_EMAIL if not provided.
             is_html: If True, send body as HTML content. Defaults to False.
 
         Returns:
@@ -293,7 +295,7 @@ class EmailClient:
                 subject=subject,
                 body=body,
                 sender=reply_to,
-                to=settings.COMPANY_TARGET_EMAIL,
+                to=to or settings.COMPANY_TARGET_EMAIL,
                 reply_to=reply_to,
                 is_html=is_html,
             )
@@ -329,6 +331,7 @@ class EmailClient:
         subject: str,
         body: str,
         reply_to: str,
+        to: str | None = None,
         *,
         is_html: bool = False,
     ) -> dict[str, Any]:
@@ -339,6 +342,7 @@ class EmailClient:
             subject: Email subject.
             body: Email body content.
             reply_to: Reply-to email address.
+            to: Recipient email address. Defaults to COMPANY_TARGET_EMAIL if not provided.
             is_html: If True, send body as HTML content. Defaults to False.
 
         Returns:
@@ -347,7 +351,7 @@ class EmailClient:
         loop = get_running_loop()
         return await loop.run_in_executor(
             None,
-            lambda: self.send_sync(subject, body, reply_to, is_html=is_html),
+            lambda: self.send_sync(subject, body, reply_to, to, is_html=is_html),
         )
 
     async def send_email(
@@ -355,6 +359,7 @@ class EmailClient:
         subject: str,
         body: str,
         reply_to: str,
+        to: str | None = None,
         *,
         is_html: bool = False,
     ) -> dict[str, Any]:
@@ -368,6 +373,7 @@ class EmailClient:
             subject: Email subject.
             body: Email body content.
             reply_to: Reply-to email address.
+            to: Recipient email address. Defaults to COMPANY_TARGET_EMAIL if not provided.
             is_html: If True, send body as HTML content. Defaults to False.
 
         Returns:
@@ -386,9 +392,10 @@ class EmailClient:
                     subject,
                     body,
                     reply_to,
+                    to,
                     is_html=is_html,
                 )
-            return await self._send_email_internal(subject, body, reply_to, is_html=is_html)
+            return await self._send_email_internal(subject, body, reply_to, to, is_html=is_html)
         except Exception:
             logger.exception("Async email sending failed")
             raise

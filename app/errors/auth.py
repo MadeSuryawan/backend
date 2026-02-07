@@ -93,6 +93,13 @@ class EmailVerificationError(UserAuthenticationError):
         super().__init__("Invalid or expired verification token", HTTP_401_UNAUTHORIZED)
 
 
+class VerificationTokenUsedError(UserAuthenticationError):
+    """Raised when verification token has already been used."""
+
+    def __init__(self) -> None:
+        super().__init__("Verification token has already been used", HTTP_401_UNAUTHORIZED)
+
+
 class PasswordResetError(UserAuthenticationError):
     """Raised when password reset fails."""
 
