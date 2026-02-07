@@ -249,6 +249,7 @@ class AuthService:
 
         # Professional HTML template using provided logo
         logo_url = "https://res.cloudinary.com/dusikjnta/image/upload/f_auto/q_auto/v1/My%20Brand/bali_blissed_simplified_dhkbvy?_a=BAMAAAhK0"
+        year = datetime.now().year
 
         # Custom HTML template for professional email
         html_content = f"""
@@ -257,95 +258,27 @@ class AuthService:
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-                body {{
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    background-color: #f4f7f9;
-                    margin: 0;
-                    padding: 0;
-                    color: #333;
-                }}
-                .container {{
-                    max-width: 600px;
-                    margin: 40px auto;
-                    background-color: #ffffff;
-                    border-radius: 12px;
-                    overflow: hidden;
-                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-                }}
-                .header {{
-                    background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
-                    padding: 30px;
-                    text-align: center;
-                }}
-                .header img {{
-                    max-width: 150px;
-                    height: auto;
-                }}
-                .content {{
-                    padding: 40px;
-                    text-align: center;
-                }}
-                .content h1 {{
-                    color: #1a2a6c;
-                    font-size: 24px;
-                    margin-bottom: 20px;
-                }}
-                .content p {{
-                    line-height: 1.6;
-                    color: #666;
-                    font-size: 16px;
-                }}
-                .button-container {{
-                    margin-top: 30px;
-                }}
-                .button {{
-                    background-color: #b21f1f;
-                    color: #ffffff;
-                    padding: 14px 28px;
-                    text-decoration: none;
-                    border-radius: 6px;
-                    font-weight: bold;
-                    font-size: 16px;
-                    transition: background-color 0.3s;
-                    display: inline-block;
-                }}
-                .button:hover {{
-                    background-color: #8e1818;
-                }}
-                .footer {{
-                    background-color: #f9f9f9;
-                    padding: 20px;
-                    text-align: center;
-                    font-size: 12px;
-                    color: #999;
-                    border-top: 1px solid #eee;
-                }}
-                .footer p {{
-                    margin: 5px 0;
-                }}
-            </style>
         </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <img src="{logo_url}" alt="BaliBlissed Logo">
+        <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f9; margin: 0; padding: 1px; color: #333; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);">
+            <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8); border: 1px solid rgba(10, 10, 10, 0.1);" class="container">
+                <div style="background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d); padding: 30px; text-align: center;" class="header">
+                    <img style="max-width: 150px; height: auto;" src="{logo_url}" alt="BaliBlissed Logo">
 
                 </div>
-                <div class="content">
-                    <h1>Welcome to BaliBlissed, {user.first_name or user.username}!</h1>
-                    <p>Thank you for embarking on your journey with us. To ensure the security of your account and access all our travel features, please verify your email address by clicking the button below.</p>
-                    <div class="button-container">
-                        <a href="{verification_link}" class="button">Verify Email Address</a>
+                <div style="padding: 40px; text-align: center;" class="content">
+                    <h1 style="color: #1a2a6c; font-size: 24px; margin-bottom: 20px;">Welcome to BaliBlissed, {user.first_name or user.username}!</h1>
+                    <p style="line-height: 1.6; color: #666; font-size: 16px;">Thank you for embarking on your journey with us. To ensure the security of your account and access all our travel features, please verify your email address by clicking the button below.</p>
+                    <div style="margin-top: 30px;" class="button-container">
+                        <a style="color: #ffffff; text-decoration: none; font-weight: bold; font-size: 16px; padding: 14px 28px; border-radius: 6px; background-color: #ce6f21; display: inline-block; transition: background-color 0.3s;" href="{verification_link}" class="button">Verify Email Address</a>
                     </div>
                     <p style="margin-top: 30px; font-size: 14px; color: #888;">
                         This link will expire in {settings.VERIFICATION_TOKEN_EXPIRE_HOURS} hours.
                         If you didn't create an account, you can safely ignore this email.
                     </p>
                 </div>
-                <div class="footer">
-                    <p>&copy; 2025 BaliBlissed. All rights reserved.</p>
-                    <p>Your portal to Bali's finest travel experiences.</p>
+                <div style="background-color: #f9f9f9; padding: 20px; text-align: center; font-size: 12px; color: #999; border: 1px solid #eee;" class="footer">
+                    <p style="margin: 5px 0;">&copy; {year} BaliBlissed. All rights reserved.</p>
+                    <p style="margin: 5px 0;">Your portal to Bali's finest travel experiences.</p>
                 </div>
             </div>
         </body>
