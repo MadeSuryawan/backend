@@ -5,11 +5,13 @@ Endpoints for administrative operations requiring admin role.
 """
 
 from datetime import UTC, datetime
+from logging import getLogger
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import ORJSONResponse
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
@@ -23,10 +25,27 @@ from app.schemas.admin import (
     AdminUserResponse,
     SystemStatsResponse,
     UserRoleUpdate,
+    UserVerificationUpdate,
 )
-from app.schemas.user import UserResponse
+from app.schemas.user import validate_user_response
+from app.utils.helpers import file_logger
 
 router = APIRouter(prefix="/admin", tags=["👑 Admin"])
+logger = file_logger(getLogger(__name__))
+
+
+def _validate_admin_response(user_db: UserDB) -> AdminUserResponse:
+    """Validate admin response schema."""
+
+    _db = validate_user_response(user_db)
+    try:
+        response = AdminUserResponse.model_validate(_db, from_attributes=True)
+    except ValidationError as e:
+        mssg = f"Validation error converting user to AdminUserResponse model: {e}"
+        logger.exception("Validation error converting user to AdminUserResponse model")
+        raise ValueError(mssg) from e
+
+    return response
 
 
 @router.get(
@@ -104,7 +123,7 @@ async def list_all_users(
     total = result.scalar_one() or 0
 
     return AdminUserListResponse(
-        users=[UserResponse.model_validate(user) for user in users],
+        users=[validate_user_response(user) for user in users],
         total=total,
         skip=skip,
         limit=limit,
@@ -174,7 +193,7 @@ async def get_user_details(
     user = await repo.get_by_id(user_id)
     if not user:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="User not found")
-    return AdminUserResponse.model_validate(user)
+    return _validate_admin_response(user)
 
 
 @router.put(
@@ -262,7 +281,95 @@ async def update_user_role(
     user.updated_at = datetime.now(tz=UTC).replace(second=0, microsecond=0)
     await session.commit()
     await session.refresh(user)
-    return AdminUserResponse.model_validate(user)
+    return _validate_admin_response(user)
+
+
+@router.put(
+    "/users/{user_id}/verification",
+    response_class=ORJSONResponse,
+    response_model=AdminUserResponse,
+    summary="Update user verification status (admin only)",
+    description="Update a user's verification status (verified/unverified). Admin access required.",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "123e4567-e89b-12d3-a456-426614174000",
+                        "username": "johndoe",
+                        "email": "johndoe@gmail.com",
+                        "role": "user",
+                        "isActive": True,
+                        "isVerified": False,
+                    },
+                },
+            },
+        },
+        400: {
+            "description": "Bad request",
+            "content": {
+                "application/json": {"example": {"detail": "Invalid status"}},
+            },
+        },
+        404: {
+            "description": "Not found",
+            "content": {
+                "application/json": {"example": {"detail": "User not found"}},
+            },
+        },
+    },
+    operation_id="admin_update_user_verification_status",
+)
+@timed("/admin/users/{user_id}/verification")
+async def update_user_verification_status(
+    user_id: UUID,
+    verification_update: UserVerificationUpdate,
+    admin_user: AdminUserDep,
+    repo: UserRepoDep,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AdminUserResponse:
+    """
+    Update user status.
+
+    Parameters
+    ----------
+    user_id : UUID
+        User identifier.
+    verification_update : UserVerificationUpdate
+        New verification status value.
+    admin_user : UserDB
+        Admin user (enforced by AdminUserDep dependency).
+    repo : UserRepository
+        User repository dependency.
+    session : AsyncSession
+        Database session for committing status update.
+
+    Returns
+    -------
+    AdminUserResponse
+        Updated user with new status.
+
+    Raises
+    ------
+    HTTPException
+        If user not found or invalid status.
+    """
+    if verification_update.status not in (True, False):
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="Invalid status. Must be one of: true, false",
+        )
+
+    user = await repo.get_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Update status directly
+    user.is_verified = verification_update.status
+    user.updated_at = datetime.now(tz=UTC).replace(second=0, microsecond=0)
+    await session.commit()
+    await session.refresh(user)
+    return _validate_admin_response(user)
 
 
 @router.get(
@@ -317,15 +424,11 @@ async def get_system_stats(
 
     # Get active users - use get_all and filter in Python for simplicity
     all_users = await repo.get_all(skip=0, limit=10000)  # Get all users
-    active_users = sum(1 for u in all_users if u.is_active)
-    verified_users = sum(1 for u in all_users if u.is_verified)
-    admin_users = sum(1 for u in all_users if u.role == "admin")
-    moderator_users = sum(1 for u in all_users if u.role == "moderator")
 
     return SystemStatsResponse(
         total_users=total_users,
-        active_users=active_users,
-        verified_users=verified_users,
-        admin_users=admin_users,
-        moderator_users=moderator_users,
+        active_users=sum(1 for u in all_users if u.is_active),
+        verified_users=sum(1 for u in all_users if u.is_verified),
+        admin_users=sum(1 for u in all_users if u.role == "admin"),
+        moderator_users=sum(1 for u in all_users if u.role == "moderator"),
     )

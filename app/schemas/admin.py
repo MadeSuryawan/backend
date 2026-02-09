@@ -1,6 +1,5 @@
 """Admin-related schemas for administrative operations."""
 
-
 from pydantic import BaseModel, Field
 
 from app.schemas.user import UserResponse
@@ -10,6 +9,7 @@ class AdminUserResponse(UserResponse):
     """Extended user response for admin views with role information."""
 
     role: str = Field(..., description="User role (user, moderator, admin)")
+    is_verified: bool = Field(default=False, description="Whether the user is verified")
 
 
 class AdminUserListResponse(BaseModel):
@@ -28,6 +28,16 @@ class UserRoleUpdate(BaseModel):
         ...,
         description="New role (user, moderator, admin)",
         pattern="^(user|moderator|admin)$",
+    )
+
+
+class UserVerificationUpdate(BaseModel):
+    """Request schema for updating user verification status."""
+
+    status: bool = Field(
+        ...,
+        description="New verification status (true, false)",
+        examples=[True, False],
     )
 
 
