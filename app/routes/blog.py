@@ -37,7 +37,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, UploadFile
 from fastapi.responses import ORJSONResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from starlette.responses import Response
 from starlette.status import (
     HTTP_201_CREATED,
@@ -93,6 +93,7 @@ class PaginationQuery:
         Number of records to skip.
     limit : int
         Maximum number of records to return.
+
     """
 
     skip: int = 0
@@ -110,6 +111,7 @@ class BustListGridQuery:
         List of limit values to invalidate.
     skips : list[int]
         List of skip values to invalidate.
+
     """
 
     limits: list[int]
@@ -122,6 +124,22 @@ class BustListGridQuery:
 
 
 def _404_not_found(value: UUID | str, by: str = "id") -> Never:
+    """
+    Raise a 404 HTTPException for a missing blog.
+
+    Parameters
+    ----------
+    value : UUID | str
+        The value that was not found.
+    by : str
+        The field name used for looking up the blog (default: "id").
+
+    Raises
+    ------
+    HTTPException
+        Always raises 404 Not Found.
+
+    """
     raise HTTPException(status_code=404, detail=f"Blog with {by} '{value}' not found")
 
 
@@ -145,57 +163,39 @@ async def _get_blog_or_404(blog_id: UUID, repo: BlogRepoDep) -> BlogDB:
     ------
     HTTPException
         404 if the blog is not found.
+
     """
     if not (blog := await repo.get_by_id(blog_id)):
         _404_not_found(blog_id, by="id")
     return blog
 
 
-def db_blog_to_response(db_blog: BlogDB) -> BlogResponse:
+def _validate_blog_response(schema: type[BaseModel], db_blog: BlogDB) -> BaseModel:
     """
-    Convert a `BlogDB` instance to `BlogResponse` with datetime serialization.
+    Validate a blog response model.
 
     Parameters
     ----------
+    schema : BaseModel
+        The blog response model to validate.
     db_blog : BlogDB
-        Database blog entity.
+        The database blog entity to validate.
 
     Returns
     -------
-    BlogResponse
-        Validated response model.
+    BaseModel
+        The validated blog response model.
+
     """
-
-    blog_dict = response_datetime(db_blog)
-
+    _dict = response_datetime(db_blog)
     try:
-        response = BlogResponse.model_validate(blog_dict, from_attributes=True)
+        response = schema.model_validate(_dict, from_attributes=True)
     except ValidationError as e:
         mssg = f"Validation error converting blog to response model: {e}"
         logger.exception("Validation error converting blog to response model")
         raise ValueError(mssg) from e
 
     return response
-
-
-def db_blog_to_list_response(db_blog: BlogDB) -> BlogListResponse:
-    """
-    Convert a `BlogDB` instance to `BlogListResponse` with datetime serialization.
-
-    Parameters
-    ----------
-    db_blog : BlogDB
-        Database blog entity.
-
-    Returns
-    -------
-    BlogListResponse
-        Validated list response model.
-    """
-
-    blog_dict = response_datetime(db_blog)
-
-    return BlogListResponse.model_validate(blog_dict)
 
 
 def get_pagination_query(
@@ -208,10 +208,18 @@ def get_pagination_query(
     """
     Dependency to construct `PaginationQuery` from query parameters.
 
+    Parameters
+    ----------
+    skip : int
+        Number of records to skip.
+    limit : int
+        Maximum number of records to return.
+
     Returns
     -------
     PaginationQuery
         Aggregated pagination parameters.
+
     """
     return PaginationQuery(skip=skip, limit=limit)
 
@@ -223,10 +231,18 @@ def get_bust_list_grid_query(
     """
     Dependency to construct `BustListGridQuery` from query parameters.
 
+    Parameters
+    ----------
+    limits : list[int]
+        List of limit values to invalidate.
+    skips : list[int]
+        List of skip values to invalidate.
+
     Returns
     -------
     BustListGridQuery
         Aggregated grid parameters.
+
     """
     return BustListGridQuery(limits=limits, skips=skips)
 
@@ -244,6 +260,7 @@ def blog_slug_key(slug: str) -> str:
     -------
     str
         Cache key for blog by slug.
+
     """
     return f"blog_by_slug_{slug}"
 
@@ -261,6 +278,7 @@ def blogs_list_key(query: BlogListQuery) -> str:
     -------
     str
         Cache key for blogs list.
+
     """
     status_part = query.status_filter or "any"
     author_part = str(query.author_id) if query.author_id else "any"
@@ -282,6 +300,7 @@ def blogs_by_author_key(author_id: UUID, pagination: PaginationQuery) -> str:
     -------
     str
         Cache key for blogs by author.
+
     """
     return f"blogs_by_author_{author_id}_{pagination.skip}_{pagination.limit}"
 
@@ -301,6 +320,7 @@ def blogs_search_tags_key(tags: list[str], pagination: PaginationQuery) -> str:
     -------
     str
         Cache key for blogs search by tags.
+
     """
     tags_part = "-".join(sorted(tags)) or "none"
     return f"blogs_search_{tags_part}_{pagination.skip}_{pagination.limit}"
@@ -322,6 +342,7 @@ async def delete_cache_keys(
         Database blog entity.
     request : Request
         Request object.
+
     """
     keys: list[str] = []
     keys.extend(
@@ -464,11 +485,12 @@ async def create_blog(
     ------
     HTTPException
         If slug already exists.
+
     """
     try:
         blog_full = BlogSchema.model_validate(blog.model_dump())
         db_blog = await repo.create(blog_full, author_id=blog.author_id)
-        return db_blog_to_response(db_blog)
+        return cast(BlogResponse, _validate_blog_response(BlogResponse, db_blog))
     except DuplicateEntryError as e:
         logger.exception(f"Duplicate slug '{blog.slug}' detected on blog creation")
         raise HTTPException(status_code=HTTP_409_CONFLICT, detail=e.detail) from e
@@ -545,10 +567,11 @@ async def get_blog(
     ------
     HTTPException
         If blog not found.
+
     """
     if not (db_blog := await repo.increment_view_count(blog_id)):
         _404_not_found(blog_id, by="id")
-    return db_blog_to_response(db_blog)
+    return cast(BlogResponse, _validate_blog_response(BlogResponse, db_blog))
 
 
 @router.get(
@@ -622,10 +645,11 @@ async def get_blog_by_slug(
     ------
     HTTPException
         If blog not found.
+
     """
     if not (db_blog := await repo.get_by_slug(slug)):
         _404_not_found(slug, by="slug")
-    return db_blog_to_response(db_blog)
+    return cast(BlogResponse, _validate_blog_response(BlogResponse, db_blog))
 
 
 @router.get(
@@ -684,15 +708,7 @@ async def get_blogs(
         Current request context.
     response : Response
         Response object for middleware/decorators.
-    skip : int
-        Number of records to skip.
-    limit : int
-        Maximum number of records to return.
-    status_filter : Literal | None
-        Optional status filter.
-    author_id : UUID | None
-        Optional author ID filter.
-    repo : BlogRepository
+    repo : BlogRepoDep
         Repository dependency.
     query : BlogListQuery
         Aggregated filters and pagination.
@@ -701,6 +717,7 @@ async def get_blogs(
     -------
     list[BlogListResponse]
         Lightweight blog listing.
+
     """
     db_blogs = await repo.get_all(
         skip=query.skip,
@@ -708,7 +725,9 @@ async def get_blogs(
         status=query.status_filter,
         author_id=query.author_id,
     )
-    return [db_blog_to_list_response(blog) for blog in db_blogs]
+    return [
+        cast(BlogListResponse, _validate_blog_response(BlogListResponse, blog)) for blog in db_blogs
+    ]
 
 
 @router.get(
@@ -770,11 +789,7 @@ async def get_blogs_by_author(
         Response object for middleware/decorators.
     author_id : UUID
         Author identifier.
-    skip : int
-        Number of records to skip.
-    limit : int
-        Maximum number of records to return.
-    repo : BlogRepository
+    repo : BlogRepoDep
         Repository dependency.
     pagination : PaginationQuery
         Pagination controls.
@@ -783,13 +798,16 @@ async def get_blogs_by_author(
     -------
     list[BlogListResponse]
         Blogs by the author.
+
     """
     db_blogs = await repo.get_by_author(
         author_id,
         skip=pagination.skip,
         limit=pagination.limit,
     )
-    return [db_blog_to_list_response(blog) for blog in db_blogs]
+    return [
+        cast(BlogListResponse, _validate_blog_response(BlogListResponse, blog)) for blog in db_blogs
+    ]
 
 
 @router.get(
@@ -851,11 +869,7 @@ async def search_blogs_by_tags(
         Response object for middleware/decorators.
     tags : list[str]
         Tags to match.
-    skip : int
-        Number of records to skip.
-    limit : int
-        Maximum number of records to return.
-    repo : BlogRepository
+    repo : BlogRepoDep
         Repository dependency.
     pagination : PaginationQuery
         Pagination controls.
@@ -864,13 +878,16 @@ async def search_blogs_by_tags(
     -------
     list[BlogListResponse]
         Blogs matching any of the tags.
+
     """
     db_blogs = await repo.search_by_tags(
         tags,
         skip=pagination.skip,
         limit=pagination.limit,
     )
-    return [db_blog_to_list_response(blog) for blog in db_blogs]
+    return [
+        cast(BlogListResponse, _validate_blog_response(BlogListResponse, blog)) for blog in db_blogs
+    ]
 
 
 @router.put(
@@ -961,6 +978,7 @@ async def update_blog(
     ------
     HTTPException
         If blog not found or invalid update.
+
     """
     existing = await _get_blog_or_404(deps.blog_id, deps.repo)
     check_owner_or_admin(existing.author_id, deps.current_user, "blog")
@@ -969,7 +987,7 @@ async def update_blog(
         _404_not_found(deps.blog_id, by="id")
 
     await delete_cache_keys(existing, db_blog, request)
-    return db_blog_to_response(db_blog)
+    return cast(BlogResponse, _validate_blog_response(BlogResponse, db_blog))
 
 
 @router.delete(
@@ -1022,6 +1040,7 @@ async def delete_blog(
     ------
     HTTPException
         If blog not found.
+
     """
     existing = await _get_blog_or_404(deps.blog_id, deps.repo)
     check_owner_or_admin(existing.author_id, deps.current_user, "blog")
@@ -1092,6 +1111,7 @@ async def bust_blogs_list(
     -------
     ORJSONResponse
         Status message indicating success.
+
     """
     return ORJSONResponse(content={"status": "success"})
 
@@ -1130,6 +1150,26 @@ async def bust_blog_by_slug(
     slug: str,
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
+    """
+    Invalidate cached blog detail for a given slug.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    slug : str
+        Blog slug to invalidate.
+    admin_user : AdminUserDep
+        Admin user dependency for authorization.
+
+    Returns
+    -------
+    ORJSONResponse
+        Status message indicating success.
+
+    """
     return ORJSONResponse(content={"status": "success"})
 
 
@@ -1170,6 +1210,28 @@ async def bust_blogs_by_author(
     pagination: Annotated[PaginationQuery, Depends(get_pagination_query)],
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
+    """
+    Invalidate cached blogs listing for a given author and pagination.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    author_id : UUID
+        Author identifier.
+    pagination : PaginationQuery
+        Pagination controls.
+    admin_user : AdminUserDep
+        Admin user dependency for authorization.
+
+    Returns
+    -------
+    ORJSONResponse
+        Status message indicating success.
+
+    """
     return ORJSONResponse(content={"status": "success"})
 
 
@@ -1210,6 +1272,28 @@ async def bust_blogs_by_tags(
     pagination: Annotated[PaginationQuery, Depends(get_pagination_query)],
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
+    """
+    Invalidate cached blogs search results for given tags and pagination.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    tags : list[str]
+        Tags to match.
+    pagination : PaginationQuery
+        Pagination controls.
+    admin_user : AdminUserDep
+        Admin user dependency for authorization.
+
+    Returns
+    -------
+    ORJSONResponse
+        Status message indicating success.
+
+    """
     return ORJSONResponse(content={"status": "success"})
 
 
@@ -1258,6 +1342,28 @@ async def bust_blogs_list_multi(
     limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
+    """
+    Invalidate cached blogs list pages across multiple limits.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    query : BlogListQuery
+        Aggregated filters and initial pagination.
+    limits : list[int]
+        List of limit values to invalidate.
+    admin_user : AdminUserDep
+        Admin user dependency for authorization.
+
+    Returns
+    -------
+    ORJSONResponse
+        Status message indicating success.
+
+    """
     return ORJSONResponse(content={"status": "success"})
 
 
@@ -1307,6 +1413,28 @@ async def bust_blogs_list_grid(
     grid_query: Annotated[BustListGridQuery, Depends(get_bust_list_grid_query)],
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
+    """
+    Invalidate cached blogs list pages across multiple limits and skips.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    query : BlogListQuery
+        Aggregated filters.
+    grid_query : BustListGridQuery
+        Grid of limits and skips to invalidate.
+    admin_user : AdminUserDep
+        Admin user dependency for authorization.
+
+    Returns
+    -------
+    ORJSONResponse
+        Status message indicating success.
+
+    """
     return ORJSONResponse(content={"status": "success"})
 
 
@@ -1339,6 +1467,24 @@ async def bust_blogs_all(
     response: Response,
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
+    """
+    Clear all cached keys in the blogs namespace.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    admin_user : AdminUserDep
+        Admin user dependency for authorization.
+
+    Returns
+    -------
+    ORJSONResponse
+        Status message indicating success.
+
+    """
     await get_cache_manager(request).clear(namespace="blogs")
     return ORJSONResponse(content={"status": "cleared"})
 
@@ -1360,6 +1506,40 @@ UPLOAD_EXCEPTIONS = (
 )
 
 
+def _validate_media_response(media_id: str, url: str, media_type: str) -> MediaUploadResponse:
+    """
+    Create a validated MediaUploadResponse from the given parameters.
+
+    Parameters
+    ----------
+    media_id : str
+        ID of the uploaded media.
+    url : str
+        URL of the uploaded media.
+    media_type : str
+        Type of media (image/video).
+
+    Returns
+    -------
+    MediaUploadResponse
+        Validated media upload response.
+
+    Raises
+    ------
+    ValueError
+        If validation fails.
+
+    """
+    try:
+        _dict = {"media_id": media_id, "url": url, "media_type": media_type}
+        response = MediaUploadResponse.model_validate(_dict, from_attributes=True)
+    except ValidationError as e:
+        logger.exception("Validation error in media upload response")
+        detail = f"Validation error in media upload response: {e}"
+        raise ValueError(detail) from e
+    return response
+
+
 async def _upload_media(
     db_blog: BlogDB,
     repo: BlogRepoDep,
@@ -1367,8 +1547,33 @@ async def _upload_media(
     file: UploadFile,
     media_type: Literal["image", "video"],
 ) -> MediaUploadResponse:
-    """Upload media (image/video) to a blog post."""
+    """
+    Upload media (image/video) to a blog post.
 
+    Parameters
+    ----------
+    db_blog : BlogDB
+        Database blog entity.
+    repo : BlogRepoDep
+        Blog repository dependency.
+    blog_id : UUID
+        Blog identifier.
+    file : UploadFile
+        File to upload.
+    media_type : Literal["image", "video"]
+        Type of media being uploaded.
+
+    Returns
+    -------
+    MediaUploadResponse
+        Validated media upload metadata.
+
+    Raises
+    ------
+    HTTPException
+        If the upload fails or limits are exceeded.
+
+    """
     current_count = 0
     if url_list := getattr(db_blog, f"{media_type}s_url"):
         current_count = len(url_list)
@@ -1384,7 +1589,7 @@ async def _upload_media(
 
     await repo_func(blog_id, url)
 
-    return MediaUploadResponse(mediaId=media_id, url=url, mediaType=media_type)
+    return _validate_media_response(media_id, url, media_type)
 
 
 async def _delete_media(
@@ -1393,8 +1598,31 @@ async def _delete_media(
     blog_id: UUID,
     media_id: str,
 ) -> dict[str, str]:
-    """Delete media (image/video) from a blog post."""
+    """
+    Delete media (image/video) from a blog post.
 
+    Parameters
+    ----------
+    db_blog : BlogDB
+        Database blog entity.
+    repo : BlogRepoDep
+        Blog repository dependency.
+    blog_id : UUID
+        Blog identifier.
+    media_id : str
+        Identifier of the media to delete.
+
+    Returns
+    -------
+    dict[str, str]
+        Status message indicating which folder was affected.
+
+    Raises
+    ------
+    HTTPException
+        If media is not found or deletion fails.
+
+    """
     folder: str | None = None
     if db_blog.images_url and any(f"/{media_id}" in url for url in db_blog.images_url):
         folder = "blog_images"
@@ -1435,28 +1663,8 @@ async def _delete_media(
 
 
 # =============================================================================
-# Media Upload Endpoints
+# Media Endpoints
 # =============================================================================
-
-
-@dataclass(frozen=True)
-class MediaUpDeps:
-    """Dependencies for authenticated media operations."""
-
-    blog_id: UUID
-    file: UploadFile
-    repo: BlogRepoDep
-    current_user: UserDBDep
-
-
-@dataclass(frozen=True)
-class MediaDelDeps:
-    """Dependencies for authenticated media operations."""
-
-    blog_id: UUID
-    media_id: str
-    repo: BlogRepoDep
-    current_user: UserDBDep
 
 
 @router.post(
@@ -1471,19 +1679,39 @@ class MediaDelDeps:
 async def upload_blog_image(
     request: Request,
     response: Response,
-    deps: Annotated[MediaUpDeps, Depends()],
+    file: UploadFile,
+    deps: Annotated[BlogOpsDeps, Depends()],
 ) -> MediaUploadResponse:
     """
     Upload an image to a blog post.
 
-    Only the blog author or admin can upload images.
-    Maximum 10 images per blog post.
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    file : UploadFile
+        Image file to upload.
+    deps : BlogOpsDeps
+        Operation dependencies (blog_id + repo + current_user).
+
+    Returns
+    -------
+    MediaUploadResponse
+        Validated media upload metadata.
+
+    Notes
+    -----
+    - Only the blog author or admin can upload images.
+    - Maximum 10 images per blog post.
+
     """
     db_blog = await _get_blog_or_404(deps.blog_id, deps.repo)
 
     check_owner_or_admin(db_blog.author_id, deps.current_user)
 
-    return await _upload_media(db_blog, deps.repo, deps.blog_id, deps.file, "image")
+    return await _upload_media(db_blog, deps.repo, deps.blog_id, file, "image")
 
 
 @router.post(
@@ -1498,19 +1726,39 @@ async def upload_blog_image(
 async def upload_blog_video(
     request: Request,
     response: Response,
-    deps: Annotated[MediaUpDeps, Depends()],
+    file: UploadFile,
+    deps: Annotated[BlogOpsDeps, Depends()],
 ) -> MediaUploadResponse:
     """
     Upload a video to a blog post.
 
-    Only the blog author or admin can upload videos.
-    Maximum 3 videos per blog post.
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    file : UploadFile
+        Video file to upload.
+    deps : BlogOpsDeps
+        Operation dependencies (blog_id + repo + current_user).
+
+    Returns
+    -------
+    MediaUploadResponse
+        Validated media upload metadata.
+
+    Notes
+    -----
+    - Only the blog author or admin can upload videos.
+    - Maximum 3 videos per blog post.
+
     """
     db_blog = await _get_blog_or_404(deps.blog_id, deps.repo)
 
     check_owner_or_admin(db_blog.author_id, deps.current_user)
 
-    return await _upload_media(db_blog, deps.repo, deps.blog_id, deps.file, "video")
+    return await _upload_media(db_blog, deps.repo, deps.blog_id, file, "video")
 
 
 @router.delete(
@@ -1525,13 +1773,33 @@ async def upload_blog_video(
 async def delete_blog_media(
     request: Request,
     response: Response,
-    deps: Annotated[MediaDelDeps, Depends()],
+    media_id: str,
+    deps: Annotated[BlogOpsDeps, Depends()],
 ) -> ORJSONResponse:
-    """Delete an image/video from a blog post (author/admin only)."""
+    """
+    Delete an image/video from a blog post.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    media_id : str
+        Identifier of the media to delete.
+    deps : BlogOpsDeps
+        Operation dependencies (blog_id + repo + current_user).
+
+    Returns
+    -------
+    ORJSONResponse
+        Status message indicating success.
+
+    """
     db_blog = await _get_blog_or_404(deps.blog_id, deps.repo)
 
     check_owner_or_admin(db_blog.author_id, deps.current_user)
 
-    result = await _delete_media(db_blog, deps.repo, deps.blog_id, deps.media_id)
+    result = await _delete_media(db_blog, deps.repo, deps.blog_id, media_id)
 
     return ORJSONResponse(content=result)
