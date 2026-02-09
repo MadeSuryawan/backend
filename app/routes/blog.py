@@ -47,10 +47,10 @@ from starlette.status import (
     HTTP_409_CONFLICT,
 )
 
-from app.auth.permissions import AdminUserDep, check_owner_or_admin
+from app.auth.permissions import check_owner_or_admin
 from app.decorators.caching import cache_busting, cached, get_cache_manager
 from app.decorators.metrics import timed
-from app.dependencies import BlogListQuery, BlogQueryListDep, BlogRepoDep, UserDBDep
+from app.dependencies import AdminUserDep, BlogListQuery, BlogQueryListDep, BlogRepoDep, UserDBDep
 from app.errors.database import DatabaseError, DuplicateEntryError
 from app.errors.upload import (
     ImageProcessingError,

@@ -51,10 +51,10 @@ from starlette.status import (
     HTTP_500_INTERNAL_SERVER_ERROR,
 )
 
-from app.auth.permissions import AdminUserDep, check_owner_or_admin
+from app.auth.permissions import check_owner_or_admin
 from app.decorators.caching import cache_busting, cached, get_cache_manager
 from app.decorators.metrics import timed
-from app.dependencies import AuthServiceDep, UserDBDep, UserQueryListDep, UserRepoDep
+from app.dependencies import AdminUserDep, AuthServiceDep, UserDBDep, UserQueryListDep, UserRepoDep
 from app.errors.database import DatabaseError, DuplicateEntryError
 from app.errors.upload import (
     ImageProcessingError,

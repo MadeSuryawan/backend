@@ -50,7 +50,7 @@ async def test_delete_user_triggers_cleanup(client: AsyncClient) -> None:
 
     with (
         patch("app.routes.user.check_owner_or_admin", return_value=None),
-        patch("app.routes.user._get_profile_picture_service") as mock_pp_service,
+        patch("app.routes.user._get_pp_service") as mock_pp_service,
         patch("app.routes.user._invalidate_user_cache", new_callable=AsyncMock),
     ):
         mock_pp_instance = AsyncMock()

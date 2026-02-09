@@ -6,7 +6,7 @@ from typing import Annotated
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import ORJSONResponse
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm
 from starlette.responses import RedirectResponse, Response
 from starlette.status import (
     HTTP_201_CREATED,
@@ -18,7 +18,7 @@ from starlette.status import (
 from app.configs import settings
 from app.decorators.caching import get_cache_manager
 from app.decorators.metrics import timed
-from app.dependencies import AuthServiceDep, UserRepoDep, UserRespDep
+from app.dependencies import AuthServiceDep, UserRepoDep, UserRespDep, oauth2_scheme
 from app.errors.auth import (
     EmailVerificationError,
     PasswordResetError,
@@ -42,7 +42,6 @@ from app.utils.helpers import file_logger
 
 router = APIRouter(prefix="/auth", tags=["🔐 Auth"])
 logger = file_logger(getLogger(__name__))
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 # OAuth Configuration
 oauth = OAuth()

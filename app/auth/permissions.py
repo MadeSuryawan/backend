@@ -138,93 +138,6 @@ def require_role_or_higher(required_role: str) -> Callable[..., Awaitable[UserDB
     return role_checker
 
 
-async def require_admin(
-    user: Annotated[UserDB, Depends(get_current_user)],
-) -> UserDB:
-    """
-    Dependency that requires admin role.
-
-    Parameters
-    ----------
-    user : UserDB
-        Current authenticated user.
-
-    Returns
-    -------
-    UserDB
-        The user if they have admin role.
-
-    Raises
-    ------
-    HTTPException
-        If user is not an admin.
-    """
-    if user.role != "admin":
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Admin access required",
-        )
-    return user
-
-
-async def require_moderator(
-    user: Annotated[UserDB, Depends(get_current_user)],
-) -> UserDB:
-    """
-    Dependency that requires moderator role or higher.
-
-    Parameters
-    ----------
-    user : UserDB
-        Current authenticated user.
-
-    Returns
-    -------
-    UserDB
-        The user if they have moderator role or higher.
-
-    Raises
-    ------
-    HTTPException
-        If user doesn't have sufficient permissions.
-    """
-    if not has_role_or_higher(user.role, "moderator"):
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Moderator access required",
-        )
-    return user
-
-
-async def require_verified_user(
-    user: Annotated[UserDB, Depends(get_current_user)],
-) -> UserDB:
-    """
-    Dependency that requires email-verified user.
-
-    Parameters
-    ----------
-    user : UserDB
-        Current authenticated user.
-
-    Returns
-    -------
-    UserDB
-        The user if their email is verified.
-
-    Raises
-    ------
-    HTTPException
-        If user email is not verified.
-    """
-    if not user.is_verified:
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Email verification required. Please verify your email first.",
-        )
-    return user
-
-
 def has_permission(user: UserDB, permission: Permission) -> bool:
     """
     Check if user has a specific permission.
@@ -292,9 +205,3 @@ def check_owner_or_admin(
             status_code=HTTP_403_FORBIDDEN,
             detail=f"Only the {resource_name} owner or admin can perform this action",
         )
-
-
-# Type aliases for common dependencies
-AdminUserDep = Annotated[UserDB, Depends(require_admin)]
-ModeratorUserDep = Annotated[UserDB, Depends(require_moderator)]
-VerifiedUserDep = Annotated[UserDB, Depends(require_verified_user)]

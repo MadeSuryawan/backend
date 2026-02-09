@@ -127,7 +127,87 @@ async def get_current_user(
     return user
 
 
-async def get_verified_user(
+def get_user_repository(session: Annotated[AsyncSession, Depends(get_session)]) -> UserRepository:
+    """
+    Resolve the `UserRepository` dependency.
+
+    Parameters
+    ----------
+    session : AsyncSession
+        Database session.
+
+    Returns
+    -------
+    UserRepository
+        Repository instance bound to the session.
+    """
+    return UserRepository(session)
+
+
+UserDBDep = Annotated[UserDB, Depends(get_current_user)]
+UserRespDep = Annotated[UserResponse, Depends(get_current_user)]
+UserRepoDep = Annotated[UserRepository, Depends(get_user_repository)]
+
+
+async def is_admin(
+    user: Annotated[UserDB, Depends(get_current_user)],
+) -> UserDB:
+    """
+    Dependency that requires admin role.
+
+    Parameters
+    ----------
+    user : UserDB
+        Current authenticated user.
+
+    Returns
+    -------
+    UserDB
+        The user if they have admin role.
+
+    Raises
+    ------
+    HTTPException
+        If user is not an admin.
+    """
+    if user.role != "admin":
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return user
+
+
+async def is_moderator(
+    user: Annotated[UserDB, Depends(get_current_user)],
+) -> UserDB:
+    """
+    Dependency that requires moderator role.
+
+    Parameters
+    ----------
+    user : UserDB
+        Current authenticated user.
+
+    Returns
+    -------
+    UserDB
+        The user if they have moderator role.
+
+    Raises
+    ------
+    HTTPException
+        If user is not a moderator.
+    """
+    if user.role != "moderator":
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Moderator access required",
+        )
+    return user
+
+
+async def is_verified(
     user: Annotated[UserDB, Depends(get_current_user)],
 ) -> UserDB:
     """
@@ -156,27 +236,9 @@ async def get_verified_user(
     return user
 
 
-def get_user_repository(session: Annotated[AsyncSession, Depends(get_session)]) -> UserRepository:
-    """
-    Resolve the `UserRepository` dependency.
-
-    Parameters
-    ----------
-    session : AsyncSession
-        Database session.
-
-    Returns
-    -------
-    UserRepository
-        Repository instance bound to the session.
-    """
-    return UserRepository(session)
-
-
-UserDBDep = Annotated[UserDB, Depends(get_current_user)]
-UserRespDep = Annotated[UserResponse, Depends(get_current_user)]
-VerifiedUserDep = Annotated[UserDB, Depends(get_verified_user)]
-UserRepoDep = Annotated[UserRepository, Depends(get_user_repository)]
+AdminUserDep = Annotated[UserDB, Depends(is_admin)]
+ModeratorUserDep = Annotated[UserDB, Depends(is_moderator)]
+VerifiedUserDep = Annotated[UserDB, Depends(is_verified)]
 
 
 def get_blog_repository(

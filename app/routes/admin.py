@@ -14,10 +14,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
 
-from app.auth.permissions import AdminUserDep
 from app.db import get_session
 from app.decorators.metrics import timed
-from app.dependencies import UserRepoDep
+from app.dependencies import AdminUserDep, UserRepoDep
 from app.models import UserDB
 from app.schemas.admin import (
     AdminUserListResponse,

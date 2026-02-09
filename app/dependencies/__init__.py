@@ -1,6 +1,7 @@
 # app/dependencies/__init__.py
 
 from app.dependencies.dependencies import (
+    AdminUserDep,
     AiDep,
     AuthServiceDep,
     BlogListQuery,
@@ -8,28 +9,35 @@ from app.dependencies.dependencies import (
     BlogRepoDep,
     CacheDep,
     EmailDep,
+    ModeratorUserDep,
     ReviewRepoDep,
     UserDBDep,
     UserQueryListDep,
     UserRepoDep,
     UserRespDep,
+    VerifiedUserDep,
     get_cache_manager,
     get_email_client,
+    oauth2_scheme,
 )
 
 __all__ = [
     "AiDep",
     "AuthServiceDep",
+    "AdminUserDep",
     "BlogListQuery",
     "BlogQueryListDep",
     "BlogRepoDep",
     "CacheDep",
     "EmailDep",
+    "ModeratorUserDep",
     "ReviewRepoDep",
     "UserDBDep",
     "UserQueryListDep",
     "UserRepoDep",
     "UserRespDep",
+    "VerifiedUserDep",
     "get_cache_manager",
     "get_email_client",
+    "oauth2_scheme",
 ]

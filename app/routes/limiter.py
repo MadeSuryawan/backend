@@ -9,8 +9,7 @@ from logging import getLogger
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import ORJSONResponse
 
-from app.auth.permissions import AdminUserDep
-from app.decorators.caching import get_cache_manager
+from app.dependencies import AdminUserDep, get_cache_manager
 from app.managers.rate_limiter import get_identifier
 from app.schemas import LimiterHealthResponse, LimiterResetRequest, LimiterResetResponse
 from app.utils.helpers import file_logger

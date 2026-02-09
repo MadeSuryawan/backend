@@ -14,6 +14,7 @@ from fastapi.exceptions import ResponseValidationError
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from redis.exceptions import RedisError
 
+from app.dependencies import get_cache_manager
 from app.errors import BASE_EXCEPTION, CacheKeyError
 from app.managers.cache_manager import CacheManager
 from app.utils.helpers import file_logger
@@ -42,10 +43,6 @@ def get_request_arg(
     except KeyError as e:
         details = f"Request argument not found on {func.__name__} function"
         raise AttributeError(details) from e
-
-
-def get_cache_manager(request: Request) -> CacheManager:
-    return request.app.state.cache_manager
 
 
 def _infer_response_type_from_callable(func: Callable[..., Any]) -> object | None:
