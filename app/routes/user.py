@@ -117,14 +117,38 @@ class UserOpsDeps:
 
 
 def handle_db_error(e: DatabaseError) -> HTTPException:
-    """Convert database errors to HTTP exceptions."""
+    """
+    Convert database errors to HTTP exceptions.
+
+    Parameters
+    ----------
+    e : DatabaseError
+        Database error instance.
+
+    Returns
+    -------
+    HTTPException
+        Standardized error response.
+    """
     if isinstance(e, DuplicateEntryError):
         return HTTPException(status_code=HTTP_409_CONFLICT, detail=e.detail)
     return HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail)
 
 
 def handle_image_error(e: Exception) -> HTTPException:
-    """Convert image processing errors to HTTP exceptions."""
+    """
+    Convert image processing errors to HTTP exceptions.
+
+    Parameters
+    ----------
+    e : Exception
+        The image processing error.
+
+    Returns
+    -------
+    HTTPException
+        Standardized error response.
+    """
     match e:
         case UnsupportedImageTypeError():
             return HTTPException(status_code=HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=e.detail)
@@ -138,7 +162,19 @@ def handle_image_error(e: Exception) -> HTTPException:
 
 @asynccontextmanager
 async def db_operation_context() -> AsyncGenerator[None]:
-    """Context manager for database operations with standardized error handling."""
+    """
+    Context manager for database operations with standardized error handling.
+
+    Yields
+    ------
+    None
+        Execution control back to caller.
+
+    Raises
+    ------
+    HTTPException
+        Converted database error.
+    """
     try:
         yield
     except DuplicateEntryError as e:
@@ -158,7 +194,20 @@ async def _handle_email_change(
     auth_service: AuthServiceDep,
     repo: UserRepoDep,
 ) -> None:
-    """Handle email change: mark user unverified and send verification email."""
+    """
+    Handle email change: mark user unverified and send verification email.
+
+    Parameters
+    ----------
+    db_user : UserDB
+        The updated user record.
+    existing_user : UserDB
+        The user record before update.
+    auth_service : AuthServiceDep
+        Authentication service.
+    repo : UserRepoDep
+        User repository.
+    """
     logger.info(
         "Email changed for user %s: %s -> %s. Re-verification required.",
         db_user.uuid,
@@ -283,7 +332,26 @@ async def _upload_pp(
     user_id: str,
     file: UploadFile,
 ) -> str:
-    """Upload profile picture with standardized error handling."""
+    """
+    Upload profile picture with standardized error handling.
+
+    Parameters
+    ----------
+    user_id : str
+        User identifier.
+    file : UploadFile
+        Image file to upload.
+
+    Returns
+    -------
+    str
+        URL of the uploaded picture.
+
+    Raises
+    ------
+    HTTPException
+        On image processing errors.
+    """
     try:
         return await _get_pp_service().upload_profile_picture(
             user_id=user_id,
@@ -371,7 +439,7 @@ async def create_user(
         ),
     ],
     repo: UserRepoDep,
-    _admin: AdminUserDep,
+    admin_user: AdminUserDep,
 ) -> UserResponse:
     """
     Create a new user and return the safe response model.
@@ -386,6 +454,8 @@ async def create_user(
         User input payload.
     repo : UserRepository
         Repository dependency.
+    admin_user : AdminUserDep
+        Admin user dependency.
 
     Returns
     -------
@@ -1075,7 +1145,30 @@ async def update_testimonial(
     payload: Annotated[TestimonialUpdate, Body(...)],
     deps: Annotated[UserOpsDeps, Depends()],
 ) -> UserResponse:
-    """Update user testimonial."""
+    """
+    Update user testimonial.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    payload : TestimonialUpdate
+        Testimonial content.
+    deps : UserOpsDeps
+        Authenticated user operation dependencies.
+
+    Returns
+    -------
+    UserResponse
+        Updated user record.
+
+    Raises
+    ------
+    HTTPException
+        If user not found or unauthorized.
+    """
     db_user = await _get_authorized_user(deps.repo, deps.user_id, deps.current_user, "testimonial")
     updated_user = await deps.repo.update(deps.user_id, {"testimonial": payload.testimonial})
     if not updated_user:
@@ -1111,7 +1204,28 @@ async def delete_testimonial(
     response: Response,
     deps: Annotated[UserOpsDeps, Depends()],
 ) -> Response:
-    """Delete user testimonial."""
+    """
+    Delete user testimonial.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    deps : UserOpsDeps
+        Authenticated user operation dependencies.
+
+    Returns
+    -------
+    Response
+        HTTP 204 No Content on success.
+
+    Raises
+    ------
+    HTTPException
+        If user not found or unauthorized.
+    """
     db_user = await _get_authorized_user(deps.repo, deps.user_id, deps.current_user, "testimonial")
     if not await deps.repo.update(deps.user_id, {"testimonial": None}):
         raise HTTPException(
@@ -1156,7 +1270,25 @@ async def bust_users_list(
     skip: Annotated[int, Query(ge=0, description="Number of records to skip.")],
     limit: Annotated[int, Query(ge=1, le=100, description="Maximum number of records to return.")],
 ) -> ORJSONResponse:
-    """Bust users list cache page."""
+    """
+    Bust users list cache page.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    skip : int
+        Number of records to skip.
+    limit : int
+        Maximum number of records to return.
+
+    Returns
+    -------
+    ORJSONResponse
+        Success status.
+    """
     return _success_response()
 
 
@@ -1194,6 +1326,25 @@ async def bust_user_by_id(
     user_id: UUID,
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
+    """
+    Bust cached user by ID.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    user_id : UUID
+        User identifier to invalidate.
+    admin_user : AdminUserDep
+        Admin user dependency for authorization.
+
+    Returns
+    -------
+    ORJSONResponse
+        Success status.
+    """
     return _success_response()
 
 
@@ -1231,6 +1382,25 @@ async def bust_user_by_username(
     username: str,
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
+    """
+    Bust cached user by username.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    username : str
+        Username to invalidate.
+    admin_user : AdminUserDep
+        Admin user dependency for authorization.
+
+    Returns
+    -------
+    ORJSONResponse
+        Success status.
+    """
     return _success_response()
 
 
@@ -1270,6 +1440,30 @@ async def bust_users_list_multi(
     query: UserQueryListDep,
     limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
 ) -> ORJSONResponse:
+    """
+    Bust multiple users list cache pages.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    query : UserQueryListDep
+        Query parameters for skip/limit.
+    limits : list[int]
+        List of limit values to invalidate.
+
+    Returns
+    -------
+    ORJSONResponse
+        Success status.
+
+    Raises
+    ------
+    HTTPException
+        If not accessed via localhost.
+    """
     if host(request) not in ("127.0.0.1", "::1", "localhost"):
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
@@ -1313,7 +1507,27 @@ async def bust_users_list_grid(
     limit: Annotated[list[int], Query(description="List of limit values to invalidate.")],
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
-    """Bust users list cache pages across multiple skip/limit combinations."""
+    """
+    Bust users list cache pages across multiple skip/limit combinations.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    skip : list[int]
+        List of skip values to invalidate.
+    limit : list[int]
+        List of limit values to invalidate.
+    admin_user : AdminUserDep
+        Admin user dependency for authorization.
+
+    Returns
+    -------
+    ORJSONResponse
+        Success status.
+    """
     return _success_response()
 
 
@@ -1346,5 +1560,22 @@ async def bust_users_all(
     response: Response,
     admin_user: AdminUserDep,
 ) -> ORJSONResponse:
+    """
+    Clear all cached keys in the users namespace.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    response : Response
+        Response object for middleware/decorators.
+    admin_user : AdminUserDep
+        Admin user dependency for authorization.
+
+    Returns
+    -------
+    ORJSONResponse
+        Success status with "cleared" message.
+    """
     await get_cache_manager(request).clear(namespace="users")
     return _success_response("cleared")
