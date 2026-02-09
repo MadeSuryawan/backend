@@ -36,7 +36,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, UploadFile
 from fastapi.responses import ORJSONResponse
-from pydantic import ValidationError
 from starlette.responses import Response
 from starlette.status import (
     HTTP_200_OK,
@@ -64,47 +63,20 @@ from app.errors.upload import (
 )
 from app.managers.rate_limiter import limiter
 from app.models import UserDB
-from app.schemas import TestimonialUpdate, UserCreate, UserResponse, UserUpdate
+from app.schemas import (
+    TestimonialUpdate,
+    UserCreate,
+    UserResponse,
+    UserUpdate,
+    validate_user_response,
+)
 from app.services.profile_picture import ProfilePictureService
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
-from app.utils.helpers import file_logger, host, response_datetime
+from app.utils.helpers import file_logger, host
 
 router = APIRouter(prefix="/users", tags=["👤 Users"])
 
 logger = file_logger(getLogger(__name__))
-
-
-def db_user_to_response(db_user: UserDB) -> UserResponse:
-    """
-    Convert a `UserDB` instance to `UserResponse` with datetime serialization.
-
-    Parameters
-    ----------
-    db_user : UserDB
-        Database user entity.
-
-    Returns
-    -------
-    UserResponse
-        Validated response model.
-    """
-
-    user_dict = response_datetime(db_user)
-
-    # Handle updated_at which might be "No updates" string from helpers.response_datetime
-    # But UserResponse expects datetime | None.
-    # If "No updates", we set it to None.
-    if user_dict.get("updated_at") == "No updates":
-        user_dict["updated_at"] = None
-
-    try:
-        response = UserResponse.model_validate(user_dict, from_attributes=True)
-    except ValidationError as e:
-        mssg = f"Validation error converting user to response model: {e}"
-        logger.exception("Validation error converting user to response model")
-        raise ValueError(mssg) from e
-
-    return response
 
 
 @dataclass(frozen=True)
@@ -114,6 +86,11 @@ class UserOpsDeps:
     user_id: UUID
     repo: UserRepoDep
     current_user: UserDBDep
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
 
 
 def handle_db_error(e: DatabaseError) -> HTTPException:
@@ -181,11 +158,6 @@ async def db_operation_context() -> AsyncGenerator[None]:
         raise handle_db_error(e) from e
     except DatabaseError as e:
         raise handle_db_error(e) from e
-
-
-# =============================================================================
-# Helper Functions
-# =============================================================================
 
 
 async def _handle_email_change(
@@ -470,7 +442,7 @@ async def create_user(
     async with db_operation_context():
         db_user = await repo.create(user)
         await _invalidate_user_cache(request, db_user.uuid, db_user.username)
-        return db_user_to_response(db_user)
+        return validate_user_response(db_user)
 
 
 @router.get(
@@ -547,7 +519,7 @@ async def get_users(
     db_users = await repo.get_all(skip=skip, limit=limit)
     if not db_users:
         return "No users found"
-    return [db_user_to_response(user) for user in db_users]
+    return [validate_user_response(user) for user in db_users]
 
 
 @router.get(
@@ -622,7 +594,7 @@ async def get_user(
         If user not found.
     """
     db_user = await _get_user_or_404(repo, user_id)
-    return db_user_to_response(db_user)
+    return validate_user_response(db_user)
 
 
 @router.get(
@@ -704,7 +676,7 @@ async def get_user_by_username(
             status_code=HTTP_404_NOT_FOUND,
             detail=f"User with username '{username}' not found",
         )
-    return db_user_to_response(db_user)
+    return validate_user_response(db_user)
 
 
 @router.put(
@@ -831,7 +803,7 @@ async def update_user(
             )
 
         await _invalidate_user_cache(request, deps.user_id, db_user.username)
-        return db_user_to_response(db_user)
+        return validate_user_response(db_user)
 
 
 @router.delete(
@@ -1024,7 +996,7 @@ async def upload_profile_picture(
         )
 
     await _invalidate_user_cache(request, deps.user_id, db_user.username)
-    return db_user_to_response(updated_user)
+    return validate_user_response(updated_user)
 
 
 @router.delete(
@@ -1177,7 +1149,7 @@ async def update_testimonial(
             detail=f"User with ID {deps.user_id} not found",
         )
     await _invalidate_user_cache(request, deps.user_id, db_user.username)
-    return db_user_to_response(updated_user)
+    return validate_user_response(updated_user)
 
 
 @router.delete(

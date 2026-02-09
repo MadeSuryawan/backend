@@ -6,6 +6,7 @@ in the BaliBlissed application.
 """
 
 from datetime import UTC, datetime
+from logging import getLogger
 from typing import Any
 from uuid import UUID
 
@@ -16,10 +17,16 @@ from pydantic import (
     Field,
     HttpUrl,
     SecretStr,
+    ValidationError,
     field_validator,
     model_validator,
 )
 from pydantic_core import PydanticCustomError
+
+from app.models import UserDB
+from app.utils.helpers import file_logger, response_datetime
+
+logger = file_logger(getLogger(__name__))
 
 
 class UserValidationMixin:
@@ -340,3 +347,36 @@ class UserResponse(BaseModel):
             else:
                 self.display_name = self.username
         return self
+
+
+def validate_user_response(db_user: UserDB) -> UserResponse:
+    """
+    Convert a `UserDB` instance to `UserResponse` with datetime serialization.
+
+    Parameters
+    ----------
+    db_user : UserDB
+        Database user entity.
+
+    Returns
+    -------
+    UserResponse
+        Validated response model.
+    """
+
+    user_dict = response_datetime(db_user)
+
+    # Handle updated_at which might be "No updates" string from helpers.response_datetime
+    # But UserResponse expects datetime | None.
+    # If "No updates", we set it to None.
+    if user_dict.get("updated_at") == "No updates":
+        user_dict["updated_at"] = None
+
+    try:
+        response = UserResponse.model_validate(user_dict, from_attributes=True)
+    except ValidationError as e:
+        mssg = f"Validation error converting user to response model: {e}"
+        logger.exception("Validation error converting user to response model")
+        raise ValueError(mssg) from e
+
+    return response
