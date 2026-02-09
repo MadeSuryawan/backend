@@ -1592,21 +1592,44 @@ async def _upload_media(
     return _validate_media_response(media_id, url, media_type)
 
 
-async def _delete_media(
+def _get_folder(
     db_blog: BlogDB,
-    repo: BlogRepoDep,
-    blog_id: UUID,
     media_id: str,
-) -> dict[str, str]:
+) -> str:
     """
-    Delete media (image/video) from a blog post.
+    Get the folder name (blog_images or blog_videos) based on the media ID.
 
     Parameters
     ----------
     db_blog : BlogDB
         Database blog entity.
-    repo : BlogRepoDep
-        Blog repository dependency.
+    media_id : str
+        Identifier of the media to delete.
+
+    Returns
+    -------
+    str
+        Folder name (blog_images or blog_videos).
+    """
+    if db_blog.images_url and any(f"/{media_id}" in url for url in db_blog.images_url):
+        return "blog_images"
+    if db_blog.videos_url and any(f"/{media_id}" in url for url in db_blog.videos_url):
+        return "blog_videos"
+    return ""
+
+
+async def _delete_media(
+    folder: str,
+    blog_id: UUID,
+    media_id: str,
+) -> None:
+    """
+    Delete media (image/video) from a blog post.
+
+    Parameters
+    ----------
+    folder : str
+        Folder name (blog_images or blog_videos).
     blog_id : UUID
         Blog identifier.
     media_id : str
@@ -1623,19 +1646,6 @@ async def _delete_media(
         If media is not found or deletion fails.
 
     """
-    folder: str | None = None
-    if db_blog.images_url and any(f"/{media_id}" in url for url in db_blog.images_url):
-        folder = "blog_images"
-    if (
-        folder is None
-        and db_blog.videos_url
-        and any(f"/{media_id}" in url for url in db_blog.videos_url)
-    ):
-        folder = "blog_videos"
-
-    if folder is None:
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Media not found")
-
     media_service = MediaService()
     deleted = await media_service.delete_media(
         folder=folder,
@@ -1644,6 +1654,34 @@ async def _delete_media(
     )
     if not deleted:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Media not found")
+
+
+async def _cleanup_media(
+    folder: str,
+    repo: BlogRepoDep,
+    blog_id: UUID,
+    media_id: str,
+) -> None:
+    """
+    Cleanup all media associated with a blog post.
+
+    Parameters
+    ----------
+    folder : str
+        Folder name (blog_images or blog_videos).
+    repo : BlogRepoDep
+        Blog repository dependency.
+    blog_id : UUID
+        Blog identifier.
+    media_id : str
+        Identifier of the media to delete.
+
+    Raises
+    ------
+    HTTPException
+        If media is not found or deletion fails.
+
+    """
 
     if folder == "blog_images":
         removed = await repo.remove_image_by_media_id(
@@ -1658,8 +1696,6 @@ async def _delete_media(
 
     if not removed:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Media not found")
-
-    return {"status": f"{folder} deleted"}
 
 
 # =============================================================================
@@ -1800,6 +1836,10 @@ async def delete_blog_media(
 
     check_owner_or_admin(db_blog.author_id, deps.current_user)
 
-    result = await _delete_media(db_blog, deps.repo, deps.blog_id, media_id)
+    if not (folder := _get_folder(db_blog, media_id)):
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Media not found")
 
-    return ORJSONResponse(content=result)
+    await _delete_media(folder, deps.blog_id, media_id)
+    await _cleanup_media(folder, deps.repo, deps.blog_id, media_id)
+
+    return ORJSONResponse(content={"status": f"{folder} deleted"})
