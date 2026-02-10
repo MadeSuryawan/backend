@@ -42,7 +42,6 @@ from starlette.status import (
     HTTP_201_CREATED,
     HTTP_204_NO_CONTENT,
     HTTP_400_BAD_REQUEST,
-    HTTP_403_FORBIDDEN,
     HTTP_404_NOT_FOUND,
     HTTP_409_CONFLICT,
     HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -79,7 +78,7 @@ from app.schemas import (
 )
 from app.services.profile_picture import ProfilePictureService
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
-from app.utils.helpers import file_logger, host
+from app.utils.helpers import file_logger
 
 router = APIRouter(prefix="/users", tags=["👤 Users"])
 
@@ -1178,7 +1177,7 @@ async def delete_testimonial(
 async def bust_users_list(
     request: Request,
     response: Response,
-    *,
+    admin_user: AdminUserDep,
     skip: Annotated[int, Query(ge=0, description="Number of records to skip.")],
     limit: Annotated[int, Query(ge=1, le=100, description="Maximum number of records to return.")],
 ) -> ORJSONResponse:
@@ -1191,6 +1190,8 @@ async def bust_users_list(
         Current request context.
     response : Response
         Response object for middleware/decorators.
+    admin_user : AdminUserDep
+        Admin user dependency.
     skip : int
         Number of records to skip.
     limit : int
@@ -1351,6 +1352,7 @@ async def bust_users_list_multi(
     response: Response,
     query: UserQueryListDep,
     limits: Annotated[list[int], Query(description="List of limit values to invalidate.")],
+    admin_user: AdminUserDep,
 ) -> ORJSONResponse:
     """
     Bust multiple users list cache pages.
@@ -1365,6 +1367,8 @@ async def bust_users_list_multi(
         Query parameters for skip/limit.
     limits : list[int]
         List of limit values to invalidate.
+    admin_user : AdminUserDep
+        Admin user dependency for authorization.
 
     Returns
     -------
@@ -1376,11 +1380,6 @@ async def bust_users_list_multi(
     HTTPException
         If not accessed via localhost.
     """
-    if host(request) not in ("127.0.0.1", "::1", "localhost"):
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail="Admin access required (localhost only)",
-        )
     return _success_response()
 
 
