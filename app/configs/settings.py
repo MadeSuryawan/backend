@@ -193,6 +193,10 @@ class Settings(BaseSettings):
     VERIFICATION_RESEND_LIMIT: int = 3  # Max resends per 24 hours
     FRONTEND_URL: str = "http://localhost:3000"  # Override in production
 
+    # Password Reset Settings
+    PASSWORD_RESET_TOKEN_EXPIRE_HOURS: int = 1  # 1 hour
+    PASSWORD_RESET_RESEND_LIMIT: int = 3  # Max reset requests per hour
+
     # Pagination defaults
     DEFAULT_PAGE_SIZE: int = 10
     MAX_PAGE_SIZE: int = 100

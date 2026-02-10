@@ -126,3 +126,18 @@ class ResendVerificationRequest(BaseModel):
     """Request schema for resending verification email."""
 
     email: EmailStr = Field(..., description="Email address to send verification to")
+
+
+class PasswordResetTokenData(BaseModel):
+    """
+    Token data schema for password reset tokens.
+
+    Attributes:
+        user_id: User's UUID from token
+        email: Email address the token was issued for (for validation)
+        jti: JWT ID for token identification and single-use enforcement
+    """
+
+    user_id: UUID
+    email: str
+    jti: str | None = None

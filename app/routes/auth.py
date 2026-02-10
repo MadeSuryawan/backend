@@ -24,10 +24,14 @@ from app.errors.auth import (
     EmailVerificationError,
     PasswordChangeError,
     PasswordResetError,
+    ResetTokenUsedError,
     VerificationTokenUsedError,
 )
 from app.managers.rate_limiter import limiter
-from app.managers.token_manager import decode_access_token, decode_verification_token
+from app.managers.token_manager import (
+    decode_password_reset_token,
+    decode_verification_token,
+)
 from app.schemas.auth import (
     EmailVerificationRequest,
     LogoutRequest,
@@ -326,6 +330,12 @@ async def resend_verification(
                 },
             },
         },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {
+                "application/json": {"example": {"detail": "Too Many Requests"}},
+            },
+        },
     },
     operation_id="auth_forgot_password",
 )
@@ -337,13 +347,15 @@ async def forgot_password(
     body: PasswordResetRequest,
     auth_service: AuthServiceDep,
 ) -> MessageResponse:
-    """Request password reset email."""
-    # Always return success to prevent email enumeration
-    reset_token = await auth_service.send_password_reset(body.email)
+    """
+    Request password reset email.
 
-    # In production, send email here with reset_token
-    # For now, we just return success
-    _ = reset_token  # Suppress unused warning
+    Always returns success to prevent email enumeration.
+    If the email exists and rate limits permit, a reset email will be sent.
+    """
+    # Always return success to prevent email enumeration
+    # The service handles rate limiting internally
+    await auth_service.send_password_reset(body.email)
 
     return MessageResponse(
         message="If the email exists, a reset link has been sent",
@@ -371,6 +383,14 @@ async def forgot_password(
                 "application/json": {"example": {"detail": "Invalid or expired reset token"}},
             },
         },
+        401: {
+            "description": "Token already used",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Password reset token has already been used"},
+                },
+            },
+        },
     },
     operation_id="auth_reset_password",
 )
@@ -382,14 +402,39 @@ async def reset_password(
     body: PasswordResetConfirm,
     auth_service: AuthServiceDep,
 ) -> MessageResponse:
-    """Reset password with token."""
-    token_data = decode_access_token(body.token)
+    """
+    Reset password with dedicated password reset token.
+
+    Security features:
+    - Token is single-use (marked as used after reset)
+    - Token includes email binding for security
+    - User receives confirmation email after successful reset
+    """
+    # Use dedicated password reset token decoder
+    token_data = decode_password_reset_token(body.token)
     if not token_data:
         raise PasswordResetError
 
+    # Security: Check if token has already been used
+    if token_data.jti and await auth_service.is_reset_token_used(token_data.jti):
+        raise ResetTokenUsedError
+
+    # Get user and validate email hasn't changed since token was issued
+    user = await auth_service.user_repo.get_by_id(token_data.user_id)
+    if not user or user.email != token_data.email:
+        raise PasswordResetError
+
+    # Reset the password
     success = await auth_service.reset_password(token_data.user_id, body.new_password)
     if not success:
         raise PasswordResetError
+
+    # Security: Mark token as used to prevent reuse
+    if token_data.jti:
+        await auth_service.mark_reset_token_used(
+            token_data.jti,
+            expires_hours=settings.PASSWORD_RESET_TOKEN_EXPIRE_HOURS,
+        )
 
     return MessageResponse(message="Password reset successfully", success=True)
 

@@ -21,6 +21,7 @@ from app.managers.password_manager import hash_password, verify_password
 from app.managers.token_blacklist import TokenBlacklist
 from app.managers.token_manager import (
     create_access_token,
+    create_password_reset_token,
     create_refresh_token,
     create_verification_token,
     decode_refresh_token,
@@ -400,27 +401,210 @@ class AuthService:
         key = f"verification_token:used:{jti}"
         await self._redis.set(key, "1", ex=expires_hours * 3600)
 
-    async def send_password_reset(self, email: str) -> str | None:
+    async def send_password_reset(self, email: str) -> bool:
         """
-        Generate password reset token for a user.
+        Generate and send password reset email to user.
 
         Args:
             email: User email address
 
         Returns:
-            str | None: Reset token if user exists, None otherwise
+            bool: True if processed (always returns True to prevent email enumeration)
         """
         user = await self.user_repo.get_by_email(email)
         if not user:
-            return None
+            # Always return True to prevent email enumeration
+            return True
 
-        # Create a short-lived reset token (1 hour)
-        reset_token = create_access_token(
+        # Check rate limit
+        can_send = await self.check_reset_rate_limit(user.uuid)
+        if not can_send:
+            # Still return True to prevent enumeration, but don't send email
+            logger.warning(f"Password reset rate limit exceeded for user {user.uuid}")
+            return True
+
+        # Create a dedicated password reset token (1 hour)
+        reset_token = create_password_reset_token(
             user_id=user.uuid,
-            username=user.username,
-            expires_delta=timedelta(hours=1),
+            email=user.email,
+            expires_delta=timedelta(hours=settings.PASSWORD_RESET_TOKEN_EXPIRE_HOURS),
         )
-        return reset_token
+
+        # Get JTI for tracking
+        token_jti = get_token_jti(reset_token)
+        if token_jti:
+            # Mark token as unused in Redis (for single-use enforcement)
+            await self.mark_reset_token_unused(
+                token_jti,
+                expires_hours=settings.PASSWORD_RESET_TOKEN_EXPIRE_HOURS,
+            )
+
+        # Send the password reset email
+        if self._email:
+            await self._send_password_reset_email(user, reset_token)
+
+        # Record reset attempt for rate limiting
+        await self.record_reset_sent(user.uuid)
+
+        return True
+
+    async def _send_password_reset_email(self, user: UserDB, token: str) -> None:
+        """
+        Send password reset email to user.
+
+        Args:
+            user: User to send reset email to
+            token: Password reset token
+        """
+        reset_link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+
+        # Professional HTML template using provided logo
+        logo_url = "https://res.cloudinary.com/dusikjnta/image/upload/f_auto/q_auto/v1/My%20Brand/bali_blissed_simplified_dhkbvy?_a=BAMAAAhK0"
+        greet_name = self._get_user_greet_name(user)
+        year = datetime.now().year
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f9; margin: 0; padding: 1px; color: #333; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);">
+            <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8); border: 1px solid rgba(10, 10, 10, 0.1);" class="container">
+                <div style="background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d); padding: 30px; text-align: center;" class="header">
+                    <img style="max-width: 150px; height: auto;" src="{logo_url}" alt="BaliBlissed Logo">
+                </div>
+                <div style="padding: 40px; text-align: center;" class="content">
+                    <h1 style="color: #1a2a6c; font-size: 24px; margin-bottom: 20px;">Reset Your Password</h1>
+                    <p style="line-height: 1.6; color: #666; font-size: 16px;">Hi {greet_name},</p>
+                    <p style="line-height: 1.6; color: #666; font-size: 16px;">We received a request to reset your BaliBlissed account password. Click the button below to create a new password:</p>
+                    <div style="margin-top: 30px;" class="button-container">
+                        <a style="color: #ffffff; text-decoration: none; font-weight: bold; font-size: 16px; padding: 14px 28px; border-radius: 6px; background-color: #ce6f21; display: inline-block; transition: background-color 0.3s;" href="{reset_link}" class="button">Reset Password</a>
+                    </div>
+                    <p style="margin-top: 30px; font-size: 14px; color: #888;">
+                        This link will expire in {settings.PASSWORD_RESET_TOKEN_EXPIRE_HOURS} hour(s).
+                        If you didn't request this reset, you can safely ignore this email.
+                    </p>
+                    <div style="margin-top: 20px; padding: 20px; background-color: #fff3cd; border-radius: 8px; border: 1px solid #ffeaa7;">
+                        <p style="margin: 0; font-size: 14px; color: #856404;">
+                            <strong>Security Tip:</strong><br>
+                            Never share this link with anyone. BaliBlissed will never ask for your password via email.
+                        </p>
+                    </div>
+                </div>
+                <div style="background-color: #f9f9f9; padding: 20px; text-align: center; font-size: 12px; color: #999; border: 1px solid #eee;" class="footer">
+                    <p style="margin: 5px 0;">&copy; {year} BaliBlissed. All rights reserved.</p>
+                    <p style="margin: 5px 0;">Your portal to Bali's finest travel experiences.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        if not self._email:
+            logger.warning(
+                f"Email client not initialized. Cannot send password reset email to {user.email}",
+            )
+            return
+
+        try:
+            await self._email.send_email(
+                subject="Reset Your BaliBlissed Password",
+                body=html_content,
+                reply_to=settings.COMPANY_TARGET_EMAIL,
+                to=user.email,
+                is_html=True,
+            )
+            logger.info(f"Password reset email sent to {user.email}")
+
+        except Exception:
+            logger.exception(f"Failed to send password reset email to {user.email}")
+
+    async def check_reset_rate_limit(self, user_id: UUID) -> bool:
+        """
+        Check if user can request another password reset email.
+
+        Args:
+            user_id: User UUID
+
+        Returns:
+            bool: True if user can request, False if rate limited
+        """
+        if not self._redis:
+            return True  # No Redis, no rate limiting
+
+        key = f"password_reset_limit:{user_id}"
+        count = await self._redis.get(key)
+
+        return not (count and int(count) >= settings.PASSWORD_RESET_RESEND_LIMIT)
+
+    async def record_reset_sent(self, user_id: UUID) -> None:
+        """
+        Record that a password reset email was sent for rate limiting.
+
+        Args:
+            user_id: User UUID
+        """
+        if not self._redis:
+            return
+
+        key = f"password_reset_limit:{user_id}"
+        count = await self._redis.get(key)
+
+        if count:
+            await self._redis.incr(key)
+        else:
+            await self._redis.set(key, "1", ex=3600)  # 1 hour
+
+    async def is_reset_token_used(self, jti: str) -> bool:
+        """
+        Check if a password reset token has already been used.
+
+        Args:
+            jti: JWT ID of the reset token
+
+        Returns:
+            bool: True if token has been used
+        """
+        if not self._redis:
+            return False
+
+        key = f"password_reset_token:used:{jti}"
+        exists = await self._redis.exists(key)
+        return exists > 0
+
+    async def mark_reset_token_unused(self, jti: str, expires_hours: int = 1) -> None:
+        """
+        Mark a password reset token as unused (for tracking).
+
+        Args:
+            jti: JWT ID of the reset token
+            expires_hours: Hours until the token record expires
+        """
+        if not self._redis:
+            return
+
+        key = f"password_reset_token:unused:{jti}"
+        await self._redis.set(key, "1", ex=expires_hours * 3600)
+
+    async def mark_reset_token_used(self, jti: str, expires_hours: int = 1) -> None:
+        """
+        Mark a password reset token as used to prevent reuse.
+
+        Args:
+            jti: JWT ID of the reset token
+            expires_hours: Hours until the used token record expires
+        """
+        if not self._redis:
+            return
+
+        # Remove from unused and add to used
+        unused_key = f"password_reset_token:unused:{jti}"
+        used_key = f"password_reset_token:used:{jti}"
+
+        await self._redis.delete(unused_key)
+        await self._redis.set(used_key, "1", ex=expires_hours * 3600)
 
     async def reset_password(self, user_id: UUID, new_password: str) -> bool:
         """

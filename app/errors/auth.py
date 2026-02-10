@@ -100,6 +100,13 @@ class VerificationTokenUsedError(UserAuthenticationError):
         super().__init__("Verification token has already been used", HTTP_401_UNAUTHORIZED)
 
 
+class ResetTokenUsedError(UserAuthenticationError):
+    """Raised when password reset token has already been used."""
+
+    def __init__(self) -> None:
+        super().__init__("Password reset token has already been used", HTTP_401_UNAUTHORIZED)
+
+
 class PasswordResetError(UserAuthenticationError):
     """Raised when password reset fails."""
 
