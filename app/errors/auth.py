@@ -107,6 +107,13 @@ class PasswordResetError(UserAuthenticationError):
         super().__init__("Invalid or expired reset token", HTTP_401_UNAUTHORIZED)
 
 
+class PasswordChangeError(UserAuthenticationError):
+    """Raised when password change fails due to invalid current password or validation error."""
+
+    def __init__(self) -> None:
+        super().__init__("Failed to change password. Please verify your current password.", HTTP_400_BAD_REQUEST)
+
+
 class UserNotFoundError(BaseAppError):
     """Raised when user is not found."""
 

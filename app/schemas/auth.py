@@ -64,6 +64,42 @@ class PasswordResetConfirm(BaseModel):
     )
 
 
+class PasswordChangeRequest(BaseModel):
+    """
+    Request schema for changing password by logged-in user.
+
+    Requires current password verification and confirmation of new password.
+    """
+
+    old_password: str = Field(
+        ...,
+        description="Current password for verification",
+    )
+    new_password: str = Field(
+        ...,
+        min_length=8,
+        description="New password (min 8 characters)",
+    )
+    confirm_new_password: str = Field(
+        ...,
+        description="Confirmation of new password to prevent typos",
+    )
+
+    def model_post_init(self, __context: dict[str, object]) -> None:
+        """
+        Validate password fields after initialization.
+
+        Raises:
+            ValueError: If new passwords don't match or new equals old password.
+        """
+        if self.new_password != self.confirm_new_password:
+            msg = "New passwords do not match"
+            raise ValueError(msg)
+        if self.old_password == self.new_password:
+            msg = "New password must be different from old password"
+            raise ValueError(msg)
+
+
 class MessageResponse(BaseModel):
     """Generic message response."""
 

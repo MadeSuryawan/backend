@@ -9,6 +9,7 @@ from app.schemas.auth import (
     EmailVerificationRequest,
     LogoutRequest,
     MessageResponse,
+    PasswordChangeRequest,
     PasswordResetConfirm,
     PasswordResetRequest,
     Token,
@@ -130,6 +131,49 @@ class TestPasswordResetConfirmSchema:
             PasswordResetConfirm(
                 token="reset.token.here",
                 new_password="short",  # Too short
+            )
+
+
+class TestPasswordChangeRequestSchema:
+    """Test cases for PasswordChangeRequest schema."""
+
+    def test_valid_request(self) -> None:
+        """Test creating a valid password change request."""
+        request = PasswordChangeRequest(
+            old_password="oldpassword123",
+            new_password="newpassword456",
+            confirm_new_password="newpassword456",
+        )
+
+        assert request.old_password == "oldpassword123"
+        assert request.new_password == "newpassword456"
+        assert request.confirm_new_password == "newpassword456"
+
+    def test_passwords_mismatch_raises_error(self) -> None:
+        """Test that mismatched new passwords raise validation error."""
+        with raises(ValidationError):
+            PasswordChangeRequest(
+                old_password="oldpassword123",
+                new_password="newpassword456",
+                confirm_new_password="differentpassword",  # Mismatch
+            )
+
+    def test_same_old_and_new_password_raises_error(self) -> None:
+        """Test that using same old and new password raises error."""
+        with raises(ValidationError):
+            PasswordChangeRequest(
+                old_password="samepassword",
+                new_password="samepassword",  # Same as old
+                confirm_new_password="samepassword",
+            )
+
+    def test_short_new_password_raises_error(self) -> None:
+        """Test that new password shorter than 8 chars raises error."""
+        with raises(ValidationError):
+            PasswordChangeRequest(
+                old_password="oldpassword123",
+                new_password="short",  # Too short
+                confirm_new_password="short",
             )
 
 

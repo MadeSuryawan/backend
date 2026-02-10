@@ -1,6 +1,7 @@
 """Tests for authentication error classes."""
 
 from starlette.status import (
+    HTTP_400_BAD_REQUEST,
     HTTP_401_UNAUTHORIZED,
     HTTP_403_FORBIDDEN,
     HTTP_404_NOT_FOUND,
@@ -14,6 +15,7 @@ from app.errors.auth import (
     InvalidCredentialsError,
     InvalidRefreshTokenError,
     InvalidTokenError,
+    PasswordChangeError,
     PasswordResetError,
     TokenExpiredError,
     TokenRevokedError,
@@ -127,6 +129,17 @@ class TestPasswordResetError:
 
         assert "reset" in error.detail.lower()
         assert error.status_code == HTTP_401_UNAUTHORIZED
+
+
+class TestPasswordChangeError:
+    """Test cases for PasswordChangeError."""
+
+    def test_default_message(self) -> None:
+        """Test default error message and status code."""
+        error = PasswordChangeError()
+
+        assert "change password" in error.detail.lower()
+        assert error.status_code == HTTP_400_BAD_REQUEST
 
 
 class TestUserNotFoundError:

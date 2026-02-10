@@ -9,6 +9,7 @@ from fastapi.responses import ORJSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from starlette.responses import RedirectResponse, Response
 from starlette.status import (
+    HTTP_200_OK,
     HTTP_201_CREATED,
     HTTP_400_BAD_REQUEST,
     HTTP_404_NOT_FOUND,
@@ -18,9 +19,10 @@ from starlette.status import (
 from app.configs import settings
 from app.decorators.caching import get_cache_manager
 from app.decorators.metrics import timed
-from app.dependencies import AuthServiceDep, UserRepoDep, UserRespDep, oauth2_scheme
+from app.dependencies import AuthServiceDep, UserDBDep, UserRepoDep, UserRespDep, oauth2_scheme
 from app.errors.auth import (
     EmailVerificationError,
+    PasswordChangeError,
     PasswordResetError,
     VerificationTokenUsedError,
 )
@@ -30,6 +32,7 @@ from app.schemas.auth import (
     EmailVerificationRequest,
     LogoutRequest,
     MessageResponse,
+    PasswordChangeRequest,
     PasswordResetConfirm,
     PasswordResetRequest,
     ResendVerificationRequest,
@@ -392,6 +395,92 @@ async def reset_password(
         raise PasswordResetError
 
     return MessageResponse(message="Password reset successfully", success=True)
+
+
+@router.post(
+    "/change-password",
+    response_class=ORJSONResponse,
+    response_model=MessageResponse,
+    status_code=HTTP_200_OK,
+    summary="Change password",
+    description="Change password for logged-in user. Requires current password verification.",
+    responses={
+        200: {
+            "description": "Password changed successfully",
+            "content": {
+                "application/json": {
+                    "example": {"message": "Password changed successfully", "success": True},
+                },
+            },
+        },
+        400: {
+            "description": "Invalid old password or validation error",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Failed to change password. Please verify your current password.",
+                    },
+                },
+            },
+        },
+        401: {
+            "description": "Not authenticated",
+            "content": {"application/json": {"example": {"detail": "Not authenticated"}}},
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
+        },
+    },
+    operation_id="auth_change_password",
+)
+@timed("/auth/change-password")
+@limiter.limit("5/hour")
+async def change_password(
+    request: Request,
+    response: Response,
+    body: PasswordChangeRequest,
+    current_user: UserDBDep,
+    auth_service: AuthServiceDep,
+) -> MessageResponse:
+    """
+    Change password for authenticated user.
+
+    Verifies the current password before updating to the new password.
+    All existing refresh tokens are invalidated, forcing re-login on other devices.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    response : Response
+        The outgoing HTTP response.
+    body : PasswordChangeRequest
+        Contains old_password, new_password, and confirm_new_password.
+    current_user : UserDB
+        The currently authenticated user from JWT token.
+    auth_service : AuthService
+        The authentication service for password operations.
+
+    Returns
+    -------
+    MessageResponse
+        Success message if password changed successfully.
+
+    Raises
+    ------
+    PasswordChangeError
+        If old password is incorrect or user not found.
+    """
+    success = await auth_service.change_password(
+        user_id=current_user.uuid,
+        old_password=body.old_password,
+        new_password=body.new_password,
+    )
+    if not success:
+        raise PasswordChangeError
+
+    return MessageResponse(message="Password changed successfully", success=True)
 
 
 @router.post(

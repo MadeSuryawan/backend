@@ -12,6 +12,7 @@ from app.errors.ai import (
     ai_exception_handler,
 )
 from app.errors.auth import (
+    PasswordChangeError,
     UserAuthenticationError,
     auth_exception_handler,
 )
@@ -62,6 +63,7 @@ from app.errors.validation import ValidationError, validation_exception_handler
 
 __all__ = [
     "AuthenticationError",
+    "PasswordChangeError",
     "UserAuthenticationError",
     "auth_exception_handler",
     "ConfigurationError",
