@@ -15,16 +15,25 @@ Rate Limiting
 All endpoints define explicit rate limits and include `429` response examples.
 """
 
+from dataclasses import dataclass
 from logging import getLogger
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Body, Request
+from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import ORJSONResponse
 from starlette.responses import Response
 
 from app.decorators.caching import cached
 from app.decorators.metrics import timed
-from app.dependencies import AiDep, EmailDep
+from app.dependencies import (
+    AiDep,
+    EmailDep,
+    UserDBDep,
+    UserRepoDep,
+    VerifiedUserDep,
+    get_authorized_user,
+)
 from app.managers.rate_limiter import limiter
 from app.schemas.ai import (
     ChatRequest,
@@ -43,6 +52,17 @@ from app.utils.helpers import file_logger
 logger = file_logger(getLogger(__name__))
 
 router = APIRouter(prefix="/ai", tags=["🤖 Ai"])
+
+
+@dataclass(frozen=True)
+class AiDepOps:
+    """Dependencies for AI operations."""
+
+    user_id: UUID
+    ai_client: AiDep
+    repo: UserRepoDep
+    current_user: UserDBDep
+    verified_user: VerifiedUserDep
 
 
 def itinerary_md_key(itinerary_req: ItineraryRequestMD) -> str:
@@ -99,7 +119,7 @@ async def chat_bot(
             },
         ),
     ],
-    ai_client: AiDep,
+    deps: Annotated[AiDepOps, Depends()],
 ) -> ORJSONResponse:
     """
     Chat to agent.
@@ -112,8 +132,8 @@ async def chat_bot(
         Current response context.
     chat : ChatRequest
         Chat payload including query and optional history.
-    ai_client : AiClient
-        AI client dependency.
+    deps : AiDeps
+        AI dependencies including AI client and verified user.
 
     Returns
     -------
@@ -139,7 +159,8 @@ async def chat_bot(
       "answer": str
     }
     """
-    answer = await chat_with_ai(chat, ai_client)
+    await get_authorized_user(deps.repo, deps.user_id, deps.current_user, "chat")
+    answer = await chat_with_ai(chat, deps.ai_client)
     return ORJSONResponse(answer.model_dump())
 
 
@@ -286,7 +307,7 @@ async def itinerary(
             },
         ),
     ],
-    ai_client: AiDep,
+    deps: Annotated[AiDepOps, Depends()],
 ) -> ItineraryMD:
     r"""
     Generate an itinerary based on the itinerary request.
@@ -299,7 +320,7 @@ async def itinerary(
         Current response context.
     itinerary_req : ItineraryRequestMD
         Itinerary generation parameters.
-    ai_client : AiClient
+    deps : AiDepOps
         AI client dependency.
 
     Returns
@@ -326,7 +347,9 @@ async def itinerary(
       "itinerary": str
     }
     """
-    return await generate_itinerary(request, itinerary_req, ai_client)
+
+    await get_authorized_user(deps.repo, deps.user_id, deps.current_user, "itinerary_generate")
+    return await generate_itinerary(request, itinerary_req, deps.ai_client)
 
 
 # this endpoint needs database implementation.
@@ -377,7 +400,7 @@ async def itinerary_txt(
             },
         ),
     ],
-    ai_client: AiDep,
+    deps: Annotated[AiDepOps, Depends()],
 ) -> ItineraryTXT:
     """
     Convert an itinerary markdown to a text file.
@@ -390,7 +413,7 @@ async def itinerary_txt(
         Current response context.
     itinerary_md : ItineraryRequestTXT
         Markdown itinerary payload with identifier.
-    ai_client : AiClient
+    deps : AiDepOps
         AI client dependency.
 
     Returns
@@ -417,4 +440,5 @@ async def itinerary_txt(
       "text_content": str
     }
     """
-    return await ai_convert_txt(request, itinerary_md, ai_client)
+    await get_authorized_user(deps.repo, deps.user_id, deps.current_user, "itinerary_generate")
+    return await ai_convert_txt(request, itinerary_md, deps.ai_client)

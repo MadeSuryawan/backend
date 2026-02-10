@@ -49,7 +49,7 @@ async def test_delete_user_triggers_cleanup(client: AsyncClient) -> None:
     app.dependency_overrides[get_current_user] = lambda: mock_user
 
     with (
-        patch("app.routes.user.check_owner_or_admin", return_value=None),
+        patch("app.dependencies.dependencies.check_owner_or_admin", return_value=None),
         patch("app.routes.user._get_pp_service") as mock_pp_service,
         patch("app.routes.user._invalidate_user_cache", new_callable=AsyncMock),
     ):

@@ -58,7 +58,6 @@ from app.dependencies import (
     UserDBDep,
     UserQueryListDep,
     UserRepoDep,
-    check_owner_or_admin,
     get_authorized_user,
     get_user_or_404,
 )
@@ -721,10 +720,9 @@ async def update_user(
     HTTPException
         If user not found or invalid update.
     """
-    check_owner_or_admin(deps.user_id, deps.current_user, "user")
+    existing = await get_authorized_user(deps.repo, deps.user_id, deps.current_user, "user_update")
 
     async with db_operation_context():
-        existing = await get_user_or_404(deps.repo, deps.user_id)
         email_changed = bool(
             user_update.email and user_update.email != existing.email,
         )
@@ -799,8 +797,7 @@ async def delete_user(
         If user not found.
     """
     # Get user and verify authorization
-    existing = await get_user_or_404(deps.repo, deps.user_id)
-    check_owner_or_admin(deps.user_id, deps.current_user, "user")
+    existing = await get_authorized_user(deps.repo, deps.user_id, deps.current_user, "user_delete")
 
     # Delete profile picture if it exists
     if existing.profile_picture:
