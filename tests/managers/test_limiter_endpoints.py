@@ -13,21 +13,84 @@ from app.models import UserDB
 
 @pytest.mark.asyncio
 async def test_limiter_status_endpoint() -> None:
-    """Test getting limiter status."""
+    """Test getting limiter status with admin authentication."""
+    # Create admin user and token
+    admin_user = UserDB(
+        uuid=uuid4(),
+        username="admin",
+        email="admin@test.com",
+        password_hash="hash",
+        is_active=True,
+        is_verified=True,
+        role="admin",
+    )
+    admin_token = create_access_token(
+        user_id=admin_user.uuid,
+        username=admin_user.username,
+        expires_delta=timedelta(minutes=30),
+    )
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # Patch RedisClient class methods directly
-        with patch(
-            "app.clients.redis_client.RedisClient.ping",
-            new_callable=AsyncMock,
-        ) as mock_ping:
+        with (
+            patch(
+                "app.clients.redis_client.RedisClient.ping",
+                new_callable=AsyncMock,
+            ) as mock_ping,
+            patch("app.repositories.user.UserRepository.get_by_id", new_callable=AsyncMock) as mock_get_user,
+        ):
             mock_ping.return_value = True
+            mock_get_user.return_value = admin_user
 
-            response = await client.get("/limiter/status")
+            response = await client.get(
+                "/limiter/status",
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
 
             assert response.status_code == 200
             data = response.json()
             assert data["healthy"] is True
             assert data["storage"] == "redis"
+
+
+@pytest.mark.asyncio
+async def test_limiter_status_forbidden_for_non_admin() -> None:
+    """Test that limiter status endpoint requires admin authentication."""
+    # Create regular user (not admin)
+    regular_user = UserDB(
+        uuid=uuid4(),
+        username="user",
+        email="user@test.com",
+        password_hash="hash",
+        is_active=True,
+        is_verified=True,
+        role="user",
+    )
+    user_token = create_access_token(
+        user_id=regular_user.uuid,
+        username=regular_user.username,
+        expires_delta=timedelta(minutes=30),
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        with patch("app.repositories.user.UserRepository.get_by_id", new_callable=AsyncMock) as mock_get_user:
+            mock_get_user.return_value = regular_user
+
+            response = await client.get(
+                "/limiter/status",
+                headers={"Authorization": f"Bearer {user_token}"},
+            )
+            assert response.status_code == 403
+            assert "Admin access required" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_limiter_status_unauthorized_without_token() -> None:
+    """Test that limiter status endpoint returns 401 without authentication."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/limiter/status")
+        assert response.status_code == 401
+        assert "Not authenticated" in response.json()["detail"]
 
 
 @pytest.mark.asyncio

@@ -4,10 +4,12 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
 from app.dependencies import get_cache_manager
+from app.dependencies.dependencies import is_admin
 from app.main import app
+from app.managers.cache_manager import CacheManager
 from app.schemas.cache import CacheToggleResponse
 
 
@@ -43,6 +45,7 @@ async def test_cache_ping_failure(client: AsyncClient) -> None:
     Demonstrates the power of Dependency Injection: we can inject a broken
     manager to verify the API correctly returns 503.
     """
+
     # 1. Create a mock manager that fails to ping
     mock_manager = MagicMock()
     mock_manager.ping = AsyncMock(return_value=False)
@@ -213,6 +216,7 @@ async def test_disable_redis_endpoint_already_disabled(client: AsyncClient) -> N
 @pytest.mark.asyncio
 async def test_enable_redis_endpoint_mocked_success(client: AsyncClient) -> None:
     """Test enable Redis endpoint with mocked successful connection."""
+
     # First disable Redis
     await client.post("/cache/redis/disable")
 
@@ -239,6 +243,7 @@ async def test_enable_redis_endpoint_mocked_success(client: AsyncClient) -> None
 @pytest.mark.asyncio
 async def test_enable_redis_endpoint_mocked_failure(client: AsyncClient) -> None:
     """Test enable Redis endpoint with mocked connection failure."""
+
     # Create a mock manager that simulates failed Redis connection
     mock_manager = MagicMock()
     mock_manager.enable_redis = AsyncMock(
@@ -274,3 +279,134 @@ async def test_redis_toggle_response_schema(client: AsyncClient) -> None:
     # error_code is optional, but should be None or int if present
     if "error_code" in data:
         assert data["error_code"] is None or isinstance(data["error_code"], int)
+
+
+@pytest.mark.asyncio
+async def test_cache_stats_requires_admin(cache_manager: CacheManager) -> None:
+    """Test that cache stats endpoint requires admin authentication."""
+    # Remove the is_admin override to test actual auth behavior
+    original_overrides = app.dependency_overrides.copy()
+    if is_admin in app.dependency_overrides:
+        del app.dependency_overrides[is_admin]
+
+    async with AsyncClient(
+        base_url="http://test",
+        transport=ASGITransport(app=app),
+    ) as client:
+        response = await client.get("/cache/stats")
+        # Returns 401 when no authentication is provided
+        assert response.status_code == 401
+        assert "Not authenticated" in response.json()["detail"]
+
+    # Restore overrides
+    app.dependency_overrides = original_overrides
+
+
+@pytest.mark.asyncio
+async def test_cache_ping_requires_admin(cache_manager: CacheManager) -> None:
+    """Test that cache ping endpoint requires admin authentication."""
+
+    # Remove the is_admin override to test actual auth behavior
+    original_overrides = app.dependency_overrides.copy()
+    if is_admin in app.dependency_overrides:
+        del app.dependency_overrides[is_admin]
+
+    # Also need to remove get_cache_manager override to avoid dependency error
+    if get_cache_manager in app.dependency_overrides:
+        del app.dependency_overrides[get_cache_manager]
+
+    async with AsyncClient(
+        base_url="http://test",
+        transport=ASGITransport(app=app),
+    ) as client:
+        response = await client.get("/cache/ping")
+        # Returns 401 when no authentication is provided
+        assert response.status_code == 401
+        assert "Not authenticated" in response.json()["detail"]
+
+    # Restore overrides
+    app.dependency_overrides = original_overrides
+
+
+@pytest.mark.asyncio
+async def test_cache_reset_stats_requires_admin(cache_manager: CacheManager) -> None:
+    """Test that cache reset stats endpoint requires admin authentication."""
+    # Remove the is_admin override to test actual auth behavior
+    original_overrides = app.dependency_overrides.copy()
+    if is_admin in app.dependency_overrides:
+        del app.dependency_overrides[is_admin]
+
+    async with AsyncClient(
+        base_url="http://test",
+        transport=ASGITransport(app=app),
+    ) as client:
+        response = await client.get("/cache/reset-stats")
+        # Returns 401 when no authentication is provided
+        assert response.status_code == 401
+        assert "Not authenticated" in response.json()["detail"]
+
+    # Restore overrides
+    app.dependency_overrides = original_overrides
+
+
+@pytest.mark.asyncio
+async def test_cache_clear_requires_admin(cache_manager: CacheManager) -> None:
+    """Test that cache clear endpoint requires admin authentication."""
+    # Remove the is_admin override to test actual auth behavior
+    original_overrides = app.dependency_overrides.copy()
+    if is_admin in app.dependency_overrides:
+        del app.dependency_overrides[is_admin]
+
+    async with AsyncClient(
+        base_url="http://test",
+        transport=ASGITransport(app=app),
+    ) as client:
+        response = await client.delete("/cache/clear")
+        # Returns 401 when no authentication is provided
+        assert response.status_code == 401
+        assert "Not authenticated" in response.json()["detail"]
+
+    # Restore overrides
+    app.dependency_overrides = original_overrides
+
+
+@pytest.mark.asyncio
+async def test_cache_redis_disable_requires_admin(cache_manager: CacheManager) -> None:
+    """Test that cache redis disable endpoint requires admin authentication."""
+    # Remove the is_admin override to test actual auth behavior
+    original_overrides = app.dependency_overrides.copy()
+    if is_admin in app.dependency_overrides:
+        del app.dependency_overrides[is_admin]
+
+    async with AsyncClient(
+        base_url="http://test",
+        transport=ASGITransport(app=app),
+    ) as client:
+        response = await client.post("/cache/redis/disable")
+        # Returns 401 when no authentication is provided
+        assert response.status_code == 401
+        assert "Not authenticated" in response.json()["detail"]
+
+    # Restore overrides
+    app.dependency_overrides = original_overrides
+
+
+@pytest.mark.asyncio
+async def test_cache_redis_enable_requires_admin(cache_manager: CacheManager) -> None:
+    """Test that cache redis enable endpoint requires admin authentication."""
+    # Remove the is_admin override to test actual auth behavior
+    original_overrides = app.dependency_overrides.copy()
+    if is_admin in app.dependency_overrides:
+        del app.dependency_overrides[is_admin]
+
+    async with AsyncClient(
+        base_url="http://test",
+        transport=ASGITransport(app=app),
+    ) as client:
+        response = await client.post("/cache/redis/enable")
+        # Returns 401 when no authentication is provided
+        assert response.status_code == 401
+        assert "Not authenticated" in response.json()["detail"]
+
+    # Restore overrides
+    app.dependency_overrides = original_overrides

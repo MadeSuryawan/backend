@@ -16,7 +16,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import ORJSONResponse
 
 from app.decorators.metrics import timed
-from app.dependencies import CacheDep
+from app.dependencies import AdminUserDep, CacheDep
 from app.managers.rate_limiter import limiter
 from app.schemas import (
     CacheClearResponse,
@@ -46,6 +46,14 @@ router = APIRouter(prefix="/cache", tags=["🧰 Cache"])
                 },
             },
         },
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required"},
+                },
+            },
+        },
         429: {
             "description": "Rate limit exceeded",
             "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
@@ -55,7 +63,11 @@ router = APIRouter(prefix="/cache", tags=["🧰 Cache"])
 )
 @timed("/cache/stats")
 @limiter.limit("10/minute")
-async def get_cache_stats(request: Request, manager: CacheDep) -> ORJSONResponse:
+async def get_cache_stats(
+    request: Request,
+    manager: CacheDep,
+    admin_user: AdminUserDep,
+) -> ORJSONResponse:
     """
     Get cache statistics.
 
@@ -65,6 +77,8 @@ async def get_cache_stats(request: Request, manager: CacheDep) -> ORJSONResponse
         Current request context.
     manager : CacheManager
         Cache manager dependency.
+    admin_user : UserDB
+        Admin user (enforced by AdminUserDep dependency).
 
     Returns
     -------
@@ -105,6 +119,14 @@ async def get_cache_stats(request: Request, manager: CacheDep) -> ORJSONResponse
                 },
             },
         },
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required"},
+                },
+            },
+        },
         429: {
             "description": "Rate limit exceeded",
             "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
@@ -114,7 +136,11 @@ async def get_cache_stats(request: Request, manager: CacheDep) -> ORJSONResponse
 )
 @timed("/cache/ping")
 @limiter.limit("20/minute")
-async def ping_cache(request: Request, manager: CacheDep) -> ORJSONResponse:
+async def ping_cache(
+    request: Request,
+    manager: CacheDep,
+    admin_user: AdminUserDep,
+) -> ORJSONResponse:
     """
     Ping cache server.
 
@@ -124,6 +150,8 @@ async def ping_cache(request: Request, manager: CacheDep) -> ORJSONResponse:
         Current request context.
     manager : CacheManager
         Cache manager dependency.
+    admin_user : UserDB
+        Admin user (enforced by AdminUserDep dependency).
 
     Returns
     -------
@@ -160,6 +188,14 @@ async def ping_cache(request: Request, manager: CacheDep) -> ORJSONResponse:
                 },
             },
         },
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required"},
+                },
+            },
+        },
         429: {
             "description": "Rate limit exceeded",
             "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
@@ -169,7 +205,11 @@ async def ping_cache(request: Request, manager: CacheDep) -> ORJSONResponse:
 )
 @timed("/cache/reset-stats")
 @limiter.limit("5/hour")
-async def reset_stats(request: Request, manager: CacheDep) -> ORJSONResponse:
+async def reset_stats(
+    request: Request,
+    manager: CacheDep,
+    admin_user: AdminUserDep,
+) -> ORJSONResponse:
     """
     Reset cache statistics.
 
@@ -179,6 +219,8 @@ async def reset_stats(request: Request, manager: CacheDep) -> ORJSONResponse:
         Current request context.
     manager : CacheManager
         Cache manager dependency.
+    admin_user : UserDB
+        Admin user (enforced by AdminUserDep dependency).
 
     Returns
     -------
@@ -207,6 +249,14 @@ async def reset_stats(request: Request, manager: CacheDep) -> ORJSONResponse:
                 },
             },
         },
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required"},
+                },
+            },
+        },
         429: {
             "description": "Rate limit exceeded",
             "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
@@ -216,7 +266,11 @@ async def reset_stats(request: Request, manager: CacheDep) -> ORJSONResponse:
 )
 @timed("/cache/clear")
 @limiter.limit("2/hour")
-async def clear_cache(request: Request, manager: CacheDep) -> ORJSONResponse:
+async def clear_cache(
+    request: Request,
+    manager: CacheDep,
+    admin_user: AdminUserDep,
+) -> ORJSONResponse:
     """
     Clear all cache entries.
 
@@ -226,6 +280,8 @@ async def clear_cache(request: Request, manager: CacheDep) -> ORJSONResponse:
         Current request context.
     manager : CacheManager
         Cache manager dependency.
+    admin_user : UserDB
+        Admin user (enforced by AdminUserDep dependency).
 
     Returns
     -------
@@ -254,6 +310,14 @@ async def clear_cache(request: Request, manager: CacheDep) -> ORJSONResponse:
                 },
             },
         },
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required"},
+                },
+            },
+        },
         429: {
             "description": "Rate limit exceeded",
             "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
@@ -263,7 +327,11 @@ async def clear_cache(request: Request, manager: CacheDep) -> ORJSONResponse:
 )
 @timed("/cache/redis/disable")
 @limiter.limit("1/hour")
-async def disable_redis(request: Request, manager: CacheDep) -> ORJSONResponse:
+async def disable_redis(
+    request: Request,
+    manager: CacheDep,
+    admin_user: AdminUserDep,
+) -> ORJSONResponse:
     """
     Disable Redis and switch to in-memory cache.
 
@@ -273,6 +341,8 @@ async def disable_redis(request: Request, manager: CacheDep) -> ORJSONResponse:
         Current request context.
     manager : CacheManager
         Cache manager dependency.
+    admin_user : UserDB
+        Admin user (enforced by AdminUserDep dependency).
 
     Returns
     -------
@@ -300,6 +370,14 @@ async def disable_redis(request: Request, manager: CacheDep) -> ORJSONResponse:
                 },
             },
         },
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required"},
+                },
+            },
+        },
         429: {
             "description": "Rate limit exceeded",
             "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
@@ -309,7 +387,11 @@ async def disable_redis(request: Request, manager: CacheDep) -> ORJSONResponse:
 )
 @timed("/cache/redis/enable")
 @limiter.limit("1/hour")
-async def enable_redis(request: Request, manager: CacheDep) -> ORJSONResponse:
+async def enable_redis(
+    request: Request,
+    manager: CacheDep,
+    admin_user: AdminUserDep,
+) -> ORJSONResponse:
     """
     Enable Redis and switch from in-memory cache.
 
@@ -319,6 +401,8 @@ async def enable_redis(request: Request, manager: CacheDep) -> ORJSONResponse:
         Current request context.
     manager : CacheManager
         Cache manager dependency.
+    admin_user : UserDB
+        Admin user (enforced by AdminUserDep dependency).
 
     Returns
     -------

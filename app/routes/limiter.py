@@ -76,10 +76,21 @@ async def _perform_limiter_reset(
                 },
             },
         },
+        403: {
+            "description": "Forbidden",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Admin access required"},
+                },
+            },
+        },
     },
     operation_id="limiter_status",
 )
-async def get_limiter_status(request: Request) -> ORJSONResponse:
+async def get_limiter_status(
+    request: Request,
+    admin_user: AdminUserDep,
+) -> ORJSONResponse:
     """
     Get status of the rate limiter storage.
 
@@ -87,6 +98,8 @@ async def get_limiter_status(request: Request) -> ORJSONResponse:
     ----------
     request : Request
         Current request context.
+    admin_user : UserDB
+        Admin user (enforced by AdminUserDep dependency).
 
     Returns
     -------
