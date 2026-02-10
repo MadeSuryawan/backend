@@ -14,6 +14,7 @@ from fastapi.exceptions import ResponseValidationError
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from redis.exceptions import RedisError
 
+from app.context import cache_manager_ctx
 from app.dependencies import get_cache_manager
 from app.errors import BASE_EXCEPTION, CacheKeyError
 from app.managers.cache_manager import CacheManager
@@ -36,12 +37,105 @@ def get_request_arg(
     *args: list[Any],
     **kwargs: dict[str, Any],
 ) -> Request:
+    """
+    Extract Request argument from function call by type.
+
+    Searches for an argument of type Request in the bound arguments.
+    This allows the parameter to be named anything (request, req, etc.).
+
+    Parameters
+    ----------
+    func : Callable
+        The function being decorated.
+    *args : tuple
+        Positional arguments passed to the function.
+    **kwargs : dict
+        Keyword arguments passed to the function.
+
+    Returns
+    -------
+    Request
+        The FastAPI Request object.
+
+    Raises
+    ------
+    AttributeError
+        If no Request argument is found.
+
+    Examples
+    --------
+    >>> async def handler(request: Request): ...
+    >>> req = get_request_arg(handler, mock_request)
+    """
     try:
         bound = signature(func).bind(*args, **kwargs)
-        bound.apply_defaults()  # populates defaults if any are missing
-        return bound.arguments["request"]
-    except KeyError as e:
-        details = f"Request argument not found on {func.__name__} function"
+        bound.apply_defaults()
+
+        # Search by type instead of hardcoded name
+        for value in bound.arguments.values():
+            if isinstance(value, Request):
+                return value
+
+        # Not found
+        details = f"Request argument not found in {func.__name__} function"
+        raise AttributeError(details)
+
+    except TypeError as e:
+        details = f"Cannot bind arguments for {func.__name__}: {e}"
+        raise AttributeError(details) from e
+
+
+def _get_cache_manager(
+    func: Callable[..., Any],
+    *args: list[Any],
+    **kwargs: dict[str, Any],
+) -> CacheManager:
+    """
+    Get cache manager from context or request.
+
+    Priority:
+    1. ContextVars (set by ContextMiddleware)
+    2. Request object extraction
+    3. Raise error if neither available
+
+    Parameters
+    ----------
+    func : Callable
+        The function being decorated.
+    *args : tuple
+        Positional arguments passed to the function.
+    **kwargs : dict
+        Keyword arguments passed to the function.
+
+    Returns
+    -------
+    CacheManager
+        The cache manager instance.
+
+    Raises
+    ------
+    AttributeError
+        If cache manager cannot be found.
+
+    Examples
+    --------
+    >>> cache_manager = _get_cache_manager(handler, mock_request)
+    """
+    # Try ContextVars first
+    cache_manager = cache_manager_ctx.get()
+    if cache_manager is not None:
+        return cache_manager
+
+    # Fallback: extract from Request
+    try:
+        request = get_request_arg(func, *args, **kwargs)
+        return get_cache_manager(request)
+    except AttributeError as e:
+        details = (
+            f"Cannot get CacheManager for {func.__name__}: "
+            f"not found in context and no Request argument available. "
+            f"Ensure middleware is registered or pass Request to the function."
+        )
         raise AttributeError(details) from e
 
 
@@ -97,7 +191,7 @@ def cached(
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args: list[Any], **kwargs: dict[str, Any]) -> object:
-            cache_manager = get_cache_manager(get_request_arg(func, *args, **kwargs))
+            cache_manager = _get_cache_manager(func, *args, **kwargs)
 
             # Build cache key
             if key_builder:
@@ -182,7 +276,7 @@ def cache_busting(
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args: list[Any], **kwargs: dict[str, Any]) -> object:
-            cache_manager = get_cache_manager(get_request_arg(func, *args, **kwargs))
+            cache_manager = _get_cache_manager(func, *args, **kwargs)
 
             # Execute function
             result = await func(*args, **kwargs)

@@ -42,6 +42,7 @@ from app.middleware import (
     configure_cors,
     lifespan,
 )
+from app.middleware.context import ContextMiddleware
 from app.routes import (
     admin_router,
     ai_router,
@@ -79,6 +80,8 @@ app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Middleware to tell FastAPI it is behind a proxy (Zuplo) or Render
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+# Middleware to set context variables for decorators
+app.add_middleware(ContextMiddleware)
 
 
 routes = [
