@@ -49,7 +49,14 @@ from starlette.status import (
 
 from app.decorators.caching import cache_busting, cached, get_cache_manager
 from app.decorators.metrics import timed
-from app.dependencies import AdminUserDep, BlogListQuery, BlogQueryListDep, BlogRepoDep, UserDBDep
+from app.dependencies import (
+    AdminUserDep,
+    BlogListQuery,
+    BlogQueryListDep,
+    BlogRepoDep,
+    UserDBDep,
+    check_owner_or_admin,
+)
 from app.errors.database import DatabaseError, DuplicateEntryError
 from app.errors.upload import (
     ImageProcessingError,
@@ -62,7 +69,6 @@ from app.errors.upload import (
 )
 from app.managers.rate_limiter import limiter
 from app.models import BlogDB
-from app.rabc import check_owner_or_admin
 from app.schemas import BlogCreate, BlogListResponse, BlogResponse, BlogSchema, BlogUpdate
 from app.schemas.review import MediaUploadResponse
 from app.services import MediaService

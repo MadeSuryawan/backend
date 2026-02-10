@@ -3,12 +3,11 @@
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import Annotated
-from uuid import UUID
 
 from fastapi import Depends, HTTPException
 from starlette.status import HTTP_403_FORBIDDEN
 
-from app.dependencies.dependencies import get_current_user
+from app.dependencies import get_current_user
 from app.models import UserDB
 
 
@@ -182,26 +181,3 @@ def require_permission(permission: Permission) -> Callable[..., Awaitable[UserDB
         return user
 
     return permission_checker
-
-
-def check_owner_or_admin(
-    owner_id: UUID,
-    current_user: UserDB,
-    resource_name: str = "resource",
-) -> None:
-    """
-    Check if user is owner or admin, raise exception if not.
-
-    Args:
-        owner_id: UUID of the resource owner
-        current_user: Current authenticated user
-        resource_name: Name of resource for error message
-
-    Raises:
-        HTTPException: If user is not owner or admin
-    """
-    if current_user.uuid != owner_id and current_user.role != "admin":
-        raise HTTPException(
-            status_code=HTTP_403_FORBIDDEN,
-            detail=f"Only the {resource_name} owner or admin can perform this action",
-        )

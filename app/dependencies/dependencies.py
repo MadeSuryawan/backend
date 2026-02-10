@@ -26,7 +26,6 @@ from app.managers.login_attempt_tracker import LoginAttemptTracker, get_login_tr
 from app.managers.token_blacklist import TokenBlacklist, get_token_blacklist
 from app.managers.token_manager import decode_access_token
 from app.models import UserDB
-from app.rabc import check_owner_or_admin
 from app.repositories import BlogRepository, ReviewRepository, UserRepository
 from app.schemas.user import UserResponse
 from app.services import AuthService
@@ -275,6 +274,29 @@ async def get_user_or_404(repo: UserRepoDep, user_id: UUID) -> UserDB:
             detail=f"User with ID {user_id} not found",
         )
     return db_user
+
+
+def check_owner_or_admin(
+    owner_id: UUID,
+    current_user: UserDB,
+    resource_name: str = "resource",
+) -> None:
+    """
+    Check if user is owner or admin, raise exception if not.
+
+    Args:
+        owner_id: UUID of the resource owner
+        current_user: Current authenticated user
+        resource_name: Name of resource for error message
+
+    Raises:
+        HTTPException: If user is not owner or admin
+    """
+    if current_user.uuid != owner_id and current_user.role != "admin":
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail=f"Only the {resource_name} owner or admin can perform this action",
+        )
 
 
 async def get_authorized_user(

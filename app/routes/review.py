@@ -19,7 +19,7 @@ from starlette.status import (
     HTTP_404_NOT_FOUND,
 )
 
-from app.dependencies import ReviewRepoDep, UserDBDep
+from app.dependencies import ReviewRepoDep, UserDBDep, check_owner_or_admin
 from app.errors.upload import (
     ImageProcessingError,
     ImageTooLargeError,
@@ -29,7 +29,6 @@ from app.errors.upload import (
 )
 from app.managers.rate_limiter import limiter
 from app.models.review import ReviewDB
-from app.rabc import check_owner_or_admin
 from app.schemas.review import (
     MediaUploadResponse,
     ReviewCreate,

@@ -148,7 +148,7 @@ async def update_blog(blog_id: UUID, user: UserDB, ...):
 Use the `check_owner_or_admin()` helper for manual owner verification:
 
 ```python
-from app.rabc import check_owner_or_admin
+from app.dependencies import check_owner_or_admin
 
 @router.put("/blogs/{blog_id}")
 async def update_blog(
@@ -186,7 +186,7 @@ async def admin_action(admin_user: AdminUserDep):
 ### Pattern 2: Owner or Admin Access
 
 ```python
-from app.rabc import check_owner_or_admin
+from app.dependencies import check_owner_or_admin
 
 @router.delete("/users/{user_id}")
 async def delete_user(

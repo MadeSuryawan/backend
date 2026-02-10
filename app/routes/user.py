@@ -52,7 +52,16 @@ from starlette.status import (
 
 from app.decorators.caching import cache_busting, cached, get_cache_manager
 from app.decorators.metrics import timed
-from app.dependencies import AdminUserDep, AuthServiceDep, UserDBDep, UserQueryListDep, UserRepoDep
+from app.dependencies import (
+    AdminUserDep,
+    AuthServiceDep,
+    UserDBDep,
+    UserQueryListDep,
+    UserRepoDep,
+    check_owner_or_admin,
+    get_authorized_user,
+    get_user_or_404,
+)
 from app.errors.database import DatabaseError, DuplicateEntryError
 from app.errors.upload import (
     ImageProcessingError,
@@ -62,7 +71,6 @@ from app.errors.upload import (
 )
 from app.managers.rate_limiter import limiter
 from app.models import UserDB
-from app.rabc import check_owner_or_admin
 from app.schemas import (
     TestimonialUpdate,
     UserCreate,
@@ -191,71 +199,6 @@ async def _handle_email_change(
     await auth_service.send_verification_email(db_user)
     await auth_service.record_verification_sent(db_user.uuid)
     logger.info("Verification email sent to new address: %s", db_user.email)
-
-
-async def _get_user_or_404(repo: UserRepoDep, user_id: UUID) -> UserDB:
-    """
-    Retrieve user by ID or raise 404 if not found.
-
-    Parameters
-    ----------
-    repo : UserRepoDep
-        User repository instance.
-    user_id : UUID
-        User identifier.
-
-    Returns
-    -------
-    UserDB
-        The user database entity.
-
-    Raises
-    ------
-    HTTPException
-        404 if user not found.
-    """
-    db_user = await repo.get_by_id(user_id)
-    if not db_user:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found",
-        )
-    return db_user
-
-
-async def _get_authorized_user(
-    repo: UserRepoDep,
-    user_id: UUID,
-    current_user: UserDB,
-    resource_name: str = "user",
-) -> UserDB:
-    """
-    Retrieve user and verify authorization (owner or admin).
-
-    Parameters
-    ----------
-    repo : UserRepoDep
-        User repository instance.
-    user_id : UUID
-        Target user identifier.
-    current_user : UserDB
-        Currently authenticated user.
-    resource_name : str
-        Resource name for error messages.
-
-    Returns
-    -------
-    UserDB
-        The authorized user database entity.
-
-    Raises
-    ------
-    HTTPException
-        404 if user not found, 403 if not authorized.
-    """
-    db_user = await _get_user_or_404(repo, user_id)
-    check_owner_or_admin(user_id, current_user, resource_name)
-    return db_user
 
 
 async def _invalidate_user_cache(
@@ -593,7 +536,7 @@ async def get_user(
     HTTPException
         If user not found.
     """
-    db_user = await _get_user_or_404(repo, user_id)
+    db_user = await get_user_or_404(repo, user_id)
     return validate_user_response(db_user)
 
 
@@ -781,7 +724,7 @@ async def update_user(
     check_owner_or_admin(deps.user_id, deps.current_user, "user")
 
     async with db_operation_context():
-        existing = await _get_user_or_404(deps.repo, deps.user_id)
+        existing = await get_user_or_404(deps.repo, deps.user_id)
         email_changed = bool(
             user_update.email and user_update.email != existing.email,
         )
@@ -856,7 +799,7 @@ async def delete_user(
         If user not found.
     """
     # Get user and verify authorization
-    existing = await _get_user_or_404(deps.repo, deps.user_id)
+    existing = await get_user_or_404(deps.repo, deps.user_id)
     check_owner_or_admin(deps.user_id, deps.current_user, "user")
 
     # Delete profile picture if it exists
@@ -985,7 +928,7 @@ async def upload_profile_picture(
     HTTPException
         If user not found, unauthorized, or invalid image.
     """
-    db_user = await _get_authorized_user(deps.repo, deps.user_id, deps.current_user)
+    db_user = await get_authorized_user(deps.repo, deps.user_id, deps.current_user)
     picture_url = await _upload_pp(str(deps.user_id), file)
 
     updated_user = await deps.repo.update(deps.user_id, {"profile_picture": picture_url})
@@ -1061,7 +1004,7 @@ async def delete_profile_picture(
         If user not found, unauthorized, or no picture to delete.
     """
     # Get user and verify authorization
-    db_user = await _get_authorized_user(deps.repo, deps.user_id, deps.current_user)
+    db_user = await get_authorized_user(deps.repo, deps.user_id, deps.current_user)
 
     # Check if user has a profile picture
     if not db_user.profile_picture:
@@ -1141,7 +1084,7 @@ async def update_testimonial(
     HTTPException
         If user not found or unauthorized.
     """
-    db_user = await _get_authorized_user(deps.repo, deps.user_id, deps.current_user, "testimonial")
+    db_user = await get_authorized_user(deps.repo, deps.user_id, deps.current_user, "testimonial")
     updated_user = await deps.repo.update(deps.user_id, {"testimonial": payload.testimonial})
     if not updated_user:
         raise HTTPException(
@@ -1198,7 +1141,7 @@ async def delete_testimonial(
     HTTPException
         If user not found or unauthorized.
     """
-    db_user = await _get_authorized_user(deps.repo, deps.user_id, deps.current_user, "testimonial")
+    db_user = await get_authorized_user(deps.repo, deps.user_id, deps.current_user, "testimonial")
     if not await deps.repo.update(deps.user_id, {"testimonial": None}):
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
