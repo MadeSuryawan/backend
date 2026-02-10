@@ -150,6 +150,7 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str | None = None
     WECHAT_APP_ID: str | None = None
     WECHAT_APP_SECRET: str | None = None
+    OAUTH_STATE_EXPIRE_SECONDS: int = 600  # 10 minutes for state token
 
     # Password Security
     PASSWORD_SECURITY_LEVEL: str = "standard"

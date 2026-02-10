@@ -718,11 +718,11 @@ class AuthService:
             firstName=user_info.get("given_name"),
             lastName=user_info.get("family_name"),
             profilePicture=user_info.get("picture"),
-            isVerified=True,  # OAuth emails are usually verified
         )
 
         return await self.user_repo.create(
             user_create,
             auth_provider=provider,
             provider_id=user_info.get("sub"),
+            is_verified=True,  # OAuth emails are pre-verified by the provider
         )

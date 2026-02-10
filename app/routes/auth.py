@@ -1,5 +1,6 @@
 """Authentication routes for handling user login, registration, and token management."""
 
+import secrets
 from logging import getLogger
 from typing import Annotated
 
@@ -19,9 +20,18 @@ from starlette.status import (
 from app.configs import settings
 from app.decorators.caching import get_cache_manager
 from app.decorators.metrics import timed
-from app.dependencies import AuthServiceDep, UserDBDep, UserRepoDep, UserRespDep, oauth2_scheme
+from app.dependencies import (
+    AuthServiceDep,
+    CacheDep,
+    UserDBDep,
+    UserRepoDep,
+    UserRespDep,
+    oauth2_scheme,
+)
 from app.errors.auth import (
     EmailVerificationError,
+    OAuthError,
+    OAuthStateError,
     PasswordChangeError,
     PasswordResetError,
     ResetTokenUsedError,
@@ -59,7 +69,10 @@ if settings.GOOGLE_CLIENT_ID:
         client_id=settings.GOOGLE_CLIENT_ID,
         client_secret=settings.GOOGLE_CLIENT_SECRET,
         server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-        client_kwargs={"scope": "openid email profile"},
+        client_kwargs={
+            "scope": "openid email profile",
+            "code_challenge_method": "S256",  # Enable PKCE
+        },
     )
 
 if settings.WECHAT_APP_ID:
@@ -69,7 +82,10 @@ if settings.WECHAT_APP_ID:
         client_secret=settings.WECHAT_APP_SECRET,
         authorize_url="https://open.weixin.qq.com/connect/qrconnect",
         access_token_url="https://api.weixin.qq.com/sns/oauth2/access_token",
-        client_kwargs={"scope": "snsapi_login"},
+        client_kwargs={
+            "scope": "snsapi_login",
+            "code_challenge_method": "S256",  # Enable PKCE
+        },
     )
 
 
@@ -596,7 +612,7 @@ async def register_user(
 @router.get(
     "/login/{provider}",
     summary="Initiate OAuth login",
-    description="Redirect user to the OAuth provider's login page.",
+    description="Redirect user to the OAuth provider's login page with CSRF protection.",
     responses={
         307: {"description": "Redirect to provider"},
         404: {
@@ -613,8 +629,35 @@ async def login_oauth(
     request: Request,
     response: Response,
     provider: str,
+    cache: CacheDep,
 ) -> RedirectResponse:
-    """Initiate OAuth login flow."""
+    """
+    Initiate OAuth login flow with CSRF protection.
+
+    Generates a cryptographically secure state parameter to prevent CSRF attacks.
+    The state is stored in cache with a TTL and validated in the callback.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    response : Response
+        The outgoing HTTP response.
+    provider : str
+        The OAuth provider name (e.g., 'google', 'wechat').
+    cache : CacheDep
+        Cache manager for storing the state parameter.
+
+    Returns
+    -------
+    RedirectResponse
+        Redirects to the OAuth provider's authorization endpoint.
+
+    Raises
+    ------
+    HTTPException
+        If the provider is not configured.
+    """
     client = oauth.create_client(provider)
     if not client:
         raise HTTPException(
@@ -622,8 +665,19 @@ async def login_oauth(
             detail=f"Provider {provider} not configured",
         )
 
+    # Generate cryptographically secure state parameter for CSRF protection
+    state = secrets.token_urlsafe(32)
+
+    # Store state in cache with TTL (single-use, expires after callback or timeout)
+    state_key = f"oauth_state:{state}"
+    await cache.set(
+        state_key,
+        {"provider": provider, "ip": request.client.host if request.client else None},
+        ttl=settings.OAUTH_STATE_EXPIRE_SECONDS,
+    )
+
     redirect_uri = request.url_for("auth_callback", provider=provider)
-    return await client.authorize_redirect(request, redirect_uri)
+    return await client.authorize_redirect(request, redirect_uri, state=state)
 
 
 @router.get(
@@ -631,7 +685,7 @@ async def login_oauth(
     name="auth_callback",
     include_in_schema=False,
     summary="OAuth callback",
-    description="Handle the redirect from the OAuth provider.",
+    description="Handle the redirect from the OAuth provider with state validation.",
 )
 @timed("/auth/callback")
 async def auth_callback(
@@ -639,22 +693,98 @@ async def auth_callback(
     response: Response,
     provider: str,
     auth_service: AuthServiceDep,
+    cache: CacheDep,
 ) -> Token:
-    """Handle OAuth callback and exchange for local token."""
+    """
+    Handle OAuth callback and exchange for local token.
+
+    Validates the state parameter to prevent CSRF attacks. The state must exist
+    in cache and match the provider. It is deleted after validation (single-use).
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request containing the authorization code and state.
+    response : Response
+        The outgoing HTTP response.
+    provider : str
+        The OAuth provider name (e.g., 'google', 'wechat').
+    auth_service : AuthServiceDep
+        Authentication service for user management.
+    cache : CacheDep
+        Cache manager for validating and deleting the state parameter.
+
+    Returns
+    -------
+    Token
+        JWT access and refresh tokens for the authenticated user.
+
+    Raises
+    ------
+    OAuthStateError
+        If the state parameter is missing, invalid, or expired.
+    OAuthError
+        If the OAuth provider returns an error or token exchange fails.
+    HTTPException
+        If the provider is not found or other unexpected errors occur.
+    """
     client = oauth.create_client(provider)
     if not client:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Provider not found")
 
+    # Validate state parameter for CSRF protection
+    state = request.query_params.get("state")
+    if not state:
+        logger.warning("OAuth callback missing state parameter", extra={"provider": provider})
+        raise OAuthStateError("Missing OAuth state parameter")  # noqa: TRY003
+
+    state_key = f"oauth_state:{state}"
+    cached_value = await cache.get(state_key)
+
+    if not isinstance(cached_value, dict):
+        logger.warning(
+            "OAuth state validation failed: state not found or expired",
+            extra={"provider": provider, "state": state[:8] + "..."},
+        )
+        raise OAuthStateError("Invalid or expired OAuth state")  # noqa: TRY003
+
+    stored_state: dict[str, str | None] = cached_value
+
+    if stored_state.get("provider") != provider:
+        logger.warning(
+            "OAuth state validation failed: provider mismatch",
+            extra={"expected": stored_state.get("provider"), "got": provider},
+        )
+        raise OAuthStateError("OAuth provider mismatch")  # noqa: TRY003
+
+    # Delete state immediately after validation (single-use token)
+    await cache.delete(state_key)
+
     try:
         token = await client.authorize_access_token(request)
+    except Exception as exc:  # authlib raises various exceptions for OAuth errors
+        error_desc = getattr(exc, "description", str(exc))
+        logger.warning(
+            "OAuth token exchange failed",
+            extra={"provider": provider, "error": error_desc},
+        )
+        msg = f"OAuth authorization failed: {error_desc}"
+        raise OAuthError(msg) from exc
+
+    try:
         user_info = token.get("userinfo")
         if not user_info:
             user_info = await client.userinfo(token=token)
 
         user = await auth_service.get_or_create_oauth_user(dict(user_info), provider)
         return auth_service.create_token_for_user(user)
-    except Exception as e:
-        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=f"OAuth failed: {e!s}") from e
+    except OAuthError:
+        # Re-raise OAuthError as-is
+        raise
+    except Exception as exc:
+        logger.exception("OAuth user processing failed", extra={"provider": provider})
+        msg = f"OAuth user processing failed: {exc!s}"
+        raise OAuthError(msg) from exc
 
 
 @router.get(

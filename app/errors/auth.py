@@ -41,6 +41,13 @@ class OAuthError(UserAuthenticationError):
         super().__init__(message, HTTP_400_BAD_REQUEST)
 
 
+class OAuthStateError(UserAuthenticationError):
+    """Raised when OAuth state validation fails (CSRF protection)."""
+
+    def __init__(self, message: str = "Invalid or expired OAuth state") -> None:
+        super().__init__(message, HTTP_400_BAD_REQUEST)
+
+
 class AccountLockedError(UserAuthenticationError):
     """Raised when account is locked due to too many failed login attempts."""
 
@@ -118,7 +125,10 @@ class PasswordChangeError(UserAuthenticationError):
     """Raised when password change fails due to invalid current password or validation error."""
 
     def __init__(self) -> None:
-        super().__init__("Failed to change password. Please verify your current password.", HTTP_400_BAD_REQUEST)
+        super().__init__(
+            "Failed to change password. Please verify your current password.",
+            HTTP_400_BAD_REQUEST,
+        )
 
 
 class UserNotFoundError(BaseAppError):

@@ -84,6 +84,7 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
             country=schema.country,
             auth_provider=kwargs.get("auth_provider", "email"),
             provider_id=kwargs.get("provider_id"),
+            is_verified=kwargs.get("is_verified", False),
         )
 
         # Use the base class helper method for consistent error handling
