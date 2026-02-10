@@ -4,12 +4,14 @@ Limiter Routes.
 Endpoints to inspect limiter health and reset rate limits with clear error responses.
 """
 
+from dataclasses import dataclass
 from logging import getLogger
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import ORJSONResponse
 
-from app.dependencies import AdminUserDep, get_cache_manager
+from app.dependencies import AdminUserDep, CacheDep
 from app.managers.rate_limiter import get_identifier
 from app.schemas import LimiterHealthResponse, LimiterResetRequest, LimiterResetResponse
 from app.utils.helpers import file_logger
@@ -19,9 +21,23 @@ logger = file_logger(getLogger(__name__))
 router = APIRouter(prefix="/limiter", tags=["🚦 Limiter"])
 
 
-async def _perform_limiter_reset(
+@dataclass(frozen=True)
+class LimiterDepOps:
+    """
+    Limiter dependency operations.
+
+    Separates business logic (authorization, identifier resolution, Redis scanning)
+    from response generation for improved testability.
+    """
+
+    admin_user: AdminUserDep
+    cache_manager: CacheDep
+
+
+async def _reset_limiter(
     request: Request,
     body: LimiterResetRequest,
+    cache_manager: CacheDep,
 ) -> LimiterResetResponse:
     """
     Execute limiter reset operations and return structured result.
@@ -32,6 +48,7 @@ async def _perform_limiter_reset(
     Args:
         request: Incoming FastAPI request.
         body: Parameters controlling reset behavior.
+        cache_manager: Cache manager dependency.
 
     Returns:
         LimiterResetResponse with message, count, and identifier.
@@ -44,7 +61,7 @@ async def _perform_limiter_reset(
         raise HTTPException(status_code=400, detail="Could not determine identifier")
 
     if body.all_endpoints:
-        redis = get_cache_manager(request).redis_client
+        redis = cache_manager.redis_client
         if not await redis.ping():
             raise HTTPException(status_code=503, detail="Redis unavailable")
 
@@ -89,7 +106,7 @@ async def _perform_limiter_reset(
 )
 async def get_limiter_status(
     request: Request,
-    admin_user: AdminUserDep,
+    deps: Annotated[LimiterDepOps, Depends()],
 ) -> ORJSONResponse:
     """
     Get status of the rate limiter storage.
@@ -98,8 +115,8 @@ async def get_limiter_status(
     ----------
     request : Request
         Current request context.
-    admin_user : UserDB
-        Admin user (enforced by AdminUserDep dependency).
+    deps : LimiterDepOps
+        Limiter dependency operations.
 
     Returns
     -------
@@ -110,8 +127,7 @@ async def get_limiter_status(
 
     status = LimiterHealthResponse()
 
-    redis_healthy = await get_cache_manager(request).redis_client.ping()
-    if not redis_healthy:
+    if not await deps.cache_manager.redis_client.ping():
         status.detail = "Falling back to in-memory storage or disconnected"
         status.storage = "in-memory"
         status.healthy = False
@@ -170,7 +186,7 @@ async def get_limiter_status(
 async def reset_limiter(
     request: Request,
     body: LimiterResetRequest,
-    admin_user: AdminUserDep,
+    deps: Annotated[LimiterDepOps, Depends()],
 ) -> LimiterResetResponse:
     """
     Return limiter reset result.
@@ -181,12 +197,12 @@ async def reset_limiter(
         Current request context.
     body : LimiterResetRequest
         Reset parameters.
-    admin_user : UserDB
-        Admin user (enforced by AdminUserDep dependency).
+    deps : LimiterDepOps
+        Limiter dependency operations.
 
     Returns
     -------
     LimiterResetResponse
         Structured result including message, count, and identifier.
     """
-    return await _perform_limiter_reset(request, body)
+    return await _reset_limiter(request, body, deps.cache_manager)
