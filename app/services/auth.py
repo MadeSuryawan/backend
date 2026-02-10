@@ -219,7 +219,7 @@ class AuthService:
 
         return success
 
-    async def send_verification_email(self, user: UserDB) -> str:
+    async def send_verification_email(self, user: UserDB) -> None:
         """
         Generate email verification token for a user.
 
@@ -241,14 +241,13 @@ class AuthService:
             # We will implement the professional HTML template logic here or call a helper
             await self._send_verification_email_to_user(user, verification_token)
 
-        return verification_token
-
     async def _send_verification_email_to_user(self, user: UserDB, token: str) -> None:
         """Dispatch the professional verification email."""
         verification_link = f"{settings.FRONTEND_URL}/verify-email?token={token}"
 
         # Professional HTML template using provided logo
         logo_url = "https://res.cloudinary.com/dusikjnta/image/upload/f_auto/q_auto/v1/My%20Brand/bali_blissed_simplified_dhkbvy?_a=BAMAAAhK0"
+        greet_name = self._get_user_greet_name(user)
         year = datetime.now().year
 
         # Custom HTML template for professional email
@@ -266,7 +265,7 @@ class AuthService:
 
                 </div>
                 <div style="padding: 40px; text-align: center;" class="content">
-                    <h1 style="color: #1a2a6c; font-size: 24px; margin-bottom: 20px;">Welcome to BaliBlissed, {user.first_name or user.username}!</h1>
+                    <h1 style="color: #1a2a6c; font-size: 24px; margin-bottom: 20px;">Welcome to BaliBlissed, {greet_name}!</h1>
                     <p style="line-height: 1.6; color: #666; font-size: 16px;">Thank you for embarking on your journey with us. To ensure the security of your account and access all our travel features, please verify your email address by clicking the button below.</p>
                     <div style="margin-top: 30px;" class="button-container">
                         <a style="color: #ffffff; text-decoration: none; font-weight: bold; font-size: 16px; padding: 14px 28px; border-radius: 6px; background-color: #ce6f21; display: inline-block; transition: background-color 0.3s;" href="{verification_link}" class="button">Verify Email Address</a>
@@ -446,6 +445,104 @@ class AuthService:
 
         return True
 
+    def _get_user_greet_name(self, user: UserDB) -> str:
+        """
+        Get the best display name for the user for emails.
+
+        Tries first_name, then username (formatted), then falls back to "there".
+
+        Args:
+            user: The user entity
+
+        Returns:
+            str: The display name to use in emails
+        """
+        # Use first_name if available and not empty
+        if user.first_name and user.first_name != "string":
+            return user.first_name.strip()
+
+        # Fall back to username, but format it nicely
+        if user.username and user.username.strip():
+            # Capitalize first letter and replace underscores/hyphens with spaces
+            formatted = user.username.strip().replace("_", " ").replace("-", " ").title()
+            return formatted
+
+        # Ultimate fallback
+        return "there"
+
+    async def _send_password_change_email(self, user: UserDB) -> None:
+        """
+        Send password change confirmation email to user.
+
+        This email notifies the user that their password was changed
+        and provides security information if they didn't make this change.
+
+        Args:
+            user: The user whose password was changed
+        """
+        # Professional HTML template using provided logo
+        logo_url = "https://res.cloudinary.com/dusikjnta/image/upload/f_auto/q_auto/v1/My%20Brand/bali_blissed_simplified_dhkbvy?_a=BAMAAAhK0"
+        greet_name = self._get_user_greet_name(user)
+        year = datetime.now().year
+        change_time = datetime.now(UTC).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f9; margin: 0; padding: 1px; color: #333; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);">
+            <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8); border: 1px solid rgba(10, 10, 10, 0.1);" class="container">
+                <div style="background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d); padding: 30px; text-align: center;" class="header">
+                    <img style="max-width: 150px; height: auto;" src="{logo_url}" alt="BaliBlissed Logo">
+                </div>
+                <div style="padding: 40px; text-align: center;" class="content">
+                    <h1 style="color: #1a2a6c; font-size: 24px; margin-bottom: 20px;">Password Changed Successfully</h1>
+                    <p style="line-height: 1.6; color: #666; font-size: 16px;">Hi {greet_name},</p>
+                    <p style="line-height: 1.6; color: #666; font-size: 16px;">Your BaliBlissed account password was changed successfully.</p>
+                    <div style="background-color: #f9f9f9; padding: 20px; margin: 30px 0; border-radius: 8px; border-left: 4px solid #ce6f21;">
+                        <p style="margin: 0; font-size: 14px; color: #666;"><strong>Change Time:</strong> {change_time}</p>
+                    </div>
+                    <p style="line-height: 1.6; color: #666; font-size: 16px;">You will need to sign in again on all other devices with your new password.</p>
+                    <div style="margin-top: 30px; padding: 20px; background-color: #fff3cd; border-radius: 8px; border: 1px solid #ffeaa7;">
+                        <p style="margin: 0; font-size: 14px; color: #856404;">
+                            <strong>Didn't make this change?</strong><br>
+                            If you didn't change your password, please contact us immediately at
+                            <a href="mailto:{settings.COMPANY_TARGET_EMAIL}" style="color: #1a2a6c;">{settings.COMPANY_TARGET_EMAIL}</a>
+                            to secure your account.
+                        </p>
+                    </div>
+                </div>
+                <div style="background-color: #f9f9f9; padding: 20px; text-align: center; font-size: 12px; color: #999; border: 1px solid #eee;" class="footer">
+                    <p style="margin: 5px 0;">&copy; {year} BaliBlissed. All rights reserved.</p>
+                    <p style="margin: 5px 0;">Your portal to Bali's finest travel experiences.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        if not self._email:
+            logger.warning(
+                f"Email client not initialized. Cannot send password change email to {user.email}",
+            )
+            return
+
+        try:
+            await self._email.send_email(
+                subject="Security Alert: Your BaliBlissed Password Was Changed",
+                body=html_content,
+                reply_to=settings.COMPANY_TARGET_EMAIL,
+                to=user.email,
+                is_html=True,
+            )
+            logger.info(f"Password change email sent to {user.email}")
+
+        except Exception:
+            logger.exception(f"Failed to send password change email to {user.email}")
+
     async def change_password(
         self,
         user_id: UUID,
@@ -489,6 +586,9 @@ class AuthService:
             # For now, we rely on the natural token expiry and the fact that
             # refresh tokens will fail validation when user tries to refresh
             pass
+
+        # Send confirmation email (non-blocking, doesn't affect password change success)
+        await self._send_password_change_email(user)
 
         return True
 

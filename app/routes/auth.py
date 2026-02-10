@@ -299,11 +299,8 @@ async def resend_verification(
             )
 
         # Generate and send verification token
-        _verification_token = await auth_service.send_verification_email(user)
+        await auth_service.send_verification_email(user)
         await auth_service.record_verification_sent(user.uuid)
-
-        # TODO: Send actual email with _verification_token
-        # For now, token is logged in development
 
     # Always return success to prevent email enumeration
     return MessageResponse(
