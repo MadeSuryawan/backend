@@ -39,7 +39,7 @@ from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 
-router = APIRouter(prefix="/items", tags=["📦 Items"])
+router = APIRouter(prefix="/items", tags=["📦 Items"], include_in_schema=False)
 
 
 # In-memory database (for demo purposes)
