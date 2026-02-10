@@ -16,8 +16,10 @@ from app.dependencies.dependencies import (
     UserRepoDep,
     UserRespDep,
     VerifiedUserDep,
+    get_authorized_user,
     get_cache_manager,
     get_email_client,
+    get_user_or_404,
     oauth2_scheme,
 )
 
@@ -39,5 +41,7 @@ __all__ = [
     "VerifiedUserDep",
     "get_cache_manager",
     "get_email_client",
+    "get_user_or_404",
+    "get_authorized_user",
     "oauth2_scheme",
 ]

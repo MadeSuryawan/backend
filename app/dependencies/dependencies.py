@@ -10,7 +10,12 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.status import HTTP_400_BAD_REQUEST, HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
+from starlette.status import (
+    HTTP_400_BAD_REQUEST,
+    HTTP_401_UNAUTHORIZED,
+    HTTP_403_FORBIDDEN,
+    HTTP_404_NOT_FOUND,
+)
 
 from app.clients.ai_client import AiClient
 from app.clients.email_client import EmailClient
@@ -21,6 +26,7 @@ from app.managers.login_attempt_tracker import LoginAttemptTracker, get_login_tr
 from app.managers.token_blacklist import TokenBlacklist, get_token_blacklist
 from app.managers.token_manager import decode_access_token
 from app.models import UserDB
+from app.rabc import check_owner_or_admin
 from app.repositories import BlogRepository, ReviewRepository, UserRepository
 from app.schemas.user import UserResponse
 from app.services import AuthService
@@ -239,6 +245,71 @@ async def is_verified(
 AdminUserDep = Annotated[UserDB, Depends(is_admin)]
 ModeratorUserDep = Annotated[UserDB, Depends(is_moderator)]
 VerifiedUserDep = Annotated[UserDB, Depends(is_verified)]
+
+
+async def get_user_or_404(repo: UserRepoDep, user_id: UUID) -> UserDB:
+    """
+    Retrieve user by ID or raise 404 if not found.
+
+    Parameters
+    ----------
+    repo : UserRepoDep
+        User repository instance.
+    user_id : UUID
+        User identifier.
+
+    Returns
+    -------
+    UserDB
+        The user database entity.
+
+    Raises
+    ------
+    HTTPException
+        404 if user not found.
+    """
+    db_user = await repo.get_by_id(user_id)
+    if not db_user:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found",
+        )
+    return db_user
+
+
+async def get_authorized_user(
+    repo: UserRepoDep,
+    user_id: UUID,
+    current_user: UserDB,
+    resource_name: str = "user",
+) -> UserDB:
+    """
+    Retrieve user and verify authorization (owner or admin).
+
+    Parameters
+    ----------
+    repo : UserRepoDep
+        User repository instance.
+    user_id : UUID
+        Target user identifier.
+    current_user : UserDB
+        Currently authenticated user.
+    resource_name : str
+        Resource name for error messages.
+
+    Returns
+    -------
+    UserDB
+        The authorized user database entity.
+
+    Raises
+    ------
+    HTTPException
+        404 if user not found, 403 if not authorized.
+    """
+    db_user = await get_user_or_404(repo, user_id)
+    check_owner_or_admin(user_id, current_user, resource_name)
+    return db_user
 
 
 def get_blog_repository(
