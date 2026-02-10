@@ -1,11 +1,28 @@
 # app/middleware/middleware.py
 """
-Middleware components for the FastAPI Redis Cache application.
+Middleware components for the FastAPI application.
 
-This module contains middleware functions for security headers,
-request logging, CORS handling, and compression. This module also
-contains the lifespan event handler for service initialization and
-cleanup.
+This module provides middleware functions for security headers,
+request logging, CORS handling, and application lifecycle management.
+It also contains the lifespan event handler for service initialization
+and cleanup.
+
+Modules
+-------
+lifespan : asynccontextmanager
+    Manages application startup and shutdown events.
+configure_cors : function
+    Configures CORS middleware for the application.
+LoggingMiddleware : class
+    Logs request summary and timing information.
+SecurityHeadersMiddleware : class
+    Adds security headers to all responses.
+
+Examples
+--------
+>>> from app.middleware import lifespan, configure_cors
+>>> app = FastAPI(lifespan=lifespan)
+>>> configure_cors(app)
 """
 
 from asyncio import get_event_loop
@@ -46,7 +63,32 @@ install()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
-    """Manage application startup and shutdown events with service initialization."""
+    """
+    Manage application startup and shutdown events.
+
+    This context manager handles the initialization and cleanup of
+    all application services including database, cache manager,
+    token blacklist, and AI client.
+
+    Parameters
+    ----------
+    app : FastAPI
+        The FastAPI application instance.
+
+    Yields
+    ------
+    None
+        Control is yielded to the application during its lifetime.
+
+    Raises
+    ------
+    Exception
+        If service initialization fails during startup.
+
+    Examples
+    --------
+    >>> app = FastAPI(lifespan=lifespan)
+    """
     # Startup
     logger.info(f"Starting {app.title}...")
     logger.info(f"{app.description}")
@@ -108,7 +150,31 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
 
 def configure_cors(app: FastAPI) -> None:
-    """Configure CORS middleware for the application."""
+    """
+    Configure CORS middleware for the application.
+
+    Sets up Cross-Origin Resource Sharing (CORS) policies based on
+    environment settings. Allows localhost for development and
+    production frontend URL when configured.
+
+    Parameters
+    ----------
+    app : FastAPI
+        The FastAPI application instance to configure.
+
+    Notes
+    -----
+    Allowed origins include:
+    - http://localhost:3000 (Next.js development)
+    - http://127.0.0.1:3000
+    - PRODUCTION_FRONTEND_URL from settings (if set)
+
+    Examples
+    --------
+    >>> from fastapi import FastAPI
+    >>> app = FastAPI()
+    >>> configure_cors(app)
+    """
     # Determine allowed origins based on environment
     allowed_origins: list[str] = [
         "http://localhost:3000",  # Next.js development
@@ -130,12 +196,46 @@ def configure_cors(app: FastAPI) -> None:
 
 
 class LoggingMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware for logging request and response information.
+
+    Logs request details including method, path, client IP, and
+    response status code with timing information.
+
+    Examples
+    --------
+    >>> from fastapi import FastAPI
+    >>> app = FastAPI()
+    >>> app.add_middleware(LoggingMiddleware)
+    """
+
     async def dispatch(
         self,
         request: Request,
         call_next: RequestResponseEndpoint,
     ) -> Response:
-        """Log request summary and timing information."""
+        """
+        Log request summary and timing information.
+
+        Processes the request through the middleware chain and logs
+        request details and response timing.
+
+        Parameters
+        ----------
+        request : Request
+            The incoming HTTP request.
+        call_next : RequestResponseEndpoint
+            The next middleware or endpoint in the chain.
+
+        Returns
+        -------
+        Response
+            The HTTP response from the downstream handler.
+
+        Examples
+        --------
+        >>> response = await middleware.dispatch(request, call_next)
+        """
 
         start_time = perf_counter()
         summary = get_summary(request)
@@ -155,12 +255,55 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware for adding security headers to responses.
+
+    Adds security-related HTTP headers to all responses including
+    XSS protection, content type options, frame options, and
+    strict transport security.
+
+    Headers Added
+    -------------
+    - X-Content-Type-Options: nosniff
+    - X-Frame-Options: DENY
+    - X-XSS-Protection: 1; mode=block
+    - Strict-Transport-Security: max-age=31536000; includeSubDomains
+    - Referrer-Policy: strict-origin-when-cross-origin
+
+    Examples
+    --------
+    >>> from fastapi import FastAPI
+    >>> app = FastAPI()
+    >>> app.add_middleware(SecurityHeadersMiddleware)
+    """
+
     async def dispatch(
         self,
         request: Request,
         call_next: RequestResponseEndpoint,
     ) -> Response:
-        """Add security headers to all responses."""
+        """
+        Add security headers to all responses.
+
+        Processes the request and adds security headers to the
+        response before returning it to the client.
+
+        Parameters
+        ----------
+        request : Request
+            The incoming HTTP request.
+        call_next : RequestResponseEndpoint
+            The next middleware or endpoint in the chain.
+
+        Returns
+        -------
+        Response
+            The HTTP response with security headers added.
+
+        Examples
+        --------
+        >>> response = await middleware.dispatch(request, call_next)
+        """
 
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
