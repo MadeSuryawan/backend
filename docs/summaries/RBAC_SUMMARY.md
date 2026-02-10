@@ -99,8 +99,8 @@ Each role has a predefined set of permissions:
 FastAPI dependencies are the **preferred method** for permission checking:
 
 ```python
-from app.auth.permissions import AdminUserDep, ModeratorUserDep, VerifiedUserDep
-from app.auth.permissions import require_permission, Permission
+from app.rabc import AdminUserDep, ModeratorUserDep, VerifiedUserDep
+from app.rabc import require_permission, Permission
 
 # Admin-only endpoint
 @router.get("/admin-only")
@@ -148,7 +148,7 @@ async def update_blog(blog_id: UUID, user: UserDB, ...):
 Use the `check_owner_or_admin()` helper for manual owner verification:
 
 ```python
-from app.auth.permissions import check_owner_or_admin
+from app.rabc import check_owner_or_admin
 
 @router.put("/blogs/{blog_id}")
 async def update_blog(
@@ -175,7 +175,7 @@ async def update_blog(
 ### Pattern 1: Admin-Only Endpoint
 
 ```python
-from app.auth.permissions import AdminUserDep
+from app.rabc import AdminUserDep
 
 @router.post("/admin/action")
 async def admin_action(admin_user: AdminUserDep):
@@ -186,7 +186,7 @@ async def admin_action(admin_user: AdminUserDep):
 ### Pattern 2: Owner or Admin Access
 
 ```python
-from app.auth.permissions import check_owner_or_admin
+from app.rabc import check_owner_or_admin
 
 @router.delete("/users/{user_id}")
 async def delete_user(
@@ -206,7 +206,7 @@ async def delete_user(
 ### Pattern 3: Permission-Based Access
 
 ```python
-from app.auth.permissions import require_permission, Permission
+from app.rabc import require_permission, Permission
 
 @router.get("/admin/stats")
 async def get_stats(
@@ -219,7 +219,7 @@ async def get_stats(
 ### Pattern 4: Role Hierarchy Check
 
 ```python
-from app.auth.permissions import has_role_or_higher
+from app.rabc import has_role_or_higher
 
 def some_business_logic(user: UserDB):
     if has_role_or_higher(user.role, "moderator"):
@@ -462,7 +462,7 @@ Potential improvements for future consideration:
 
 ```python
 # Dependencies
-from app.auth.permissions import (
+from app.rabc import (
     AdminUserDep,
     ModeratorUserDep,
     VerifiedUserDep,

@@ -1,6 +1,9 @@
 """Authentication and authorization module."""
 
-from app.auth.permissions import (
+from app.rabc.permissions import (
+    ROLE_HIERARCHY,
+    ROLE_PERMISSIONS,
+    Permission,
     check_owner_or_admin,
     has_permission,
     has_role_or_higher,
@@ -10,6 +13,9 @@ from app.auth.permissions import (
 )
 
 __all__ = [
+    "Permission",
+    "ROLE_HIERARCHY",
+    "ROLE_PERMISSIONS",
     "has_role_or_higher",
     "require_role",
     "require_role_or_higher",

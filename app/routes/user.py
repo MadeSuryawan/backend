@@ -50,7 +50,6 @@ from starlette.status import (
     HTTP_500_INTERNAL_SERVER_ERROR,
 )
 
-from app.auth.permissions import check_owner_or_admin
 from app.decorators.caching import cache_busting, cached, get_cache_manager
 from app.decorators.metrics import timed
 from app.dependencies import AdminUserDep, AuthServiceDep, UserDBDep, UserQueryListDep, UserRepoDep
@@ -63,6 +62,7 @@ from app.errors.upload import (
 )
 from app.managers.rate_limiter import limiter
 from app.models import UserDB
+from app.rabc import check_owner_or_admin
 from app.schemas import (
     TestimonialUpdate,
     UserCreate,

@@ -1,4 +1,4 @@
-"""Role-based access control (RBAC) permissions and dependencies."""
+"""Role-based access control (RBAC) permissions."""
 
 from collections.abc import Awaitable, Callable
 from enum import StrEnum

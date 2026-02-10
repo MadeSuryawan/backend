@@ -2,11 +2,11 @@
 
 from uuid import uuid4
 
-from app.auth.permissions import (
+from app.models import UserDB
+from app.rabc import (
     ROLE_HIERARCHY,
     has_role_or_higher,
 )
-from app.models import UserDB
 
 
 class TestRoleHierarchy:
