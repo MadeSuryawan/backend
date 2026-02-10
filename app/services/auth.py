@@ -32,13 +32,19 @@ from app.models import UserDB
 from app.repositories import UserRepository
 from app.schemas.auth import Token, VerificationTokenData
 from app.schemas.user import UserCreate
+from app.services.email_template_builder import EmailTemplateBuilder
 from app.utils.helpers import file_logger
 
 logger = file_logger(getLogger(__name__))
 
 
 class AuthService:
-    """Service for handling user authentication with enhanced security."""
+    """
+    Service for handling user authentication with enhanced security.
+
+    This service provides methods for user authentication, token management,
+    email verification, password reset, and OAuth flows.
+    """
 
     def __init__(
         self,
@@ -58,12 +64,12 @@ class AuthService:
             redis_client: Optional Redis client for rate limiting
             email_client: Optional email client for sending notifications
         """
-
         self.user_repo = user_repo
         self._blacklist = token_blacklist
         self._login_tracker = login_tracker
         self._redis = redis_client
         self._email = email_client
+        self._email_builder = EmailTemplateBuilder()
 
     async def _check_lockout(self, identifier: str) -> None:
         """Check if user is locked out and raise if so."""
@@ -239,51 +245,26 @@ class AuthService:
         )
 
         if self._email:
-            # We will implement the professional HTML template logic here or call a helper
             await self._send_verification_email_to_user(user, verification_token)
 
     async def _send_verification_email_to_user(self, user: UserDB, token: str) -> None:
-        """Dispatch the professional verification email."""
-        verification_link = f"{settings.FRONTEND_URL}/verify-email?token={token}"
+        """
+        Dispatch the professional verification email.
 
-        # Professional HTML template using provided logo
-        logo_url = "https://res.cloudinary.com/dusikjnta/image/upload/f_auto/q_auto/v1/My%20Brand/bali_blissed_simplified_dhkbvy?_a=BAMAAAhK0"
+        Args:
+            user: The user to send the verification email to.
+            token: The verification token to include in the email link.
+        """
+        verification_link = f"{settings.FRONTEND_URL}/verify-email?token={token}"
         greet_name = self._get_user_greet_name(user)
         year = datetime.now().year
 
-        # Custom HTML template for professional email
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        </head>
-        <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f9; margin: 0; padding: 1px; color: #333; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);">
-            <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8); border: 1px solid rgba(10, 10, 10, 0.1);" class="container">
-                <div style="background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d); padding: 30px; text-align: center;" class="header">
-                    <img style="max-width: 150px; height: auto;" src="{logo_url}" alt="BaliBlissed Logo">
-
-                </div>
-                <div style="padding: 40px; text-align: center;" class="content">
-                    <h1 style="color: #1a2a6c; font-size: 24px; margin-bottom: 20px;">Welcome to BaliBlissed, {greet_name}!</h1>
-                    <p style="line-height: 1.6; color: #666; font-size: 16px;">Thank you for embarking on your journey with us. To ensure the security of your account and access all our travel features, please verify your email address by clicking the button below.</p>
-                    <div style="margin-top: 30px;" class="button-container">
-                        <a style="color: #ffffff; text-decoration: none; font-weight: bold; font-size: 16px; padding: 14px 28px; border-radius: 6px; background-color: #ce6f21; display: inline-block; transition: background-color 0.3s;" href="{verification_link}" class="button">Verify Email Address</a>
-                    </div>
-                    <p style="margin-top: 30px; font-size: 14px; color: #888;">
-                        This link will expire in {settings.VERIFICATION_TOKEN_EXPIRE_HOURS} hours.
-                        If you didn't create an account, you can safely ignore this email.
-                    </p>
-                </div>
-                <div style="background-color: #f9f9f9; padding: 20px; text-align: center; font-size: 12px; color: #999; border: 1px solid #eee;" class="footer">
-                    <p style="margin: 5px 0;">&copy; {year} BaliBlissed. All rights reserved.</p>
-                    <p style="margin: 5px 0;">Your portal to Bali's finest travel experiences.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        html_content = self._email_builder.build_verification_email(
+            greet_name=greet_name,
+            verification_link=verification_link,
+            expiry_hours=settings.VERIFICATION_TOKEN_EXPIRE_HOURS,
+            year=year,
+        )
 
         if not self._email:
             logger.warning(
@@ -301,7 +282,6 @@ class AuthService:
             )
 
         except Exception:
-            # We log but don't fail registration if email fails (for now, or we could handle it)
             logger.exception(f"Failed to send verification email to {user.email}")
 
     async def verify_email(self, token_data: VerificationTokenData) -> bool:
@@ -453,54 +433,19 @@ class AuthService:
         Send password reset email to user.
 
         Args:
-            user: User to send reset email to
-            token: Password reset token
+            user: User to send reset email to.
+            token: Password reset token.
         """
         reset_link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
-
-        # Professional HTML template using provided logo
-        logo_url = "https://res.cloudinary.com/dusikjnta/image/upload/f_auto/q_auto/v1/My%20Brand/bali_blissed_simplified_dhkbvy?_a=BAMAAAhK0"
         greet_name = self._get_user_greet_name(user)
         year = datetime.now().year
 
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        </head>
-        <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f9; margin: 0; padding: 1px; color: #333; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);">
-            <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8); border: 1px solid rgba(10, 10, 10, 0.1);" class="container">
-                <div style="background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d); padding: 30px; text-align: center;" class="header">
-                    <img style="max-width: 150px; height: auto;" src="{logo_url}" alt="BaliBlissed Logo">
-                </div>
-                <div style="padding: 40px; text-align: center;" class="content">
-                    <h1 style="color: #1a2a6c; font-size: 24px; margin-bottom: 20px;">Reset Your Password</h1>
-                    <p style="line-height: 1.6; color: #666; font-size: 16px;">Hi {greet_name},</p>
-                    <p style="line-height: 1.6; color: #666; font-size: 16px;">We received a request to reset your BaliBlissed account password. Click the button below to create a new password:</p>
-                    <div style="margin-top: 30px;" class="button-container">
-                        <a style="color: #ffffff; text-decoration: none; font-weight: bold; font-size: 16px; padding: 14px 28px; border-radius: 6px; background-color: #ce6f21; display: inline-block; transition: background-color 0.3s;" href="{reset_link}" class="button">Reset Password</a>
-                    </div>
-                    <p style="margin-top: 30px; font-size: 14px; color: #888;">
-                        This link will expire in {settings.PASSWORD_RESET_TOKEN_EXPIRE_HOURS} hour(s).
-                        If you didn't request this reset, you can safely ignore this email.
-                    </p>
-                    <div style="margin-top: 20px; padding: 20px; background-color: #fff3cd; border-radius: 8px; border: 1px solid #ffeaa7;">
-                        <p style="margin: 0; font-size: 14px; color: #856404;">
-                            <strong>Security Tip:</strong><br>
-                            Never share this link with anyone. BaliBlissed will never ask for your password via email.
-                        </p>
-                    </div>
-                </div>
-                <div style="background-color: #f9f9f9; padding: 20px; text-align: center; font-size: 12px; color: #999; border: 1px solid #eee;" class="footer">
-                    <p style="margin: 5px 0;">&copy; {year} BaliBlissed. All rights reserved.</p>
-                    <p style="margin: 5px 0;">Your portal to Bali's finest travel experiences.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        html_content = self._email_builder.build_password_reset_email(
+            greet_name=greet_name,
+            reset_link=reset_link,
+            expiry_hours=settings.PASSWORD_RESET_TOKEN_EXPIRE_HOURS,
+            year=year,
+        )
 
         if not self._email:
             logger.warning(
@@ -662,51 +607,17 @@ class AuthService:
         and provides security information if they didn't make this change.
 
         Args:
-            user: The user whose password was changed
+            user: The user whose password was changed.
         """
-        # Professional HTML template using provided logo
-        logo_url = "https://res.cloudinary.com/dusikjnta/image/upload/f_auto/q_auto/v1/My%20Brand/bali_blissed_simplified_dhkbvy?_a=BAMAAAhK0"
         greet_name = self._get_user_greet_name(user)
         year = datetime.now().year
         change_time = datetime.now(UTC).astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        </head>
-        <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f9; margin: 0; padding: 1px; color: #333; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);">
-            <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8); border: 1px solid rgba(10, 10, 10, 0.1);" class="container">
-                <div style="background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d); padding: 30px; text-align: center;" class="header">
-                    <img style="max-width: 150px; height: auto;" src="{logo_url}" alt="BaliBlissed Logo">
-                </div>
-                <div style="padding: 40px; text-align: center;" class="content">
-                    <h1 style="color: #1a2a6c; font-size: 24px; margin-bottom: 20px;">Password Changed Successfully</h1>
-                    <p style="line-height: 1.6; color: #666; font-size: 16px;">Hi {greet_name},</p>
-                    <p style="line-height: 1.6; color: #666; font-size: 16px;">Your BaliBlissed account password was changed successfully.</p>
-                    <div style="background-color: #f9f9f9; padding: 20px; margin: 30px 0; border-radius: 8px; border-left: 4px solid #ce6f21;">
-                        <p style="margin: 0; font-size: 14px; color: #666;"><strong>Change Time:</strong> {change_time}</p>
-                    </div>
-                    <p style="line-height: 1.6; color: #666; font-size: 16px;">You will need to sign in again on all other devices with your new password.</p>
-                    <div style="margin-top: 30px; padding: 20px; background-color: #fff3cd; border-radius: 8px; border: 1px solid #ffeaa7;">
-                        <p style="margin: 0; font-size: 14px; color: #856404;">
-                            <strong>Didn't make this change?</strong><br>
-                            If you didn't change your password, please contact us immediately at
-                            <a href="mailto:{settings.COMPANY_TARGET_EMAIL}" style="color: #1a2a6c;">{settings.COMPANY_TARGET_EMAIL}</a>
-                            to secure your account.
-                        </p>
-                    </div>
-                </div>
-                <div style="background-color: #f9f9f9; padding: 20px; text-align: center; font-size: 12px; color: #999; border: 1px solid #eee;" class="footer">
-                    <p style="margin: 5px 0;">&copy; {year} BaliBlissed. All rights reserved.</p>
-                    <p style="margin: 5px 0;">Your portal to Bali's finest travel experiences.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        html_content = self._email_builder.build_password_change_email(
+            greet_name=greet_name,
+            change_time=change_time,
+            year=year,
+        )
 
         if not self._email:
             logger.warning(
@@ -763,12 +674,7 @@ class AuthService:
         await self.user_repo._add_and_refresh(user)  # noqa: SLF001
 
         # Invalidate all refresh tokens for this user (soft invalidation)
-        # This forces re-login on all other devices when their access tokens expire
         if self._blacklist:
-            # Note: We can't blacklist specific tokens without knowing them,
-            # but we can implement user-level token revocation in TokenBlacklist
-            # For now, we rely on the natural token expiry and the fact that
-            # refresh tokens will fail validation when user tries to refresh
             pass
 
         # Send confirmation email (non-blocking, doesn't affect password change success)
