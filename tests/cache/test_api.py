@@ -136,7 +136,7 @@ async def test_update_item(client: AsyncClient) -> None:
         "name": "Updated Item 3",
         "price": 39.99,
     }
-    response = await client.put("/items/update-item/3", json=update_data)
+    response = await client.patch("/items/update-item/3", json=update_data)
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "Updated Item 3"

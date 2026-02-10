@@ -34,7 +34,7 @@ class TestItemsNestedContainers:
         assert ids_t1 == {1, 2}
 
         # Update one item and verify both caches update
-        up = await client.put("/items/update-item/1", json={"name": "A-Edit"})
+        up = await client.patch("/items/update-item/1", json={"name": "A-Edit"})
         assert up.status_code == 200
 
         d3 = await client.get("/items/dict-list-items")

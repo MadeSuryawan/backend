@@ -1,4 +1,3 @@
-
 import pytest
 from httpx import AsyncClient
 
@@ -33,7 +32,7 @@ class TestItemsRawEndpoint:
 
         # Update item 1, verify cache busting reflects update
         update_payload = {"name": "A-Updated", "price": 11.5}
-        u = await client.put("/items/update-item/1", json=update_payload)
+        u = await client.patch("/items/update-item/1", json=update_payload)
         assert u.status_code == 200
         assert u.json()["name"] == "A-Updated"
 

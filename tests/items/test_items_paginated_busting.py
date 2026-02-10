@@ -24,7 +24,7 @@ class TestItemsPaginatedBusting:
         data1 = p1.json()
         assert {i["name"] for i in data1["items"]} == {"A", "B"}
 
-        up = await client.put("/items/update-item/1", json={"name": "A-Edit"})
+        up = await client.patch("/items/update-item/1", json={"name": "A-Edit"})
         assert up.status_code == 200
 
         # Without busting, cached page may still have old name

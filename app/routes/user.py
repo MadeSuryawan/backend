@@ -621,7 +621,7 @@ async def get_user_by_username(
     return validate_user_response(db_user)
 
 
-@router.put(
+@router.patch(
     "/update/{user_id}",
     response_class=ORJSONResponse,
     response_model=UserResponse,

@@ -22,7 +22,7 @@ class TestItemsPaginatedMultiBusting:
         p1_s2 = await client.get("/items/paginated", params={"page": 1, "page_size": 2})
         assert p1_s1.status_code == 200 and p1_s2.status_code == 200
 
-        up = await client.put("/items/update-item/1", json={"name": "A-Edit"})
+        up = await client.patch("/items/update-item/1", json={"name": "A-Edit"})
         assert up.status_code == 200
 
         p1_s1_cached = await client.get("/items/paginated", params={"page": 1, "page_size": 1})

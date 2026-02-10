@@ -34,7 +34,7 @@ class TestItemsMapAndMaybe:
         assert miss.json() is None
 
         update_payload = {"name": "A-New", "price": 10.5}
-        up = await client.put("/items/update-item/1", json=update_payload)
+        up = await client.patch("/items/update-item/1", json=update_payload)
         assert up.status_code == 200
         assert up.json()["name"] == "A-New"
 

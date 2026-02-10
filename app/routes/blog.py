@@ -896,7 +896,7 @@ async def search_blogs_by_tags(
     ]
 
 
-@router.put(
+@router.patch(
     "/update/{blog_id}",
     response_class=ORJSONResponse,
     response_model=BlogResponse,

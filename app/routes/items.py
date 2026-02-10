@@ -1011,7 +1011,7 @@ async def get_tuple_items(request: Request, response: Response) -> tuple[Item, .
     return tuple(items_db.values())
 
 
-@router.put(
+@router.patch(
     "/update-item/{item_id}",
     summary="Update item by ID",
     description="Update an item by id and invalidate related caches.",

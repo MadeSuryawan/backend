@@ -58,8 +58,8 @@ router = APIRouter(prefix="/ai", tags=["🤖 Ai"])
 class AiDepOps:
     """Dependencies for AI operations."""
 
-    user_id: UUID
     ai_client: AiDep
+    user_id: UUID
     repo: UserRepoDep
     current_user: UserDBDep
     verified_user: VerifiedUserDep
