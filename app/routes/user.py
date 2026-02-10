@@ -57,6 +57,7 @@ from app.dependencies import (
     UserDBDep,
     UserQueryListDep,
     UserRepoDep,
+    VerifiedUserDep,
     get_authorized_user,
     get_user_or_404,
 )
@@ -92,6 +93,7 @@ class UserOpsDeps:
     user_id: UUID
     repo: UserRepoDep
     current_user: UserDBDep
+    verified_user: VerifiedUserDep
 
 
 # =============================================================================

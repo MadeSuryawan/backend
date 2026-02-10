@@ -5,7 +5,7 @@ from typing import cast
 from uuid import UUID, uuid4
 
 from pydantic import ConfigDict
-from sqlalchemy import DateTime, Index
+from sqlalchemy import DateTime, Index, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declared_attr
 from sqlmodel import Column, Field, ForeignKey, SQLModel, String
@@ -57,7 +57,7 @@ class BlogDB(SQLModel, table=True):
         description="URL-friendly slug (unique)",
     )
     content: str = Field(
-        sa_column=Column(String(50000), nullable=False),
+        sa_column=Column(Text, nullable=False),
         description="Blog content (markdown or plain text)",
     )
 

@@ -55,6 +55,7 @@ from app.dependencies import (
     BlogQueryListDep,
     BlogRepoDep,
     UserDBDep,
+    VerifiedUserDep,
     check_owner_or_admin,
 )
 from app.errors.database import DatabaseError, DuplicateEntryError
@@ -86,6 +87,16 @@ class BlogOpsDeps:
     blog_id: UUID
     repo: BlogRepoDep
     current_user: UserDBDep
+    verified_user: VerifiedUserDep
+
+
+@dataclass(frozen=True)
+class BlogCreateDeps:
+    """Dependencies for blog creation (no blog_id required)."""
+
+    repo: BlogRepoDep
+    current_user: UserDBDep
+    verified_user: VerifiedUserDep
 
 
 @dataclass(frozen=True)
@@ -466,7 +477,7 @@ async def create_blog(
             },
         ),
     ],
-    repo: BlogRepoDep,
+    deps: Annotated[BlogCreateDeps, Depends()],
 ) -> BlogResponse:
     """
     Create a new blog post.
@@ -479,8 +490,8 @@ async def create_blog(
         Response object for middleware/decorators.
     blog : BlogCreate
         Blog input payload.
-    repo : BlogRepository
-        Repository dependency.
+    deps : BlogCreateDeps
+        Operation dependencies (repo + current_user).
 
     Returns
     -------
@@ -493,9 +504,10 @@ async def create_blog(
         If slug already exists.
 
     """
+    check_owner_or_admin(blog.author_id, deps.current_user, "create_blog")
     try:
         blog_full = BlogSchema.model_validate(blog.model_dump())
-        db_blog = await repo.create(blog_full, author_id=blog.author_id)
+        db_blog = await deps.repo.create(blog_full, author_id=blog.author_id)
         return cast(BlogResponse, _validate_blog_response(BlogResponse, db_blog))
     except DuplicateEntryError as e:
         logger.exception(f"Duplicate slug '{blog.slug}' detected on blog creation")
@@ -987,7 +999,7 @@ async def update_blog(
 
     """
     existing = await _get_blog_or_404(deps.blog_id, deps.repo)
-    check_owner_or_admin(existing.author_id, deps.current_user, "blog")
+    check_owner_or_admin(existing.author_id, deps.current_user, "update_blog")
 
     if not (db_blog := await deps.repo.update(deps.blog_id, blog_update)):
         _404_not_found(deps.blog_id, by="id")
@@ -1049,7 +1061,7 @@ async def delete_blog(
 
     """
     existing = await _get_blog_or_404(deps.blog_id, deps.repo)
-    check_owner_or_admin(existing.author_id, deps.current_user, "blog")
+    check_owner_or_admin(existing.author_id, deps.current_user, "delete_blog")
 
     # [NEW] Cleanup all associated media
     media_service = MediaService()
@@ -1100,6 +1112,7 @@ async def bust_blogs_list(
     request: Request,
     response: Response,
     query: BlogQueryListDep,
+    admin_user: AdminUserDep,
 ) -> ORJSONResponse:
     """
     Bust blogs list cache page.
@@ -1112,6 +1125,8 @@ async def bust_blogs_list(
         Current response context.
     query : BlogListQuery
         Aggregated filters and pagination to build the cache key.
+    admin_user : AdminUserDep
+        Admin user dependency.
 
     Returns
     -------
