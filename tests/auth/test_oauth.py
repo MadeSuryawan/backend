@@ -54,7 +54,7 @@ class TestOAuthLogin:
             response = await client.get("/auth/login/nonexistent")
 
             assert response.status_code == 404
-            assert "not configured" in response.json()["detail"].lower()
+            assert "not available" in response.json()["detail"].lower()
         finally:
             teardown_test_cache()
 
@@ -103,7 +103,7 @@ class TestOAuthCallback:
             response = await client.get("/auth/callback/google")
 
             assert response.status_code == 400
-            assert "state" in response.json()["detail"].lower()
+            assert "couldn't be verified" in response.json()["detail"].lower()
         finally:
             teardown_test_cache()
 
@@ -118,7 +118,7 @@ class TestOAuthCallback:
             )
 
             assert response.status_code == 400
-            assert "state" in response.json()["detail"].lower()
+            assert "couldn't be verified" in response.json()["detail"].lower()
         finally:
             teardown_test_cache()
 
@@ -222,7 +222,7 @@ class TestOAuthErrorHandling:
             )
 
             assert response.status_code == 400
-            assert "mismatch" in response.json()["detail"].lower()
+            assert "couldn't be verified" in response.json()["detail"].lower()
         finally:
             teardown_test_cache()
 
@@ -303,6 +303,6 @@ class TestOAuthSecurityFeatures:
             response = await client.get("/auth/callback/google?code=some_code")
 
             assert response.status_code == 400
-            assert "state" in response.json()["detail"].lower()
+            assert "couldn't be verified" in response.json()["detail"].lower()
         finally:
             teardown_test_cache()

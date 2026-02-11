@@ -32,7 +32,7 @@ class TestInvalidCredentialsError:
         """Test default error message."""
         error = InvalidCredentialsError()
 
-        assert error.detail == "Invalid username or password"
+        assert "email/username or password" in error.detail
         assert error.status_code == HTTP_401_UNAUTHORIZED
 
 
@@ -61,7 +61,7 @@ class TestInvalidTokenError:
         """Test default error message."""
         error = InvalidTokenError()
 
-        assert error.detail == "Invalid or expired token"
+        assert "session has expired" in error.detail.lower()
         assert error.status_code == HTTP_401_UNAUTHORIZED
 
 
@@ -72,7 +72,7 @@ class TestInvalidRefreshTokenError:
         """Test default error message."""
         error = InvalidRefreshTokenError()
 
-        assert error.detail == "Invalid refresh token"
+        assert "session has expired" in error.detail.lower()
         assert error.status_code == HTTP_401_UNAUTHORIZED
 
 
@@ -83,7 +83,7 @@ class TestTokenRevokedError:
         """Test default error message."""
         error = TokenRevokedError()
 
-        assert error.detail == "Token has been revoked"
+        assert "session has been signed out" in error.detail.lower()
         assert error.status_code == HTTP_401_UNAUTHORIZED
 
 
@@ -94,7 +94,7 @@ class TestTokenExpiredError:
         """Test default error message."""
         error = TokenExpiredError()
 
-        assert error.detail == "Token has expired"
+        assert "session has expired" in error.detail.lower()
         assert error.status_code == HTTP_401_UNAUTHORIZED
 
 
@@ -105,7 +105,7 @@ class TestUserDeactivatedError:
         """Test default error message."""
         error = UserDeactivatedError()
 
-        assert error.detail == "User account is deactivated"
+        assert "account has been deactivated" in error.detail.lower()
         assert error.status_code == HTTP_401_UNAUTHORIZED
 
 
@@ -138,7 +138,7 @@ class TestPasswordChangeError:
         """Test default error message and status code."""
         error = PasswordChangeError()
 
-        assert "change password" in error.detail.lower()
+        assert "couldn't change your password" in error.detail.lower()
         assert error.status_code == HTTP_400_BAD_REQUEST
 
 
@@ -149,7 +149,7 @@ class TestUserNotFoundError:
         """Test default error message."""
         error = UserNotFoundError()
 
-        assert error.detail == "User not found"
+        assert "couldn't find a user" in error.detail.lower()
         assert error.status_code == HTTP_404_NOT_FOUND
 
 
@@ -160,7 +160,7 @@ class TestUserNotVerifiedError:
         """Test default error message."""
         error = UserNotVerifiedError()
 
-        assert "verify" in error.detail.lower()
+        assert "hasn't been verified" in error.detail.lower()
         assert error.status_code == HTTP_403_FORBIDDEN
 
 

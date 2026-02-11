@@ -81,7 +81,7 @@ async def test_limiter_status_forbidden_for_non_admin() -> None:
                 headers={"Authorization": f"Bearer {user_token}"},
             )
             assert response.status_code == 403
-            assert "Admin access required" in response.json()["detail"]
+            assert "admin users only" in response.json()["detail"].lower()
 
 
 @pytest.mark.asyncio
@@ -176,7 +176,7 @@ async def test_limiter_reset_forbidden_remote() -> None:
                 headers={"Authorization": f"Bearer {user_token}"},
             )
             assert response.status_code == 403
-            assert "Admin access required" in response.json()["detail"]
+            assert "admin users only" in response.json()["detail"].lower()
 
 
 @pytest.mark.asyncio

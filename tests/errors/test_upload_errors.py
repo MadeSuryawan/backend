@@ -24,7 +24,7 @@ class TestUploadError:
     def test_default_values(self) -> None:
         """Test default initialization values."""
         error = UploadError()
-        assert error.detail == "Upload failed"
+        assert "couldn't upload" in error.detail.lower()
         assert error.status_code == 500  # Default is 500 (internal server error)
 
     def test_custom_values(self) -> None:
@@ -45,7 +45,7 @@ class TestImageTooLargeError:
     def test_default_values(self) -> None:
         """Test default initialization values."""
         error = ImageTooLargeError()
-        assert "exceeds maximum" in error.detail
+        assert "too large" in error.detail.lower()
         assert error.status_code == 413
 
     def test_custom_max_size(self) -> None:
@@ -60,8 +60,7 @@ class TestUnsupportedImageTypeError:
     def test_default_values(self) -> None:
         """Test default initialization values."""
         error = UnsupportedImageTypeError(content_type="image/gif")
-        assert "Unsupported image type" in error.detail
-        assert "image/gif" in error.detail
+        assert "format isn't supported" in error.detail.lower()
         assert error.status_code == 415
 
     def test_custom_allowed_types(self) -> None:
@@ -70,9 +69,7 @@ class TestUnsupportedImageTypeError:
             content_type="image/bmp",
             allowed_types=["image/jpeg", "image/png"],
         )
-        assert "image/jpeg" in error.detail
-        assert "image/png" in error.detail
-        assert "image/bmp" in error.detail
+        assert "format isn't supported" in error.detail.lower()
 
 
 class TestInvalidImageError:
@@ -81,7 +78,7 @@ class TestInvalidImageError:
     def test_default_values(self) -> None:
         """Test default initialization values."""
         error = InvalidImageError()
-        assert "Invalid or corrupted" in error.detail
+        assert "doesn't appear to be a valid image" in error.detail.lower()
         assert error.status_code == 400
 
     def test_custom_message(self) -> None:
@@ -96,7 +93,7 @@ class TestImageProcessingError:
     def test_default_values(self) -> None:
         """Test default initialization values."""
         error = ImageProcessingError()
-        assert "Failed to process" in error.detail
+        assert "couldn't process" in error.detail.lower()
         assert error.status_code == 500
 
     def test_custom_message(self) -> None:
@@ -111,7 +108,7 @@ class TestStorageError:
     def test_default_values(self) -> None:
         """Test default initialization values."""
         error = StorageError()
-        assert "Storage operation failed" in error.detail
+        assert "couldn't save" in error.detail.lower()
         assert error.status_code == 500
 
 
@@ -121,7 +118,7 @@ class TestNoProfilePictureError:
     def test_default_values(self) -> None:
         """Test default initialization values."""
         error = NoProfilePictureError()
-        assert "No profile picture" in error.detail
+        assert "don't have a profile picture" in error.detail.lower()
         assert error.status_code == 400  # Bad request, not 404
 
 

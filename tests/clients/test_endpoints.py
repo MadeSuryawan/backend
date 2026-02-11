@@ -78,7 +78,7 @@ def test_validation_error_missing_field(client: TestClient) -> None:
     assert response.status_code == 422
     data = response.json()
     # It might report multiple missing fields now, so we check if at least one is reported
-    assert data["detail"] == "Validation failed"
+    assert "doesn't look quite right" in data["detail"]
     assert "Field required" in data["errors"][0]["message"]
 
 

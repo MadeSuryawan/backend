@@ -39,7 +39,7 @@ class TestProfilePictureServiceValidation:
         service = ProfilePictureService()
         with pytest.raises(UnsupportedImageTypeError) as exc_info:
             service.validate_content_type("image/gif")
-        assert "Unsupported image type" in str(exc_info.value.detail)
+        assert "format isn't supported" in str(exc_info.value.detail).lower()
 
     def test_validate_content_type_none(self) -> None:
         """Test validation fails for None content type."""
@@ -60,7 +60,7 @@ class TestProfilePictureServiceValidation:
         large_content = b"x" * (6 * 1024 * 1024)
         with pytest.raises(ImageTooLargeError) as exc_info:
             service.validate_file_size(large_content)
-        assert "exceeds maximum" in str(exc_info.value.detail)
+        assert "too large" in str(exc_info.value.detail).lower()
 
 
 class TestProfilePictureServiceImageValidation:
