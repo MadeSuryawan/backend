@@ -1,4 +1,39 @@
-"""Authentication routes for handling user login, registration, and token management."""
+"""
+Authentication routes for user login, registration, and token management.
+
+This module provides comprehensive authentication endpoints for the BaliBlissed
+backend API, including:
+
+- **Traditional Authentication**: Username/password login with JWT tokens
+- **OAuth 2.0 Integration**: Google and WeChat OAuth providers
+- **Email Verification**: Token-based email verification with rate limiting
+- **Password Management**: Reset, change, and forgot password flows
+- **Token Management**: Access token refresh and logout functionality
+
+Security Features
+-----------------
+All endpoints implement multiple security layers:
+
+- **Rate Limiting**: Prevents brute force and abuse attacks
+- **CSRF Protection**: OAuth flows use cryptographically secure state parameters
+- **Token Blacklisting**: Logout invalidates tokens server-side
+- **Single-Use Tokens**: Verification and reset tokens can only be used once
+- **Anti-Enumeration**: Password reset and verification endpoints return
+  consistent responses to prevent user enumeration attacks
+- **PKCE Support**: OAuth providers use Proof Key for Code Exchange
+
+Dependencies
+------------
+- AuthService: Core authentication business logic
+- UserRepository: Database operations for user entities
+- CacheManager: Redis-backed caching for tokens and rate limits
+- OAuth (authlib): OAuth 2.0 client for third-party providers
+
+Notes
+-----
+All endpoints use ORJSONResponse for optimal JSON serialization performance.
+Rate limits are enforced per-endpoint and can be configured via settings.
+"""
 
 import secrets
 from logging import getLogger
@@ -128,7 +163,74 @@ async def login_for_access_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     auth_service: AuthServiceDep,
 ) -> Token:
-    """Login with username (or email) and password."""
+    r"""
+    Authenticate user and issue JWT tokens.
+
+    Authenticates a user using their username (or email) and password, then
+    returns a fresh JWT token pair for subsequent API access.
+
+    Security Features
+    -----------------
+    - **Rate Limited**: 5 requests per minute per IP to prevent brute force
+    - **Account Lockout**: Accounts locked after 5 failed attempts
+    - **Password Hashing**: Argon2 with configurable security levels
+    - **Token Expiration**: Access tokens expire in 30 minutes (configurable)
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request, used for rate limiting by IP.
+    response : Response
+        The outgoing HTTP response.
+    form_data : OAuth2PasswordRequestForm
+        OAuth2 standard form containing:
+        - ``username``: User's username or email address
+        - ``password``: User's plaintext password
+        - ``scope``: Optional space-separated scope list (unused)
+        - ``grant_type``: Optional grant type (unused)
+        - ``client_id``/``client_secret``: Optional client credentials (unused)
+    auth_service : AuthService
+        Authentication service for credential validation and token generation.
+
+    Returns
+    -------
+    Token
+        JWT token pair containing:
+        - ``access_token``: Short-lived token for API authentication
+        - ``refresh_token``: Long-lived token for token renewal
+        - ``token_type``: Always "bearer"
+
+    Raises
+    ------
+    UserAuthenticationError
+        If credentials are invalid (401 Unauthorized).
+    AccountLockedError
+        If account is locked due to too many failed attempts (429 Too Many Requests).
+    HTTPException
+        If rate limit exceeded (429 Too Many Requests).
+
+    Examples
+    --------
+    **Using curl:**
+
+    .. code-block:: bash
+
+        curl -X POST "https://api.example.com/auth/login" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "username=johndoe&password=secretpass123"
+
+    **Using Python httpx:**
+
+    .. code-block:: python
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.example.com/auth/login",
+                data={"username": "johndoe", "password": "secretpass123"}
+            )
+            tokens = response.json()
+            # {'access_token': 'eyJ...', 'refresh_token': 'eyJ...', 'token_type': 'bearer'}
+    """
     user = await auth_service.authenticate_user(form_data.username, form_data.password)
     return auth_service.create_token_for_user(user)
 
@@ -166,7 +268,61 @@ async def refresh_token(
     body: TokenRefreshRequest,
     auth_service: AuthServiceDep,
 ) -> Token:
-    """Exchange refresh token for new token pair."""
+    """
+    Exchange a refresh token for a new JWT token pair.
+
+    Validates the provided refresh token and issues a new access/refresh
+    token pair. The old refresh token is invalidated (one-time use).
+
+    Security Features
+    -----------------
+    - **Rate Limited**: 10 requests per minute per IP
+    - **One-Time Use**: Old refresh token is blacklisted after use
+    - **Token Rotation**: Both tokens are rotated on each refresh
+    - **Expiration Check**: Validates token hasn't expired (7 days default)
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request, used for rate limiting.
+    response : Response
+        The outgoing HTTP response.
+    body : TokenRefreshRequest
+        Request body containing:
+        - ``refresh_token``: The refresh token obtained from login or previous refresh
+    auth_service : AuthService
+        Authentication service for token validation and generation.
+
+    Returns
+    -------
+    Token
+        New JWT token pair with fresh access and refresh tokens.
+
+    Raises
+    ------
+    InvalidTokenError
+        If the refresh token is invalid, expired, or already used (401 Unauthorized).
+    HTTPException
+        If rate limit exceeded (429 Too Many Requests).
+
+    Notes
+    -----
+    Clients should store the new refresh token after each refresh operation.
+    The old refresh token becomes invalid immediately after this call.
+
+    Examples
+    --------
+    **Using Python httpx:**
+
+    .. code-block:: python
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.example.com/auth/refresh",
+                json={"refresh_token": old_refresh_token}
+            )
+            new_tokens = response.json()
+    """
     return await auth_service.refresh_tokens(body.refresh_token)
 
 
@@ -195,7 +351,65 @@ async def logout(
     body: LogoutRequest,
     auth_service: AuthServiceDep,
 ) -> MessageResponse:
-    """Logout and invalidate tokens."""
+    """
+    Logout user and invalidate all tokens.
+
+    Blacklists the current access token and associated refresh token,
+    preventing further API access with those credentials. The user will
+    need to re-authenticate to obtain new tokens.
+
+    Security Features
+    -----------------
+    - **Token Blacklisting**: Both access and refresh tokens are blacklisted
+    - **Redis Storage**: Blacklisted tokens stored in Redis with TTL matching expiration
+    - **Immediate Invalidation**: Tokens become invalid immediately after logout
+    - **Multi-Device Logout**: Optionally invalidate all user's refresh tokens
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    response : Response
+        The outgoing HTTP response.
+    token : str
+        The current access token (extracted from Authorization header via OAuth2Scheme).
+    body : LogoutRequest
+        Request body containing:
+        - ``refresh_token``: The refresh token to invalidate
+        - ``logout_all``: If true, invalidates all user's refresh tokens (optional)
+    auth_service : AuthService
+        Authentication service for token blacklisting.
+
+    Returns
+    -------
+    MessageResponse
+        Success confirmation with message and status.
+
+    Raises
+    ------
+    InvalidTokenError
+        If the access token is invalid or already blacklisted (401 Unauthorized).
+
+    Notes
+    -----
+    - Access tokens remain in Redis blacklist until their natural expiration
+    - After logout, any API calls with the old tokens will return 401 Unauthorized
+    - For security, always call logout when user explicitly signs out
+
+    Examples
+    --------
+    **Using Python httpx:**
+
+    .. code-block:: python
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.example.com/auth/logout",
+                headers={"Authorization": f"Bearer {access_token}"},
+                json={"refresh_token": refresh_token}
+            )
+            # {'message': 'Successfully logged out', 'success': True}
+    """
     await auth_service.logout_user(token, body.refresh_token)
     return MessageResponse(message="Successfully logged out", success=True)
 
@@ -241,7 +455,69 @@ async def verify_email(
     body: EmailVerificationRequest,
     auth_service: AuthServiceDep,
 ) -> MessageResponse:
-    """Verify email with dedicated verification token."""
+    """
+    Verify user's email address using a verification token.
+
+    Validates the email verification token sent to the user's email address
+    and marks the account as verified. Verification tokens are single-use
+    and expire after a configurable period.
+
+    Security Features
+    -----------------
+    - **Rate Limited**: 10 requests per hour per IP
+    - **Single-Use Tokens**: Token JTI is tracked to prevent reuse
+    - **Token Binding**: Token includes email claim for additional validation
+    - **Expiration**: Tokens expire after VERIFICATION_TOKEN_EXPIRE_HOURS (default 24h)
+    - **Redis Tracking**: Used tokens stored in Redis until natural expiration
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request, used for rate limiting.
+    response : Response
+        The outgoing HTTP response.
+    body : EmailVerificationRequest
+        Request body containing:
+        - ``token``: The JWT verification token from email link
+    auth_service : AuthService
+        Authentication service for email verification operations.
+
+    Returns
+    -------
+    MessageResponse
+        Success confirmation with message and status.
+
+    Raises
+    ------
+    EmailVerificationError
+        If the token is invalid, expired, or email doesn't match (400 Bad Request).
+    VerificationTokenUsedError
+        If the token has already been used (401 Unauthorized).
+    HTTPException
+        If rate limit exceeded (429 Too Many Requests).
+
+    Notes
+    -----
+    - After verification, user.is_verified is set to True
+    - Verified users gain access to features requiring email verification
+    - Token is decoded with dedicated verification secret (separate from auth)
+
+    Examples
+    --------
+    **Verification flow:**
+
+    1. User receives email with link: ``https://app.com/verify?token=eyJ...``
+    2. Frontend extracts token and calls this endpoint:
+
+    .. code-block:: python
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.example.com/auth/verify-email",
+                json={"token": verification_token_from_email}
+            )
+            # {'message': 'Email verified successfully', 'success': True}
+    """
     # Use dedicated verification token decoder
     token_data = decode_verification_token(body.token)
     if not token_data:
@@ -302,9 +578,62 @@ async def resend_verification(
     repo: UserRepoDep,
 ) -> MessageResponse:
     """
-    Resend verification email.
+    Resend email verification link to user.
 
-    Always returns success to prevent email enumeration.
+    Sends a new verification email if the provided email exists and the
+    associated account is not yet verified. Always returns success to
+    prevent email enumeration attacks.
+
+    Security Features
+    -----------------
+    - **Rate Limited**: 3 requests per hour per IP
+    - **Anti-Enumeration**: Always returns success regardless of email existence
+    - **Per-User Rate Limit**: Additional rate limit per user UUID
+    - **Silent Failure**: No error if email doesn't exist or already verified
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request, used for rate limiting.
+    response : Response
+        The outgoing HTTP response.
+    body : ResendVerificationRequest
+        Request body containing:
+        - ``email``: The email address to send verification to
+    auth_service : AuthService
+        Authentication service for sending verification emails.
+    repo : UserRepository
+        Repository for user lookup operations.
+
+    Returns
+    -------
+    MessageResponse
+        Generic success message (same response whether email exists or not).
+
+    Raises
+    ------
+    HTTPException
+        If rate limit exceeded for this specific user (429 Too Many Requests).
+
+    Notes
+    -----
+    - Response is intentionally identical for existing/non-existing emails
+    - Email is only sent if user exists AND is not yet verified
+    - Per-user rate limiting prevents spamming a single account
+    - New token invalidates any previous unused tokens
+
+    Examples
+    --------
+    **Using Python httpx:**
+
+    .. code-block:: python
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.example.com/auth/resend-verification",
+                json={"email": "user@example.com"}
+            )
+            # {'message': 'If your email is registered...', 'success': True}
     """
     # Look up user by email (always return success regardless)
     user = await repo.get_by_email(body.email)
@@ -364,10 +693,56 @@ async def forgot_password(
     auth_service: AuthServiceDep,
 ) -> MessageResponse:
     """
-    Request password reset email.
+    Initiate password reset flow by sending reset email.
 
-    Always returns success to prevent email enumeration.
-    If the email exists and rate limits permit, a reset email will be sent.
+    Generates a password reset token and sends it to the user's email
+    if the account exists. Always returns success to prevent email
+    enumeration attacks.
+
+    Security Features
+    -----------------
+    - **Rate Limited**: 3 requests per hour per IP
+    - **Anti-Enumeration**: Always returns success regardless of email existence
+    - **Internal Rate Limiting**: Service prevents spam to same email
+    - **Token Binding**: Reset token bound to user ID and email
+    - **Short Expiration**: Tokens expire after PASSWORD_RESET_TOKEN_EXPIRE_HOURS
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request, used for rate limiting.
+    response : Response
+        The outgoing HTTP response.
+    body : PasswordResetRequest
+        Request body containing:
+        - ``email``: The email address for the account to reset
+    auth_service : AuthService
+        Authentication service for password reset operations.
+
+    Returns
+    -------
+    MessageResponse
+        Generic success message (same response whether email exists or not).
+
+    Notes
+    -----
+    - Response is intentionally identical for existing/non-existing emails
+    - Email is only sent if user exists with that email
+    - Token includes user ID and email for validation during reset
+    - Previous unused tokens are not invalidated (check during reset)
+
+    Examples
+    --------
+    **Using Python httpx:**
+
+    .. code-block:: python
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.example.com/auth/forgot-password",
+                json={"email": "user@example.com"}
+            )
+            # {'message': 'If the email exists, a reset link has been sent', 'success': True}
     """
     # Always return success to prevent email enumeration
     # The service handles rate limiting internally
@@ -419,12 +794,71 @@ async def reset_password(
     auth_service: AuthServiceDep,
 ) -> MessageResponse:
     """
-    Reset password with dedicated password reset token.
+    Reset user password using token from reset email.
 
-    Security features:
-    - Token is single-use (marked as used after reset)
-    - Token includes email binding for security
+    Validates the password reset token and updates the user's password.
+    The token is single-use and becomes invalid after successful reset.
+
+    Security Features
+    -----------------
+    - **Rate Limited**: 5 requests per hour per IP
+    - **Single-Use Tokens**: Token JTI tracked to prevent reuse
+    - **Email Binding**: Validates email hasn't changed since token was issued
+    - **Token Expiration**: Tokens expire after PASSWORD_RESET_TOKEN_EXPIRE_HOURS
+    - **Password Hashing**: New password hashed with Argon2
+    - **Confirmation Email**: User notified of password change via email
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request, used for rate limiting.
+    response : Response
+        The outgoing HTTP response.
+    body : PasswordResetConfirm
+        Request body containing:
+        - ``token``: The JWT reset token from email link
+        - ``new_password``: The new password to set
+        - ``confirm_new_password``: Confirmation of new password (must match)
+    auth_service : AuthService
+        Authentication service for password reset operations.
+
+    Returns
+    -------
+    MessageResponse
+        Success confirmation with message and status.
+
+    Raises
+    ------
+    PasswordResetError
+        If token is invalid, expired, or email doesn't match (400 Bad Request).
+    ResetTokenUsedError
+        If the token has already been used (401 Unauthorized).
+    HTTPException
+        If rate limit exceeded (429 Too Many Requests).
+
+    Notes
+    -----
+    - Token is decoded with dedicated password reset secret
+    - Email validation prevents token reuse after email change
+    - All existing refresh tokens remain valid (consider logout_all)
     - User receives confirmation email after successful reset
+
+    Examples
+    --------
+    **Using Python httpx:**
+
+    .. code-block:: python
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.example.com/auth/reset-password",
+                json={
+                    "token": reset_token_from_email,
+                    "new_password": "NewSecurePass123!",
+                    "confirm_new_password": "NewSecurePass123!"
+                }
+            )
+            # {'message': 'Password reset successfully', 'success': True}
     """
     # Use dedicated password reset token decoder
     token_data = decode_password_reset_token(body.token)
@@ -590,7 +1024,79 @@ async def register_user(
     repo: UserRepoDep,
     auth_service: AuthServiceDep,
 ) -> UserResponse:
-    """Register a new user."""
+    """
+    Register a new user account.
+
+    Creates a new user account with the provided information and sends
+    a verification email to confirm the email address. The user is
+    created as inactive until email verification is complete.
+
+    Security Features
+    -----------------
+    - **Rate Limited**: 5 requests per hour per IP
+    - **Password Hashing**: Password hashed with Argon2 before storage
+    - **Email Verification**: Verification email sent automatically
+    - **Unique Constraints**: Username and email must be unique
+    - **Input Validation**: All fields validated via Pydantic schemas
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request, used for rate limiting.
+    response : Response
+        The outgoing HTTP response.
+    user_create : UserCreate
+        Registration data containing:
+        - ``username``: Unique username (alphanumeric, underscores)
+        - ``email``: Valid email address
+        - ``password``: Password meeting complexity requirements
+        - ``first_name``: User's first name (optional)
+        - ``last_name``: User's last name (optional)
+        - ``country``: User's country (optional)
+    repo : UserRepository
+        Repository for user creation operations.
+    auth_service : AuthService
+        Authentication service for sending verification email.
+
+    Returns
+    -------
+    UserResponse
+        Created user data (without sensitive information).
+
+    Raises
+    ------
+    HTTPException
+        If username or email already exists (400 Bad Request).
+    HTTPException
+        If rate limit exceeded (429 Too Many Requests).
+
+    Notes
+    -----
+    - User is created with is_verified=False and is_active=True
+    - Verification email is sent asynchronously
+    - User cache is invalidated after creation
+    - Password is hashed before database storage
+
+    Examples
+    --------
+    **Using Python httpx:**
+
+    .. code-block:: python
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.example.com/auth/register",
+                json={
+                    "username": "johndoe",
+                    "email": "john@example.com",
+                    "password": "SecurePass123!",
+                    "first_name": "John",
+                    "last_name": "Doe"
+                }
+            )
+            user = response.json()
+            # {'id': 'uuid...', 'username': 'johndoe', 'email': 'john@example.com', ...}
+    """
     try:
         user = await repo.create(user_create)
 
@@ -767,7 +1273,9 @@ async def login_oauth(
                         "missing_state": {"value": {"detail": "Missing OAuth state parameter"}},
                         "invalid_state": {"value": {"detail": "Invalid or expired OAuth state"}},
                         "provider_mismatch": {"value": {"detail": "OAuth provider mismatch"}},
-                        "oauth_failed": {"value": {"detail": "OAuth authorization failed: Invalid code"}},
+                        "oauth_failed": {
+                            "value": {"detail": "OAuth authorization failed: Invalid code"},
+                        },
                     },
                 },
             },
@@ -926,5 +1434,69 @@ async def read_users_me(
     response: Response,
     user_resp: UserRespDep,
 ) -> UserResponse:
-    """Get current logged in user."""
+    """
+    Retrieve the currently authenticated user's profile.
+
+    Returns the profile information of the user associated with the
+    current access token. This endpoint is commonly used to verify
+    authentication status and fetch user details for UI display.
+
+    Security Features
+    -----------------
+    - **Rate Limited**: 50 requests per minute per IP
+    - **Authentication Required**: Valid access token in Authorization header
+    - **Token Validation**: Token signature and expiration verified
+    - **No Sensitive Data**: Password hash excluded from response
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request, used for rate limiting.
+    response : Response
+        The outgoing HTTP response.
+    user_resp : UserResponse
+        The authenticated user (injected via dependency from JWT token).
+
+    Returns
+    -------
+    UserResponse
+        Current user's profile data including:
+        - ``id``: User's UUID
+        - ``username``: Username
+        - ``email``: Email address
+        - ``first_name``: First name (if set)
+        - ``last_name``: Last name (if set)
+        - ``is_active``: Account active status
+        - ``is_verified``: Email verification status
+        - ``role``: User role (user/admin)
+        - ``created_at``: Account creation timestamp
+        - ``updated_at``: Last update timestamp
+
+    Raises
+    ------
+    HTTPException
+        If not authenticated (401 Unauthorized).
+    HTTPException
+        If rate limit exceeded (429 Too Many Requests).
+
+    Notes
+    -----
+    - User is extracted from JWT token via dependency injection
+    - Response is cached at the client level (not server-side)
+    - Use this endpoint to verify token validity after refresh
+
+    Examples
+    --------
+    **Using Python httpx:**
+
+    .. code-block:: python
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.example.com/auth/me",
+                headers={"Authorization": f"Bearer {access_token}"}
+            )
+            user = response.json()
+            # {'id': 'uuid...', 'username': 'johndoe', 'email': 'john@example.com', ...}
+    """
     return UserResponse.model_validate(user_resp, from_attributes=True)
