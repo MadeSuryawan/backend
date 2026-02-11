@@ -1,0 +1,317 @@
+{
+  "info": {
+    "name": "BaliBlissed OAuth API",
+    "description": "OAuth authentication endpoints for BaliBlissed Backend\n\nFeatures:\n- Google OAuth\n- WeChat OAuth (if configured)\n- CSRF protection via state parameter\n- PKCE support",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "baliblissed"
+  },
+  "item": [
+    {
+      "name": "1. OAuth Login",
+      "item": [
+        {
+          "name": "Google OAuth Login",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/login/google",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login", "google"]
+            },
+            "description": "Initiate OAuth login with Google. Returns 302 redirect to Google's authorization page."
+          },
+          "response": [
+            {
+              "name": "Success - Redirect to Google",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/auth/login/google",
+                  "host": ["{{base_url}}"],
+                  "path": ["auth", "login", "google"]
+                }
+              },
+              "status": "Found",
+              "code": 302,
+              "header": [
+                {
+                  "key": "Location",
+                  "value": "https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=...&redirect_uri=...&scope=openid+email+profile&state=..."
+                }
+              ],
+              "body": ""
+            },
+            {
+              "name": "Error - Provider Not Configured",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/auth/login/nonexistent",
+                  "host": ["{{base_url}}"],
+                  "path": ["auth", "login", "nonexistent"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"Provider nonexistent not configured\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "WeChat OAuth Login",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/login/wechat",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login", "wechat"]
+            },
+            "description": "Initiate OAuth login with WeChat (requires configuration)"
+          },
+          "response": []
+        }
+      ],
+      "description": "OAuth login initiation endpoints"
+    },
+    {
+      "name": "2. OAuth Callback",
+      "item": [
+        {
+          "name": "Google OAuth Callback",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/callback/google?state={{oauth_state}}&code={{oauth_code}}",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "callback", "google"],
+              "query": [
+                {
+                  "key": "state",
+                  "value": "{{oauth_state}}",
+                  "description": "CSRF protection state (from login step)"
+                },
+                {
+                  "key": "code",
+                  "value": "{{oauth_code}}",
+                  "description": "Authorization code from Google"
+                }
+              ]
+            },
+            "description": "Handle OAuth callback from Google. Exchanges code for access/refresh tokens."
+          },
+          "response": [
+            {
+              "name": "Success - Tokens",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/auth/callback/google?state=valid_state&code=valid_code",
+                  "host": ["{{base_url}}"],
+                  "path": ["auth", "callback", "google"],
+                  "query": [
+                    {
+                      "key": "state",
+                      "value": "valid_state"
+                    },
+                    {
+                      "key": "code",
+                      "value": "valid_code"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"token_type\": \"bearer\"\n}"
+            },
+            {
+              "name": "Error - Missing State",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/auth/callback/google?code=some_code",
+                  "host": ["{{base_url}}"],
+                  "path": ["auth", "callback", "google"],
+                  "query": [
+                    {
+                      "key": "code",
+                      "value": "some_code"
+                    }
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"Missing OAuth state parameter\"\n}"
+            },
+            {
+              "name": "Error - Invalid State",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/auth/callback/google?state=invalid&code=some_code",
+                  "host": ["{{base_url}}"],
+                  "path": ["auth", "callback", "google"],
+                  "query": [
+                    {
+                      "key": "state",
+                      "value": "invalid"
+                    },
+                    {
+                      "key": "code",
+                      "value": "some_code"
+                    }
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"Invalid or expired OAuth state\"\n}"
+            },
+            {
+              "name": "Error - Provider Mismatch",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/auth/callback/google?state=wechat_state&code=some_code",
+                  "host": ["{{base_url}}"],
+                  "path": ["auth", "callback", "google"],
+                  "query": [
+                    {
+                      "key": "state",
+                      "value": "wechat_state"
+                    },
+                    {
+                      "key": "code",
+                      "value": "some_code"
+                    }
+                  ]
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"detail\": \"OAuth provider mismatch\"\n}"
+            }
+          ]
+        }
+      ],
+      "description": "OAuth callback endpoints (called by OAuth providers)"
+    },
+    {
+      "name": "3. Utilities",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Check API health and OAuth configuration status"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "me"]
+            },
+            "description": "Get current authenticated user info"
+          },
+          "response": []
+        }
+      ],
+      "description": "Utility endpoints"
+    }
+  ],
+  "event": [],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string",
+      "description": "API base URL"
+    },
+    {
+      "key": "oauth_state",
+      "value": "",
+      "type": "string",
+      "description": "OAuth state parameter (from login redirect)"
+    },
+    {
+      "key": "oauth_code",
+      "value": "",
+      "type": "string",
+      "description": "OAuth authorization code (from provider callback)"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string",
+      "description": "JWT access token (from callback response)"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  }
+}

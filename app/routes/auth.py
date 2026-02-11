@@ -612,19 +612,60 @@ async def register_user(
 @router.get(
     "/login/{provider}",
     summary="Initiate OAuth login",
-    description="Redirect user to the OAuth provider's login page with CSRF protection.",
+    description="""Redirect user to the OAuth provider's login page with CSRF protection.
+
+    **Security Features:**
+    - Generates a cryptographically secure `state` parameter to prevent CSRF attacks
+    - Stores state in cache with 10-minute TTL
+    - Enables PKCE (Proof Key for Code Exchange) for enhanced security
+    - Rate limited to prevent abuse
+
+    **Supported Providers:**
+    - `google` - Google OAuth 2.0 (requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
+    - `wechat` - WeChat Open Platform (requires WECHAT_APP_ID and WECHAT_APP_SECRET)
+
+    **Flow:**
+    1. Call this endpoint to get a redirect to the OAuth provider
+    2. User authenticates with the provider
+    3. Provider redirects to `/auth/callback/{provider}` with authorization code
+    4. Exchange code for JWT tokens
+
+    **Note:** The callback URL must be registered in your OAuth provider settings.
+    """,
     responses={
-        307: {"description": "Redirect to provider"},
+        307: {
+            "description": "Temporary redirect to OAuth provider authorization page",
+            "headers": {
+                "Location": {
+                    "description": "OAuth provider authorization URL with state parameter",
+                    "schema": {"type": "string"},
+                },
+                "Set-Cookie": {
+                    "description": "Session cookie for OAuth state management",
+                    "schema": {"type": "string"},
+                },
+            },
+        },
         404: {
             "description": "Provider not configured",
             "content": {
-                "application/json": {"example": {"detail": "Provider google not configured"}},
+                "application/json": {
+                    "example": {"detail": "Provider google not configured"},
+                },
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {
+                "application/json": {"example": {"detail": "Too Many Requests"}},
             },
         },
     },
     operation_id="auth_login_oauth",
+    tags=["🔐 OAuth"],
 )
 @timed("/auth/login/oauth")
+@limiter.limit("10/minute")
 async def login_oauth(
     request: Request,
     response: Response,
@@ -683,11 +724,71 @@ async def login_oauth(
 @router.get(
     "/callback/{provider}",
     name="auth_callback",
-    include_in_schema=False,
-    summary="OAuth callback",
-    description="Handle the redirect from the OAuth provider with state validation.",
+    response_class=ORJSONResponse,
+    response_model=Token,
+    summary="OAuth callback handler",
+    description="""Handle the redirect from the OAuth provider and exchange for local JWT tokens.
+
+    **Security Validation:**
+    - Validates the `state` parameter to prevent CSRF attacks
+    - Ensures state is single-use (deleted after validation)
+    - Verifies provider matches the state stored during login
+    - State expires after 10 minutes
+    - Rate limited to prevent abuse
+
+    **Flow:**
+    1. Receives authorization `code` and `state` from OAuth provider
+    2. Validates state exists in cache and matches provider
+    3. Exchanges code for access token with provider
+    4. Fetches user info from provider
+    5. Creates or retrieves local user
+    6. Returns JWT access and refresh tokens
+
+    **Note:** This endpoint is called by OAuth providers, not directly by clients.
+    """,
+    responses={
+        200: {
+            "description": "Successfully authenticated, JWT tokens returned",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "token_type": "bearer",
+                    },
+                },
+            },
+        },
+        400: {
+            "description": "Invalid request - missing/invalid state or OAuth error",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "missing_state": {"value": {"detail": "Missing OAuth state parameter"}},
+                        "invalid_state": {"value": {"detail": "Invalid or expired OAuth state"}},
+                        "provider_mismatch": {"value": {"detail": "OAuth provider mismatch"}},
+                        "oauth_failed": {"value": {"detail": "OAuth authorization failed: Invalid code"}},
+                    },
+                },
+            },
+        },
+        404: {
+            "description": "Provider not found",
+            "content": {
+                "application/json": {"example": {"detail": "Provider not found"}},
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
+        },
+    },
+    operation_id="auth_oauth_callback",
+    tags=["🔐 OAuth"],
+    include_in_schema=True,
 )
 @timed("/auth/callback")
+@limiter.limit("20/minute")
 async def auth_callback(
     request: Request,
     response: Response,
