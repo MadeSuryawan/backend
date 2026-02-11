@@ -119,7 +119,7 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
             # Re-raise with friendlier message if it's a slug conflict
             if "slug" in str(e):
                 raise DuplicateEntryError(
-                    detail=f"Blog with slug '{schema.slug}' already exists",
+                    detail=f"A blog with the URL '{schema.slug}' already exists. Please choose a different title.",
                 ) from e
             raise
 
@@ -213,7 +213,7 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
         if schema.slug:
             existing_blog = await self.get_by_slug(schema.slug)
             if existing_blog and existing_blog.id != record_id:
-                msg = f"Slug '{schema.slug}' already exists"
+                msg = f"A blog with the URL '{schema.slug}' already exists. Please choose a different title."
                 raise ValueError(msg)
 
         # Update fields

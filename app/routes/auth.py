@@ -145,12 +145,22 @@ if settings.WECHAT_APP_ID:
         401: {
             "description": "Unauthorized",
             "content": {
-                "application/json": {"example": {"detail": "Invalid username or password"}},
+                "application/json": {
+                    "example": {
+                        "detail": "Oops! The email/username or password you entered doesn't match our records. Please try again.",
+                    },
+                },
             },
         },
         429: {
             "description": "Rate limit exceeded or account locked",
-            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Your account is temporarily locked for security reasons after multiple failed login attempts. Please try again later or reset your password.",
+                    },
+                },
+            },
         },
     },
     operation_id="auth_login",
@@ -432,7 +442,9 @@ async def logout(
             "description": "Invalid token",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Invalid or expired verification token"},
+                    "example": {
+                        "detail": "This verification link is invalid or has expired. Please request a new verification email to try again.",
+                    },
                 },
             },
         },
@@ -440,7 +452,9 @@ async def logout(
             "description": "Token already used",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Verification token has already been used"},
+                    "example": {
+                        "detail": "This verification link has already been used. Your email may already be verified - try signing in.",
+                    },
                 },
             },
         },
@@ -771,14 +785,20 @@ async def forgot_password(
         400: {
             "description": "Invalid token",
             "content": {
-                "application/json": {"example": {"detail": "Invalid or expired reset token"}},
+                "application/json": {
+                    "example": {
+                        "detail": "This password reset link is invalid or has expired. Please request a new password reset email.",
+                    },
+                },
             },
         },
         401: {
             "description": "Token already used",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Password reset token has already been used"},
+                    "example": {
+                        "detail": "This password reset link has already been used. Please request a new one if you still need to reset your password.",
+                    },
                 },
             },
         },
@@ -917,7 +937,13 @@ async def reset_password(
         },
         401: {
             "description": "Not authenticated",
-            "content": {"application/json": {"example": {"detail": "Not authenticated"}}},
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Your session has expired or is no longer valid. Please sign in again to continue.",
+                    },
+                },
+            },
         },
         429: {
             "description": "Rate limit exceeded",
@@ -1005,7 +1031,11 @@ async def change_password(
         400: {
             "description": "Bad Request",
             "content": {
-                "application/json": {"example": {"detail": "Username or email already exists"}},
+                "application/json": {
+                    "example": {
+                        "detail": "An account with this username or email already exists. Please sign in instead or use a different email.",
+                    },
+                },
             },
         },
         429: {
@@ -1156,7 +1186,9 @@ async def register_user(
             "description": "Provider not configured",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Provider google not configured"},
+                    "example": {
+                        "detail": "This sign-in method is not available right now. Please try a different sign-in option.",
+                    },
                 },
             },
         },
@@ -1209,7 +1241,7 @@ async def login_oauth(
     if not client:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
-            detail=f"Provider {provider} not configured",
+            detail="This sign-in method is not available right now. Please try a different sign-in option.",
         )
 
     # Generate cryptographically secure state parameter for CSRF protection
@@ -1270,11 +1302,25 @@ async def login_oauth(
             "content": {
                 "application/json": {
                     "examples": {
-                        "missing_state": {"value": {"detail": "Missing OAuth state parameter"}},
-                        "invalid_state": {"value": {"detail": "Invalid or expired OAuth state"}},
-                        "provider_mismatch": {"value": {"detail": "OAuth provider mismatch"}},
+                        "missing_state": {
+                            "value": {
+                                "detail": "For your security, this sign-in attempt couldn't be verified. Please try signing in again.",
+                            },
+                        },
+                        "invalid_state": {
+                            "value": {
+                                "detail": "For your security, this sign-in session has expired. Please try signing in again.",
+                            },
+                        },
+                        "provider_mismatch": {
+                            "value": {
+                                "detail": "There was a problem with your sign-in. Please try again or use a different sign-in method.",
+                            },
+                        },
                         "oauth_failed": {
-                            "value": {"detail": "OAuth authorization failed: Invalid code"},
+                            "value": {
+                                "detail": "We couldn't complete your sign-in with this provider. Please try again or use a different sign-in method.",
+                            },
                         },
                     },
                 },
@@ -1283,7 +1329,11 @@ async def login_oauth(
         404: {
             "description": "Provider not found",
             "content": {
-                "application/json": {"example": {"detail": "Provider not found"}},
+                "application/json": {
+                    "example": {
+                        "detail": "This sign-in method is not available right now. Please try a different sign-in option.",
+                    },
+                },
             },
         },
         429: {
@@ -1339,7 +1389,10 @@ async def auth_callback(
     """
     client = oauth.create_client(provider)
     if not client:
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Provider not found")
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="This sign-in method is not available right now. Please try a different sign-in option.",
+        )
 
     # Validate state parameter for CSRF protection
     state = request.query_params.get("state")
@@ -1418,7 +1471,13 @@ async def auth_callback(
         },
         401: {
             "description": "Unauthorized",
-            "content": {"application/json": {"example": {"detail": "Not authenticated"}}},
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Your session has expired or is no longer valid. Please sign in again to continue.",
+                    },
+                },
+            },
         },
         429: {
             "description": "Rate limit exceeded",

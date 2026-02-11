@@ -316,7 +316,11 @@ async def _upload_pp(
         400: {
             "description": "Bad request",
             "content": {
-                "application/json": {"example": {"detail": "Username or email already exists"}},
+                "application/json": {
+                    "example": {
+                        "detail": "An account with this username or email already exists. Please sign in instead or use different information.",
+                    },
+                },
             },
         },
         429: {
@@ -644,7 +648,13 @@ async def get_user_by_username(
         },
         400: {
             "description": "Bad request",
-            "content": {"application/json": {"example": {"detail": "Email already exists"}}},
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "An account with this email already exists. Please use a different email or sign in to your existing account.",
+                    },
+                },
+            },
         },
         404: {
             "description": "Not found",

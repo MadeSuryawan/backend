@@ -435,7 +435,13 @@ async def delete_cache_keys(
         },
         400: {
             "description": "Bad request",
-            "content": {"application/json": {"example": {"detail": "Slug already exists"}}},
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "A blog with this URL slug already exists. Please choose a different title or slug.",
+                    },
+                },
+            },
         },
         429: {
             "description": "Rate limit exceeded",
@@ -931,7 +937,13 @@ async def search_blogs_by_tags(
         },
         400: {
             "description": "Bad request",
-            "content": {"application/json": {"example": {"detail": "Slug already exists"}}},
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "A blog with this URL slug already exists. Please choose a different title or slug.",
+                    },
+                },
+            },
         },
         404: {
             "description": "Not found",

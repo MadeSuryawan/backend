@@ -58,7 +58,7 @@ class DatabaseConnectionError(DatabaseError):
 
     def __init__(
         self,
-        detail: str = "Failed to connect to the database",
+        detail: str = "We're having trouble connecting to our servers. Please try again in a moment.",
     ) -> None:
         super().__init__(detail, HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -68,7 +68,7 @@ class DatabaseConfigurationError(DatabaseError):
 
     def __init__(
         self,
-        detail: str = "Invalid database configuration",
+        detail: str = "We're experiencing technical difficulties. Please try again later.",
     ) -> None:
         super().__init__(detail, HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -78,7 +78,7 @@ class DatabaseInitializationError(DatabaseError):
 
     def __init__(
         self,
-        detail: str = "Failed to initialize database",
+        detail: str = "We're experiencing technical difficulties. Please try again later.",
     ) -> None:
         super().__init__(detail, HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -88,7 +88,7 @@ class DuplicateEntryError(DatabaseError):
 
     def __init__(
         self,
-        detail: str = "A record with this value already exists",
+        detail: str = "This information is already in use. Please try something different.",
     ) -> None:
         super().__init__(detail, HTTP_409_CONFLICT)
 
@@ -98,7 +98,7 @@ class RecordNotFoundError(DatabaseError):
 
     def __init__(
         self,
-        detail: str = "Record not found",
+        detail: str = "We couldn't find what you're looking for. It may have been removed or doesn't exist.",
     ) -> None:
         super().__init__(detail, HTTP_404_NOT_FOUND)
 
@@ -108,7 +108,7 @@ class TransactionError(DatabaseError):
 
     def __init__(
         self,
-        detail: str = "Transaction failed",
+        detail: str = "Something went wrong while processing your request. Please try again.",
     ) -> None:
         super().__init__(detail, HTTP_500_INTERNAL_SERVER_ERROR)
 

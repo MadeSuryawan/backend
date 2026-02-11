@@ -109,7 +109,7 @@ async def get_current_user(
         if is_blacklisted:
             raise HTTPException(
                 status_code=HTTP_401_UNAUTHORIZED,
-                detail="Token has been revoked",
+                detail="Your session has been signed out. Please sign in again to continue.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
     except RuntimeError:
@@ -122,12 +122,15 @@ async def get_current_user(
     if not user:
         raise HTTPException(
             status_code=HTTP_401_UNAUTHORIZED,
-            detail="User not found",
+            detail="We couldn't find your account. It may have been removed or deactivated.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
     if not user.is_active:
-        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="Inactive user")
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="This account has been deactivated. Please contact support if you believe this is an error.",
+        )
 
     return user
 
@@ -178,7 +181,7 @@ async def is_admin(
     if user.role != "admin":
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
-            detail="Admin access required",
+            detail="Sorry, you don't have permission to access this feature. This area is reserved for admin users only.",
         )
     return user
 
@@ -236,7 +239,7 @@ async def is_verified(
     if not user.is_verified:
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
-            detail="Email not verified. Please verify your email first.",
+            detail="Your email address hasn't been verified yet. Please check your inbox for a verification email or request a new one to unlock your account.",
         )
     return user
 
@@ -295,7 +298,7 @@ def check_owner_or_admin(
     if current_user.uuid != owner_id and current_user.role != "admin":
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
-            detail=f"Only the {resource_name} owner or admin can perform this action",
+            detail=f"Sorry, you can only manage your own {resource_name}. Please contact an admin if you need assistance.",
         )
 
 

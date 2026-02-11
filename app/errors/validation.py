@@ -73,7 +73,7 @@ async def validation_exception_handler(
     return ORJSONResponse(
         status_code=HTTP_422_UNPROCESSABLE_CONTENT,
         content={
-            "detail": "Validation failed",
+            "detail": "Some of the information you provided doesn't look quite right. Please check your entries and try again.",
             "errors": formatted_errors,
         },
     )
