@@ -64,7 +64,6 @@ def _validate_admin_response(user_db: UserDB) -> AdminUserResponse:
                                 "id": "123e4567-e89b-12d3-a456-426614174000",
                                 "username": "johndoe",
                                 "email": "johndoe@gmail.com",
-                                "isActive": True,
                                 "isVerified": False,
                             },
                         ],
@@ -145,7 +144,6 @@ async def list_all_users(
                         "username": "johndoe",
                         "email": "johndoe@gmail.com",
                         "role": "user",
-                        "isActive": True,
                         "isVerified": False,
                     },
                 },
@@ -299,7 +297,6 @@ async def update_user_role(
                         "username": "johndoe",
                         "email": "johndoe@gmail.com",
                         "role": "user",
-                        "isActive": True,
                         "isVerified": False,
                     },
                 },
@@ -384,7 +381,6 @@ async def update_user_verification_status(
                 "application/json": {
                     "example": {
                         "total_users": 150,
-                        "active_users": 120,
                         "verified_users": 100,
                         "admin_users": 3,
                         "moderator_users": 5,
@@ -422,12 +418,11 @@ async def get_system_stats(
     total_result = await session.execute(select(func.count()).select_from(UserDB))
     total_users = total_result.scalar_one() or 0
 
-    # Get active users - use get_all and filter in Python for simplicity
+    # Get verified users count
     all_users = await repo.get_all(skip=0, limit=10000)  # Get all users
 
     return SystemStatsResponse(
         total_users=total_users,
-        active_users=sum(1 for u in all_users if u.is_active),
         verified_users=sum(1 for u in all_users if u.is_verified),
         admin_users=sum(1 for u in all_users if u.role == "admin"),
         moderator_users=sum(1 for u in all_users if u.role == "moderator"),

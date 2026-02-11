@@ -298,7 +298,6 @@ class UserResponse(BaseModel):
     first_name: str = Field(default="N/A", alias="firstName")
     last_name: str = Field(default="N/A", alias="lastName")
     email: EmailStr
-    is_active: bool = Field(alias="isActive")
     is_verified: bool = Field(alias="isVerified")
     role: str = Field(default="user", description="User role (user, moderator, admin)")
     profile_picture: HttpUrl | str | None = Field(alias="profilePicture")

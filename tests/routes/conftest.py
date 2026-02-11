@@ -25,7 +25,6 @@ def sample_user() -> UserDB:
         username="testuser",
         email="test@example.com",
         password_hash="$argon2id$v=19$m=65536,t=3,p=4$somehash",
-        is_active=True,
         is_verified=True,
         role="user",
         first_name="Test",
@@ -41,7 +40,6 @@ def admin_user() -> UserDB:
         username="adminuser",
         email="admin@example.com",
         password_hash="$argon2id$v=19$m=65536,t=3,p=4$somehash",
-        is_active=True,
         is_verified=True,
         role="admin",
         first_name="Admin",
@@ -128,4 +126,3 @@ def mock_cache_manager() -> MagicMock:
     mock.get = AsyncMock(return_value=None)
     mock.set = AsyncMock()
     return mock
-

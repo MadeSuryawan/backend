@@ -115,4 +115,3 @@ class ReviewDB(SQLModel, table=True):
             },
         },
     )
-

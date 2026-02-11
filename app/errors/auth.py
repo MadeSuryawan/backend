@@ -84,7 +84,9 @@ class InvalidRefreshTokenError(UserAuthenticationError):
     """Raised when refresh token is invalid."""
 
     def __init__(self) -> None:
-        super().__init__("Your session has expired. Please sign in again to continue.", HTTP_401_UNAUTHORIZED)
+        super().__init__(
+            "Your session has expired. Please sign in again to continue.", HTTP_401_UNAUTHORIZED,
+        )
 
 
 class TokenRevokedError(UserAuthenticationError):
@@ -171,7 +173,10 @@ class UserNotFoundError(BaseAppError):
     """Raised when user is not found."""
 
     def __init__(self) -> None:
-        super().__init__("We couldn't find a user with this information. Please check your details and try again.", HTTP_404_NOT_FOUND)
+        super().__init__(
+            "We couldn't find a user with this information. Please check your details and try again.",
+            HTTP_404_NOT_FOUND,
+        )
 
 
 class UserNotVerifiedError(BaseAppError):

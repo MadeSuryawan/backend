@@ -39,7 +39,7 @@ async def test_delete_user_triggers_cleanup(client: AsyncClient) -> None:
     mock_user.username = "testuser"
     mock_user.profile_picture = "http://example.com/pic.jpg"
     mock_user.role = "user"
-    mock_user.is_active = True
+    mock_user.is_verified = True
 
     mock_repo = AsyncMock()
     mock_repo.get_by_id.return_value = mock_user
@@ -76,7 +76,7 @@ async def test_delete_blog_triggers_cleanup(client: AsyncClient) -> None:
     mock_user = MagicMock(spec=UserDB)
     mock_user.uuid = author_id
     mock_user.role = "user"
-    mock_user.is_active = True
+    mock_user.is_verified = True
 
     mock_repo = AsyncMock()
     mock_repo.get_by_id.return_value = mock_blog
@@ -112,7 +112,7 @@ async def test_delete_review_triggers_cleanup(client: AsyncClient) -> None:
     mock_user = MagicMock(spec=UserDB)
     mock_user.uuid = user_id
     mock_user.role = "user"
-    mock_user.is_active = True
+    mock_user.is_verified = True
 
     mock_repo = AsyncMock()
     mock_repo.get_by_id.return_value = mock_review

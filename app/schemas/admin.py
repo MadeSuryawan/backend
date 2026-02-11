@@ -45,7 +45,6 @@ class SystemStatsResponse(BaseModel):
     """System statistics response for admin dashboard."""
 
     total_users: int = Field(..., description="Total number of users")
-    active_users: int = Field(..., description="Number of active users")
     verified_users: int = Field(..., description="Number of verified users")
     admin_users: int = Field(..., description="Number of admin users")
     moderator_users: int = Field(..., description="Number of moderator users")

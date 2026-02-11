@@ -13,7 +13,6 @@ from app.errors.auth import (
     InvalidCredentialsError,
     InvalidRefreshTokenError,
     TokenRevokedError,
-    UserDeactivatedError,
     UserNotFoundError,
 )
 from app.managers.login_attempt_tracker import LoginAttemptTracker
@@ -180,9 +179,6 @@ class AuthService:
         user = await self.user_repo.get_by_id(token_data.user_id)
         if not user:
             raise UserNotFoundError
-
-        if not user.is_active:
-            raise UserDeactivatedError
 
         # Blacklist the old refresh token (token rotation)
         if self._blacklist:

@@ -11,7 +11,10 @@ logger = file_logger(getLogger(__name__))
 class PasswordHashingError(BaseAppError):
     """Base error for password hasher module."""
 
-    def __init__(self, detail: str = "We couldn't process your password. Please try again or use a different password.") -> None:
+    def __init__(
+        self,
+        detail: str = "We couldn't process your password. Please try again or use a different password.",
+    ) -> None:
         super().__init__(detail)
         self.detail = detail
         self.error_code = HTTP_417_EXPECTATION_FAILED
@@ -20,7 +23,10 @@ class PasswordHashingError(BaseAppError):
 class PasswordRehashError(PasswordHashingError):
     """Error for password rehashing."""
 
-    def __init__(self, detail: str = "We encountered an issue with your password. Please try signing in again.") -> None:
+    def __init__(
+        self,
+        detail: str = "We encountered an issue with your password. Please try signing in again.",
+    ) -> None:
         super().__init__(detail)
         self.detail = detail
         self.error_code = HTTP_417_EXPECTATION_FAILED

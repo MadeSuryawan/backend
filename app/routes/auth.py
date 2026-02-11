@@ -1102,7 +1102,7 @@ async def register_user(
 
     Notes
     -----
-    - User is created with is_verified=False and is_active=True
+    - User is created with is_verified=False
     - Verification email is sent asynchronously
     - User cache is invalidated after creation
     - Password is hashed before database storage
@@ -1525,7 +1525,6 @@ async def read_users_me(
         - ``email``: Email address
         - ``first_name``: First name (if set)
         - ``last_name``: Last name (if set)
-        - ``is_active``: Account active status
         - ``is_verified``: Email verification status
         - ``role``: User role (user/admin)
         - ``created_at``: Account creation timestamp

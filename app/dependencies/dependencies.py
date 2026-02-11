@@ -11,7 +11,6 @@ from fastapi import Depends, HTTPException, Query, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.status import (
-    HTTP_400_BAD_REQUEST,
     HTTP_401_UNAUTHORIZED,
     HTTP_403_FORBIDDEN,
     HTTP_404_NOT_FOUND,
@@ -124,12 +123,6 @@ async def get_current_user(
             status_code=HTTP_401_UNAUTHORIZED,
             detail="We couldn't find your account. It may have been removed or deactivated.",
             headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    if not user.is_active:
-        raise HTTPException(
-            status_code=HTTP_400_BAD_REQUEST,
-            detail="This account has been deactivated. Please contact support if you believe this is an error.",
         )
 
     return user

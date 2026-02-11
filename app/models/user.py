@@ -106,11 +106,6 @@ class UserDB(SQLModel, table=True):
     )
 
     # Status fields
-    is_active: bool = Field(
-        default=True,
-        nullable=False,
-        description="Whether the user is active",
-    )
     is_verified: bool = Field(
         default=False,
         nullable=False,
@@ -151,7 +146,6 @@ class UserDB(SQLModel, table=True):
                 "email": "johndoe@gmail.com",
                 "first_name": "John",
                 "last_name": "Doe",
-                "is_active": True,
                 "is_verified": False,
                 "role": "user",
                 "testimonial": "Great service!",

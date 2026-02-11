@@ -64,14 +64,20 @@ class UnsupportedImageTypeError(UploadError):
 class InvalidImageError(UploadError):
     """Exception raised when uploaded file is not a valid image."""
 
-    def __init__(self, detail: str = "This file doesn't appear to be a valid image. Please try a different file.") -> None:
+    def __init__(
+        self,
+        detail: str = "This file doesn't appear to be a valid image. Please try a different file.",
+    ) -> None:
         super().__init__(detail=detail, status_code=HTTP_400_BAD_REQUEST)
 
 
 class ImageProcessingError(UploadError):
     """Exception raised when image processing fails."""
 
-    def __init__(self, detail: str = "We couldn't process your image. Please try a different file or try again later.") -> None:
+    def __init__(
+        self,
+        detail: str = "We couldn't process your image. Please try a different file or try again later.",
+    ) -> None:
         super().__init__(detail=detail, status_code=HTTP_500_INTERNAL_SERVER_ERROR)
 
 

@@ -24,7 +24,7 @@ This document outlines a comprehensive, prioritized list of improvements for the
 - No authentication mechanism implemented
 - Routes use basic `X-API-Key` header for rate limiting tiers
 - Password hashing exists but no login/token system
-- User model has `is_active` and `is_verified` flags but no enforcement
+- User model has `is_verified` flag but no enforcement
 
 #### Implementation Requirements
 

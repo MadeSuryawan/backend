@@ -20,7 +20,6 @@ async def test_limiter_status_endpoint() -> None:
         username="admin",
         email="admin@test.com",
         password_hash="hash",
-        is_active=True,
         is_verified=True,
         role="admin",
     )
@@ -37,7 +36,10 @@ async def test_limiter_status_endpoint() -> None:
                 "app.clients.redis_client.RedisClient.ping",
                 new_callable=AsyncMock,
             ) as mock_ping,
-            patch("app.repositories.user.UserRepository.get_by_id", new_callable=AsyncMock) as mock_get_user,
+            patch(
+                "app.repositories.user.UserRepository.get_by_id",
+                new_callable=AsyncMock,
+            ) as mock_get_user,
         ):
             mock_ping.return_value = True
             mock_get_user.return_value = admin_user
@@ -62,7 +64,6 @@ async def test_limiter_status_forbidden_for_non_admin() -> None:
         username="user",
         email="user@test.com",
         password_hash="hash",
-        is_active=True,
         is_verified=True,
         role="user",
     )
@@ -73,7 +74,10 @@ async def test_limiter_status_forbidden_for_non_admin() -> None:
     )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        with patch("app.repositories.user.UserRepository.get_by_id", new_callable=AsyncMock) as mock_get_user:
+        with patch(
+            "app.repositories.user.UserRepository.get_by_id",
+            new_callable=AsyncMock,
+        ) as mock_get_user:
             mock_get_user.return_value = regular_user
 
             response = await client.get(
@@ -102,7 +106,6 @@ async def test_limiter_reset_admin_only_success() -> None:
         username="admin",
         email="admin@test.com",
         password_hash="hash",
-        is_active=True,
         is_verified=True,
         role="admin",
     )
@@ -120,7 +123,10 @@ async def test_limiter_reset_admin_only_success() -> None:
                 "app.clients.redis_client.RedisClient.delete",
                 new_callable=AsyncMock,
             ) as mock_delete,
-            patch("app.repositories.user.UserRepository.get_by_id", new_callable=AsyncMock) as mock_get_user,
+            patch(
+                "app.repositories.user.UserRepository.get_by_id",
+                new_callable=AsyncMock,
+            ) as mock_get_user,
         ):
             mock_ping.return_value = True
             mock_get_user.return_value = admin_user
@@ -156,7 +162,6 @@ async def test_limiter_reset_forbidden_remote() -> None:
         username="user",
         email="user@test.com",
         password_hash="hash",
-        is_active=True,
         is_verified=True,
         role="user",
     )
@@ -167,7 +172,10 @@ async def test_limiter_reset_forbidden_remote() -> None:
     )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        with patch("app.repositories.user.UserRepository.get_by_id", new_callable=AsyncMock) as mock_get_user:
+        with patch(
+            "app.repositories.user.UserRepository.get_by_id",
+            new_callable=AsyncMock,
+        ) as mock_get_user:
             mock_get_user.return_value = regular_user
 
             response = await client.post(
@@ -188,7 +196,6 @@ async def test_limiter_reset_requires_all_endpoints() -> None:
         username="admin",
         email="admin@test.com",
         password_hash="hash",
-        is_active=True,
         is_verified=True,
         role="admin",
     )
@@ -201,7 +208,10 @@ async def test_limiter_reset_requires_all_endpoints() -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         with (
             patch("app.clients.redis_client.RedisClient.ping", new_callable=AsyncMock) as mock_ping,
-            patch("app.repositories.user.UserRepository.get_by_id", new_callable=AsyncMock) as mock_get_user,
+            patch(
+                "app.repositories.user.UserRepository.get_by_id",
+                new_callable=AsyncMock,
+            ) as mock_get_user,
         ):
             mock_ping.return_value = True
             mock_get_user.return_value = admin_user

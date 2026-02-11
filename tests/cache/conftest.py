@@ -46,7 +46,6 @@ def admin_user() -> UserDB:
         username="admin",
         email="admin@test.com",
         password_hash="hash",
-        is_active=True,
         is_verified=True,
         role="admin",
     )

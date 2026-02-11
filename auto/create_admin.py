@@ -318,7 +318,6 @@ async def create_admin_user(admin_data: AdminUserData) -> UserDB:
             password_hash=password_hash,
             first_name=admin_data.first_name,
             last_name=admin_data.last_name,
-            is_active=True,
             is_verified=True,
             role="admin",
             country=admin_data.country,
