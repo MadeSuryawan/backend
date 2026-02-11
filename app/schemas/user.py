@@ -278,7 +278,7 @@ class TestimonialUpdate(BaseModel):
     testimonial: str | None = Field(
         default=None,
         max_length=500,
-        description="User testimonial or review text",
+        description="User testimonial",
         examples=[
             "I had an amazing experience with BaliBlissed. The tour package was well-organized, and the guides were knowledgeable and friendly. The temples and beaches were breathtaking, and I would highly recommend this company to anyone planning a trip to Bali.",
         ],
@@ -313,7 +313,7 @@ class UserResponse(BaseModel):
     )
     testimonial: str | None = Field(
         default=None,
-        description="User testimonial or review text",
+        description="User testimonial",
     )
 
     @field_validator("first_name", "last_name", "bio", "country", mode="before")

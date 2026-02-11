@@ -29,7 +29,7 @@ def upgrade() -> None:
             "testimonial",
             sa.String(length=500),
             nullable=True,
-            comment="User testimonial or review text",
+            comment="User testimonial",
         ),
     )
     # ### end Alembic commands ###

@@ -123,7 +123,7 @@ class UserDB(SQLModel, table=True):
     testimonial: str | None = Field(
         default=None,
         sa_column=Column(String(500)),
-        description="User testimonial or review text",
+        description="User testimonial",
     )
 
     # Timestamps (timezone-aware)
