@@ -62,15 +62,19 @@ async def test_register_user_triggers_verification(
 @pytest.mark.asyncio
 async def test_create_user_forbidden_for_public(
     client: AsyncClient,
-    auth_headers: dict[str, str],
+    sample_user: UserDB,
+    mock_cache_manager: MagicMock,
 ) -> None:
     """Test that /users/create is forbidden for regular users."""
-    # We don't need to mock repo here as it should fail before hitting repo
-    # But just in case
+    # Mock the current user dependency to return a regular user (not admin)
+    app.dependency_overrides[get_current_user] = lambda: sample_user
 
-    response = await client.post("/users/create", json={}, headers=auth_headers)
-    # Could be 403 or 401 depending on how require_admin fails for non-admin token
-    assert response.status_code in [403, 401]
+    try:
+        response = await client.post("/users/create", json={})
+        # Should be 403 Forbidden for non-admin user
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
