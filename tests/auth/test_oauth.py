@@ -1,4 +1,5 @@
-"""OAuth authentication tests.
+"""
+OAuth authentication tests.
 
 Tests for OAuth login flow including:
 - OAuth provider configuration
@@ -16,16 +17,17 @@ from httpx import AsyncClient
 from app.dependencies import get_cache_manager
 from app.main import app
 from app.models import UserDB
+from app.routes.auth import oauth
 
 
-def setup_mock_cache():
-    """Helper to set up mock cache manager."""
+def setup_mock_cache() -> MagicMock:
+    """Set up mock cache manager."""
     mock_cache = AsyncMock()
     return mock_cache
 
 
-def setup_test_with_cache():
-    """Setup app state with mock cache for tests."""
+def setup_test_with_cache() -> MagicMock:
+    """App state with mock cache for tests."""
     mock_cache = setup_mock_cache()
     # Set cache manager on app state (required for get_cache_manager dependency)
     app.state.cache_manager = mock_cache
@@ -34,7 +36,7 @@ def setup_test_with_cache():
     return mock_cache
 
 
-def teardown_test_cache():
+def teardown_test_cache() -> None:
     """Clean up after tests."""
     if hasattr(app.state, "cache_manager"):
         delattr(app.state, "cache_manager")
@@ -72,17 +74,19 @@ class TestOAuthLogin:
                 mock_oauth.create_client.return_value = mock_client
 
                 # Mock settings to enable Google OAuth
-                with patch("app.routes.auth.settings.GOOGLE_CLIENT_ID", "test-client-id"):
-                    with patch("app.routes.auth.settings.OAUTH_STATE_EXPIRE_SECONDS", 600):
-                        response = await client.get("/auth/login/google")
+                with (
+                    patch("app.routes.auth.settings.GOOGLE_CLIENT_ID", "test-client-id"),
+                    patch("app.routes.auth.settings.OAUTH_STATE_EXPIRE_SECONDS", 600),
+                ):
+                    _ = await client.get("/auth/login/google")
 
-                        # Verify state was stored in cache
-                        mock_cache.set.assert_called_once()
-                        call_args = mock_cache.set.call_args
-                        # First positional arg should be the key (oauth_state:...)
-                        assert "oauth_state:" in str(call_args[0][0])
-                        # TTL should be set
-                        assert call_args[1].get("ttl") == 600
+                    # Verify state was stored in cache
+                    mock_cache.set.assert_called_once()
+                    call_args = mock_cache.set.call_args
+                    # First positional arg should be the key (oauth_state:...)
+                    assert "oauth_state:" in str(call_args[0][0])
+                    # TTL should be set
+                    assert call_args[1].get("ttl") == 600
         finally:
             teardown_test_cache()
 
@@ -137,7 +141,6 @@ class TestOAuthCSRFProtection:
 
     async def test_state_single_use_deletion(self, client: AsyncClient) -> None:
         """Test that OAuth state is deleted after validation."""
-        from app.routes.auth import oauth
 
         test_state = "single_use_state_123"
         mock_cache = setup_test_with_cache()
@@ -280,7 +283,9 @@ class TestOAuthSecurityFeatures:
 
                     # Verify state stored with provider info
                     call_args = mock_cache.set.call_args
-                    stored_data = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("value")
+                    stored_data = (
+                        call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("value")
+                    )
 
                     if stored_data:
                         assert "provider" in stored_data
