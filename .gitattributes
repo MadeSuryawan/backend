@@ -1,0 +1,18 @@
+# git-crypt configuration - files matching these patterns are encrypted
+
+# Encrypt all files in secrets/
+secrets/** filter=git-crypt diff=git-crypt
+
+# Encrypt specific sensitive files
+*.key filter=git-crypt diff=git-crypt
+*.pem filter=git-crypt diff=git-crypt
+*.p12 filter=git-crypt diff=git-crypt
+.env filter=git-crypt diff=git-crypt
+
+# Do NOT encrypt these (public/non-sensitive)
+secrets/.env.example !filter !diff
+secrets/redis-certs/* !filter !diff
+
+# Documentation and examples remain unencrypted
+*.md !filter !diff
+*.txt !filter !diff

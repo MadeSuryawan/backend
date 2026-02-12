@@ -1,0 +1,68 @@
+# Docker Compose with Redis and MCP Server
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - baliblissed-network
+
+  # MCP Server for Redis
+  redis-mcp:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.mcp-redis
+    container_name: redis-mcp
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Uncomment if using password auth:
+      # - REDIS_PASSWORD=${REDIS_PASSWORD}
+      # - REDIS_USERNAME=${REDIS_USERNAME}
+      # For SSL connections (see docker-compose.redis-ssl.yaml):
+      # - REDIS_SSL=true
+      # - REDIS_SSL_CA_CERTS=/certs/ca-cert.pem
+      # - REDIS_SSL_CERTFILE=/certs/redis-client-cert.pem
+      # - REDIS_SSL_KEYFILE=/certs/redis-client-key.pem
+    volumes:
+      # Mount certs if using SSL
+      - ./secrets/redis-certs:/certs:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - baliblissed-network
+    # MCP uses stdio, so we need these:
+    stdin_open: true
+    tty: true
+
+  # Web UI for Redis
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    restart: unless-stopped
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - baliblissed-network
+
+volumes:
+  redis_data:
+
+networks:
+  baliblissed-network:
+    driver: bridge

@@ -6,7 +6,9 @@ values for the BaliBlissed backend application.
 """
 
 from pathlib import Path
+from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
 from typing import Any, Literal
+from warnings import warn
 
 from google.genai.types import (
     GenerateContentConfig,
@@ -207,8 +209,19 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
+    REDIS_USERNAME: str | None = None  # Redis ACL username (Redis 6+)
     REDIS_PASSWORD: str | None = None
     REDIS_URL: str | None = None
+
+    # Redis SSL/TLS Configuration (Production)
+    REDIS_SSL: bool = False  # Enable SSL/TLS connection
+    REDIS_SSL_CA_CERTS: str | None = None  # Path to CA certificates file
+    REDIS_SSL_CA_PATH: str | None = None  # Path to CA certs directory (see docs)
+    REDIS_SSL_CERT_REQS: str = "required"  # none, optional, required
+    REDIS_SSL_CERTFILE: str | None = None  # Path to client certificate
+    REDIS_SSL_KEYFILE: str | None = None  # Path to client private key
+    REDIS_SSL_CHECK_HOSTNAME: bool = True  # Verify hostname matches certificate
+
     RATE_LIMIT_DEFAULT_LIMITS: str = f"{RATE_LIMIT_REQUESTS}/{RATE_LIMIT_WINDOW}s"
     IN_MEMORY_FALLBACK_ENABLED: bool = True
     HEADERS_ENABLED: bool = True
@@ -259,8 +272,15 @@ class Settings(BaseSettings):
         """Get Redis connection URL."""
         if self.REDIS_URL:
             return self.REDIS_URL
-        auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
-        return f"redis://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        # Build auth part with username and password
+        auth_parts = []
+        if self.REDIS_USERNAME:
+            auth_parts.append(self.REDIS_USERNAME)
+        if self.REDIS_PASSWORD:
+            auth_parts.append(self.REDIS_PASSWORD)
+        auth = ":".join(auth_parts) + "@" if auth_parts else ""
+        protocol = "rediss" if self.REDIS_SSL else "redis"
+        return f"{protocol}://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
     @field_validator("REDIS_PASSWORD")
     @classmethod
@@ -270,6 +290,19 @@ class Settings(BaseSettings):
         if env == "production" and not v:
             msg = "REDIS_PASSWORD is required in production environment!"
             raise ValueError(msg)
+        return v
+
+    @field_validator("REDIS_SSL")
+    @classmethod
+    def validate_redis_ssl_in_prod(cls, v: bool, info: ValidationInfo) -> bool:  # noqa: FBT001
+        """Warn if SSL is not enabled in production environment."""
+        env = info.data.get("ENVIRONMENT", "development")
+        if env == "production" and not v:
+            warn(
+                "REDIS_SSL is disabled in production. It is strongly recommended "
+                "to enable SSL/TLS for Redis connections in production environments.",
+                stacklevel=2,
+            )
         return v
 
     @field_validator("SECRET_KEY")
@@ -293,16 +326,28 @@ settings = Settings()
 
 
 class RedisConfig(BaseSettings):
-    """Redis cache configuration."""
+    """Redis cache configuration with SSL/TLS and authentication support."""
 
     model_config = SettingsConfigDict(env_prefix="REDIS_", case_sensitive=False)
 
+    # Basic connection settings
     host: str = settings.REDIS_HOST
     port: int = settings.REDIS_PORT
     db: int = settings.REDIS_DB
     password: str | None = settings.REDIS_PASSWORD
+    username: str | None = None  # Redis ACL username (Redis 6+)
     url: str | None = settings.REDIS_URL
+
+    # SSL/TLS Settings
     ssl: bool = False
+    ssl_ca_certs: str | None = None  # Path to CA certificates file
+    ssl_ca_path: str | None = None  # Path to CA certificates directory (combined into ssl_ca_certs)
+    ssl_cert_reqs: str = "required"  # none, optional, required
+    ssl_certfile: str | None = None  # Path to client certificate
+    ssl_keyfile: str | None = None  # Path to client private key
+    ssl_check_hostname: bool = True  # Verify hostname matches certificate
+
+    # Connection pool settings
     socket_timeout: float = 5.0
     socket_connect_timeout: float = 5.0
     socket_keepalive: bool = True
@@ -310,6 +355,16 @@ class RedisConfig(BaseSettings):
     max_connections: int = 50
     decode_responses: bool = True
     encoding: str = "utf-8"
+
+    @property
+    def ssl_cert_reqs_value(self) -> int:
+        """Get SSLContext verify mode from string setting."""
+        mapping = {
+            "none": CERT_NONE,
+            "optional": CERT_OPTIONAL,
+            "required": CERT_REQUIRED,
+        }
+        return mapping.get(self.ssl_cert_reqs.lower(), CERT_REQUIRED)
 
 
 class CacheConfig(BaseSettings):
@@ -334,6 +389,7 @@ pool_kwargs: dict[str, Any] = {
     "port": redis_config.port,
     "db": redis_config.db,
     "password": redis_config.password,
+    "username": redis_config.username,
     "socket_timeout": redis_config.socket_timeout,
     "socket_connect_timeout": redis_config.socket_connect_timeout,
     "socket_keepalive": redis_config.socket_keepalive,
@@ -373,9 +429,30 @@ if redis_config.url:
 
 if redis_config.socket_keepalive and "socket_keepalive" in pool_kwargs:
     pool_kwargs["socket_keepalive_options"] = {}
-# Only pass ssl if True to avoid compatibility issues
+
+# Configure SSL/TLS settings
 if redis_config.ssl:
     pool_kwargs["ssl"] = True
+    pool_kwargs["ssl_cert_reqs"] = redis_config.ssl_cert_reqs_value
+    pool_kwargs["ssl_check_hostname"] = redis_config.ssl_check_hostname
+
+    # CA certificates (file takes precedence over path)
+    if redis_config.ssl_ca_certs:
+        pool_kwargs["ssl_ca_certs"] = redis_config.ssl_ca_certs
+    elif redis_config.ssl_ca_path:
+        # Note: redis-py doesn't support ssl_ca_path directly
+        # Users should combine certificates into a single bundle file
+        warn(
+            "ssl_ca_path is set but redis-py requires a single CA bundle file. "
+            "Please use ssl_ca_certs instead, or combine certificates into a bundle.",
+            stacklevel=2,
+        )
+
+    # Client certificate authentication
+    if redis_config.ssl_certfile:
+        pool_kwargs["ssl_certfile"] = redis_config.ssl_certfile
+    if redis_config.ssl_keyfile:
+        pool_kwargs["ssl_keyfile"] = redis_config.ssl_keyfile
 
 
 class LimiterConfig(BaseModel):

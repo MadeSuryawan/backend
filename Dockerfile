@@ -18,6 +18,9 @@ ENV UV_COMPILE_BYTECODE=1
 # Use copy mode for linking to avoid potential issue with docker mounts
 ENV UV_LINK_MODE=copy 
 
+# Disable cache for faster builds
+ENV UV_NO_CACHE=1
+
 # 2. Install dependencies first (Caching layer)
 # We copy pyproject.toml and uv.lock to leverage Docker cache.
 # Note: If you haven't generated a uv.lock yet, run 'uv lock' locally first.
