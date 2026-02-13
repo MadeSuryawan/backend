@@ -15,6 +15,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.dependencies import get_cache_manager
+from app.dependencies.dependencies import get_auth_service
 from app.main import app
 from app.models import UserDB
 from app.routes.auth import oauth
@@ -149,6 +150,26 @@ class TestOAuthCSRFProtection:
         )
         mock_cache.delete = AsyncMock(return_value=True)
 
+        # Mock Auth Service properly using dependency override
+        mock_auth_service = AsyncMock()
+        mock_user = UserDB(
+            uuid=uuid4(),
+            username="test",
+            email="test@example.com",
+            is_verified=True,
+        )
+        mock_auth_service.get_or_create_oauth_user = AsyncMock(
+            return_value=mock_user,
+        )
+        mock_auth_service.create_token_for_user = MagicMock(
+            return_value={
+                "access_token": "token",
+                "refresh_token": "refresh",
+                "token_type": "bearer",
+            },
+        )
+        app.dependency_overrides[get_auth_service] = lambda: mock_auth_service
+
         try:
             with patch.object(oauth, "create_client") as mock_create_client:
                 mock_client = MagicMock()
@@ -156,36 +177,15 @@ class TestOAuthCSRFProtection:
                 mock_client.authorize_access_token = AsyncMock(return_value=mock_token)
                 mock_create_client.return_value = mock_client
 
-                with patch(
-                    "app.routes.auth.AuthServiceDep",
-                ) as mock_auth_service_class:
-                    mock_auth_service = AsyncMock()
-                    mock_user = UserDB(
-                        uuid=uuid4(),
-                        username="test",
-                        email="test@example.com",
-                        is_verified=True,
-                    )
-                    mock_auth_service.get_or_create_oauth_user = AsyncMock(
-                        return_value=mock_user,
-                    )
-                    mock_auth_service.create_token_for_user = MagicMock(
-                        return_value={
-                            "access_token": "token",
-                            "refresh_token": "refresh",
-                            "token_type": "bearer",
-                        },
-                    )
-                    mock_auth_service_class.return_value = mock_auth_service
+                # Make the request
+                await client.get(
+                    f"/auth/callback/google?state={test_state}&code=code1",
+                )
 
-                    # Make the request
-                    await client.get(
-                        f"/auth/callback/google?state={test_state}&code=code1",
-                    )
-
-                    # Verify cache delete was called (state consumed)
-                    mock_cache.delete.assert_called_once()
+                # Verify cache delete was called (state consumed)
+                mock_cache.delete.assert_called_once()
         finally:
+            app.dependency_overrides.pop(get_auth_service, None)
             teardown_test_cache()
 
     async def test_state_expires_after_ttl(self, client: AsyncClient) -> None:

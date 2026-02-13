@@ -700,6 +700,11 @@ class AuthService:
 
         existing_user = await self.user_repo.get_by_email(email)
         if existing_user:
+            # OAuth providers verify email, so ensure user is marked as verified
+            if not existing_user.is_verified:
+                existing_user.is_verified = True
+                existing_user.updated_at = datetime.now(UTC)
+                await self.user_repo._add_and_refresh(existing_user)  # noqa: SLF001
             return existing_user
 
         # Create new user with unique username
