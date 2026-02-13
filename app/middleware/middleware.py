@@ -28,6 +28,7 @@ Examples
 from asyncio import get_event_loop
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from logging import basicConfig, getLogger
 from time import perf_counter
 
@@ -47,6 +48,7 @@ from app.managers.login_attempt_tracker import init_login_tracker
 from app.managers.rate_limiter import close_limiter
 from app.managers.token_blacklist import init_token_blacklist
 from app.utils.helpers import file_logger, get_summary, host
+from app.utils.timezone import format_logs
 
 # --- Logging Configuration ---
 basicConfig(
@@ -230,8 +232,10 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         start_time = perf_counter()
         summary = get_summary(request)
 
+        # Log in Bali timezone for server/admin visibility
+        bali_time = format_logs(datetime.now(UTC), settings.TZ)
         route_info = summary or f"{request.method} {request.url.path}"
-        logger.info(f"Request: {route_info}, from ip: {host(request)}")
+        logger.info(f"[{bali_time}] Request: {route_info}, from ip: {host(request)}")
 
         response = await call_next(request)
         duration = perf_counter() - start_time

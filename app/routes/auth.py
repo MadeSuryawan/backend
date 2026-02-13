@@ -1128,7 +1128,11 @@ async def register_user(
             # {'id': 'uuid...', 'username': 'johndoe', 'email': 'john@example.com', ...}
     """
     try:
-        user = await repo.create(user_create)
+        # Get detected timezone from middleware (X-Client-Timezone header → IP → UTC)
+        user_timezone = getattr(request.state, "user_timezone", "UTC")
+
+        # Create user with timezone
+        user = await repo.create(user_create, kwargs={"timezone": user_timezone})
 
         # Trigger verification email
         await auth_service.send_verification_email(user)

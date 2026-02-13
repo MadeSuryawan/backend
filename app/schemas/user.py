@@ -24,6 +24,7 @@ from pydantic import (
 from pydantic_core import PydanticCustomError
 
 from app.models import UserDB
+from app.schemas.cache import DateTimeResponse
 from app.utils.helpers import file_logger, response_datetime
 
 logger = file_logger(getLogger(__name__))
@@ -303,8 +304,8 @@ class UserResponse(BaseModel):
     profile_picture: HttpUrl | str | None = Field(alias="profilePicture")
     bio: str = Field(default="N/A")
     website: HttpUrl | None = None
-    created_at: datetime = Field(alias="createdAt")
-    updated_at: datetime | None = Field(default=None, alias="updatedAt")
+    created_at: DateTimeResponse | datetime = Field(alias="createdAt")
+    updated_at: DateTimeResponse | datetime | None = Field(default=None, alias="updatedAt")
     country: str = Field(default="N/A")
     display_name: str | None = Field(
         default=None,

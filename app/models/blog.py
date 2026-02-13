@@ -107,6 +107,13 @@ class BlogDB(SQLModel, table=True):
         description="List of video URLs (max 3)",
     )
 
+    # Timezone for displaying datetimes in author's local time
+    timezone: str | None = Field(
+        default=None,
+        sa_column=Column(String(50)),
+        description="Author's timezone (e.g., 'America/New_York', 'Asia/Singapore')",
+    )
+
     # Timestamps (timezone-aware)
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(tz=UTC).replace(second=0, microsecond=0),

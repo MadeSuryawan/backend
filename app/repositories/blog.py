@@ -109,6 +109,7 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
             tags=schema.tags,
             images_url=[str(url) for url in schema.images_url] if schema.images_url else None,
             videos_url=[str(url) for url in schema.videos_url] if schema.videos_url else None,
+            timezone=kwargs.get("timezone"),
             created_at=datetime.now(tz=UTC).replace(second=0, microsecond=0),
             updated_at=datetime.now(tz=UTC).replace(second=0, microsecond=0),
         )

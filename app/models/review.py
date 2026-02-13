@@ -87,6 +87,13 @@ class ReviewDB(SQLModel, table=True):
         description="Number of users who found this helpful",
     )
 
+    # Timezone for displaying datetimes in reviewer's local time
+    timezone: str | None = Field(
+        default=None,
+        sa_column=Column(String(50)),
+        description="Reviewer's timezone (e.g., 'America/New_York', 'Asia/Singapore')",
+    )
+
     # Timestamps
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(tz=UTC).replace(second=0, microsecond=0),

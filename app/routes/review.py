@@ -174,7 +174,13 @@ async def create_review(
     ReviewResponse
         The created review details.
     """
-    db_review = await deps.repo.create(review_data, deps.current_user.uuid)
+    # Get detected timezone from middleware
+    user_timezone = getattr(request.state, "user_timezone", "UTC")
+    db_review = await deps.repo.create(
+        review_data,
+        deps.current_user.uuid,
+        kwargs={"timezone": user_timezone},
+    )
     return cast(ReviewResponse, _validate_review_response(ReviewResponse, db_review))
 
 

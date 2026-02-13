@@ -513,7 +513,13 @@ async def create_blog(
     check_owner_or_admin(blog.author_id, deps.current_user, "create_blog")
     try:
         blog_full = BlogSchema.model_validate(blog.model_dump())
-        db_blog = await deps.repo.create(blog_full, author_id=blog.author_id)
+        # Get detected timezone from middleware
+        user_timezone = getattr(request.state, "user_timezone", "UTC")
+        db_blog = await deps.repo.create(
+            blog_full,
+            author_id=blog.author_id,
+            kwargs={"timezone": user_timezone},
+        )
         return cast(BlogResponse, _validate_blog_response(BlogResponse, db_blog))
     except DuplicateEntryError as e:
         logger.exception(f"Duplicate slug '{blog.slug}' detected on blog creation")

@@ -61,6 +61,7 @@ class ReviewRepository(BaseRepository[ReviewDB, ReviewCreate, ReviewUpdate]):
             images_url=None,
             is_verified_purchase=False,
             helpful_count=0,
+            timezone=kwargs.get("timezone"),
             created_at=datetime.now(tz=UTC).replace(second=0, microsecond=0),
             updated_at=None,
         )

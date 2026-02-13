@@ -45,6 +45,7 @@ from app.managers.rate_limiter import limiter, rate_limit_exceeded_handler
 from app.middleware import (
     LoggingMiddleware,
     SecurityHeadersMiddleware,
+    TimezoneMiddleware,
     configure_cors,
     lifespan,
 )
@@ -82,6 +83,8 @@ app = FastAPI(
 
 configure_cors(app)
 
+# Timezone detection middleware (must be early to set request.state.user_timezone)
+app.add_middleware(TimezoneMiddleware)
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)

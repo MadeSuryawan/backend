@@ -49,7 +49,7 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
         """
         super().__init__(session)
 
-    async def create(self, schema: UserCreate, **kwargs: Any) -> UserDB:  # noqa: ANN401
+    async def create(self, schema: UserCreate, **kwargs: dict[str, Any]) -> UserDB:
         """
         Create a new user in the database.
 
@@ -82,6 +82,7 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
             gender=schema.gender,
             phone_number=schema.phone_number,
             country=schema.country,
+            timezone=kwargs.get("timezone"),
             auth_provider=kwargs.get("auth_provider", "email"),
             provider_id=kwargs.get("provider_id"),
             is_verified=kwargs.get("is_verified", False),

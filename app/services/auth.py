@@ -723,7 +723,9 @@ class AuthService:
 
         return await self.user_repo.create(
             user_create,
-            auth_provider=provider,
-            provider_id=user_info.get("sub"),
-            is_verified=True,  # OAuth emails are pre-verified by the provider
+            kwargs={
+                "auth_provider": provider,
+                "provider_id": user_info.get("sub"),
+                "is_verified": True,
+            },
         )
