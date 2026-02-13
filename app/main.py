@@ -2,9 +2,12 @@
 
 """BaliBlissed Backend - Seamless caching integration with Redis for FastAPI."""
 
+from os import environ
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, ORJSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter
@@ -14,6 +17,9 @@ from starlette.responses import JSONResponse
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.configs import settings
+
+# Set timezone for consistent datetime handling
+environ["TZ"] = settings.TZ
 from app.decorators.caching import get_cache_manager
 from app.dependencies import EmailDep
 from app.errors import (
@@ -59,15 +65,17 @@ from app.schemas import HealthCheckResponse
 from app.schemas.cache import CacheHealthResponse, CircuitBreakerStatus, ServicesStatus
 from app.utils.helpers import today_str
 
+# Configure API documentation endpoints based on settings
 app = FastAPI(
     title="BaliBlissed Backend",
     description="BaliBlissed Backend API",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url="/docs" if settings.DOCS_ENABLED else None,
+    redoc_url="/redoc" if settings.DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if settings.DOCS_ENABLED else None,
     swagger_ui_parameters={
         "docExpansion": "none",
-        # "defaultModelsExpandDepth": -1,
-        # "tagsSorter": "alpha",
         "operationsSorter": "method",
     },
 )
@@ -79,7 +87,9 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Middleware to tell FastAPI it is behind a proxy (Zuplo) or Render
-app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.trusted_hosts_list)
+# Trusted Host middleware to validate Host headers
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts_list)
 # Middleware to set context variables for decorators
 app.add_middleware(ContextMiddleware)
 
@@ -127,94 +137,96 @@ app.state.limiter = limiter
 limiter: Limiter = app.state.limiter
 
 
-@app.get(
-    "/health",
-    tags=["🩺 Health"],
-    summary="Health check endpoint",
-    response_model=HealthCheckResponse,
-    response_class=ORJSONResponse,
-    responses={
-        200: {
-            "content": {
-                "application/json": {
-                    "example": {
-                        "version": "1.0.0",
-                        "status": "ok",
-                        "timestamp": "2025-01-01",
-                        "services": {
-                            "ai_client": "initialized",
-                            "email_client": "available",
-                            "ai_circuit_breaker": "closed",
-                            "email_circuit_breaker": "closed",
+if settings.HEALTH_CHECK_ENABLED:
+
+    @app.get(
+        settings.HEALTH_CHECK_ENDPOINT,
+        tags=["🩺 Health"],
+        summary="Health check endpoint",
+        response_model=HealthCheckResponse,
+        response_class=ORJSONResponse,
+        responses={
+            200: {
+                "content": {
+                    "application/json": {
+                        "example": {
+                            "version": "1.0.0",
+                            "status": "ok",
+                            "timestamp": "2025-01-01",
+                            "services": {
+                                "ai_client": "initialized",
+                                "email_client": "available",
+                                "ai_circuit_breaker": "closed",
+                                "email_circuit_breaker": "closed",
+                            },
+                            "cache": {"status": "healthy"},
                         },
-                        "cache": {"status": "healthy"},
                     },
                 },
             },
         },
-    },
-    operation_id="health_check",
-)
-@limiter.exempt
-async def health_check(request: Request, email_client: EmailDep) -> ORJSONResponse:
-    """
-    Health check endpoint with comprehensive status.
-
-    Parameters
-    ----------
-    request : Request
-        Current request context.
-    email_client : EmailDep
-        Email client dependency.
-
-    Returns
-    -------
-    ORJSONResponse
-        Health status including services and cache information.
-
-    Examples
-    --------
-    Request
-        GET /health
-    Response
-        200 OK
-        {"version": "1.0.0", "status": "ok", "timestamp": "2025-01-01", "services": { ... }, "cache": { ... }}
-    """
-    # Get cache health info
-    cache_health_data = await get_cache_manager(request).health_check()
-
-    # Determine AI client status
-    ai_client_status = (
-        "initialized"
-        if hasattr(request.app.state, "ai_client") and request.app.state.ai_client
-        else "not_initialized"
+        operation_id="health_check",
     )
+    @limiter.exempt
+    async def health_check(request: Request, email_client: EmailDep) -> ORJSONResponse:
+        """
+        Health check endpoint with comprehensive status.
 
-    # Determine Email client status (check if credentials are configured)
-    try:
-        # Check if service can be initialized (credentials available)
-        email_client_status = "available" if email_client.service else "not_configured"
-    except EmailServiceError:
-        email_client_status = "not_configured"
+        Parameters
+        ----------
+        request : Request
+            Current request context.
+        email_client : EmailDep
+            Email client dependency.
 
-    # Build services status
-    services = ServicesStatus(
-        ai_client=ai_client_status,
-        email_client=email_client_status,
-        ai_circuit_breaker=CircuitBreakerStatus(**ai_circuit_breaker.get_state()),
-        email_circuit_breaker=CircuitBreakerStatus(**email_circuit_breaker.get_state()),
-    )
+        Returns
+        -------
+        ORJSONResponse
+            Health status including services and cache information.
 
-    # Build response
-    response_data = {
-        "version": app.version,
-        "status": "ok",
-        "timestamp": today_str(),
-        "services": services.model_dump(),
-        "cache": CacheHealthResponse(**cache_health_data).model_dump(),
-    }
+        Examples
+        --------
+        Request
+            GET /health
+        Response
+            200 OK
+            {"version": "1.0.0", "status": "ok", "timestamp": "2025-01-01", "services": { ... }, "cache": { ... }}
+        """
+        # Get cache health info
+        cache_health_data = await get_cache_manager(request).health_check()
 
-    return ORJSONResponse(response_data)
+        # Determine AI client status
+        ai_client_status = (
+            "initialized"
+            if hasattr(request.app.state, "ai_client") and request.app.state.ai_client
+            else "not_initialized"
+        )
+
+        # Determine Email client status (check if credentials are configured)
+        try:
+            # Check if service can be initialized (credentials available)
+            email_client_status = "available" if email_client.service else "not_configured"
+        except EmailServiceError:
+            email_client_status = "not_configured"
+
+        # Build services status
+        services = ServicesStatus(
+            ai_client=ai_client_status,
+            email_client=email_client_status,
+            ai_circuit_breaker=CircuitBreakerStatus(**ai_circuit_breaker.get_state()),
+            email_circuit_breaker=CircuitBreakerStatus(**email_circuit_breaker.get_state()),
+        )
+
+        # Build response
+        response_data = {
+            "version": app.version,
+            "status": "ok",
+            "timestamp": today_str(),
+            "services": services.model_dump(),
+            "cache": CacheHealthResponse(**cache_health_data).model_dump(),
+        }
+
+        return ORJSONResponse(response_data)
 
 
 @app.get("/favicon.ico", tags=["🖼️ Assets"], include_in_schema=False)
@@ -355,10 +367,11 @@ if __name__ == "__main__":
 
     run(
         app,
-        host="127.0.0.1",
-        port=8000,
-        log_level="info",
-        reload=True,
+        host=settings.HOST,
+        port=settings.PORT,
+        log_level=settings.LOG_LEVEL.lower(),
+        reload=settings.DEBUG,
         loop="uvloop",
         http="httptools",
+        timeout_keep_alive=settings.REQUEST_TIMEOUT,
     )

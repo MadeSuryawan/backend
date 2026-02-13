@@ -50,7 +50,7 @@ from app.utils.helpers import file_logger, get_summary, host
 
 # --- Logging Configuration ---
 basicConfig(
-    level="NOTSET",
+    level=settings.LOG_LEVEL,
     format="%(message)s",
     datefmt="%X",
     handlers=[RichHandler(rich_tracebacks=True)],
@@ -154,8 +154,7 @@ def configure_cors(app: FastAPI) -> None:
     Configure CORS middleware for the application.
 
     Sets up Cross-Origin Resource Sharing (CORS) policies based on
-    environment settings. Allows localhost for development and
-    production frontend URL when configured.
+    CORS_ORIGINS setting from environment configuration.
 
     Parameters
     ----------
@@ -164,10 +163,8 @@ def configure_cors(app: FastAPI) -> None:
 
     Notes
     -----
-    Allowed origins include:
-    - http://localhost:3000 (Next.js development)
-    - http://127.0.0.1:3000
-    - PRODUCTION_FRONTEND_URL from settings (if set)
+    Allowed origins are read from the CORS_ORIGINS environment variable,
+    which should be a comma-separated list of allowed origins.
 
     Examples
     --------
@@ -175,15 +172,8 @@ def configure_cors(app: FastAPI) -> None:
     >>> app = FastAPI()
     >>> configure_cors(app)
     """
-    # Determine allowed origins based on environment
-    allowed_origins: list[str] = [
-        "http://localhost:3000",  # Next.js development
-        "http://127.0.0.1:3000",
-    ]
-
-    # Add production origins if specified
-    if frontend_url := settings.PRODUCTION_FRONTEND_URL:
-        allowed_origins.append(frontend_url)
+    # Get allowed origins from settings
+    allowed_origins = settings.cors_origins_list
 
     app.add_middleware(
         CORSMiddleware,

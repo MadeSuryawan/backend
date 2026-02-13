@@ -47,39 +47,54 @@ GEMINI_MODEL = "gemini-2.0-flash"
 Harm = HarmCategory
 Block = HarmBlockThreshold
 
-# Safety settings for content generation
-SAFETY_SETTINGS = [
-    SafetySetting(
-        category=Harm.HARM_CATEGORY_HARASSMENT,
-        threshold=Block.BLOCK_MEDIUM_AND_ABOVE,
-    ),
-    SafetySetting(
-        category=Harm.HARM_CATEGORY_HATE_SPEECH,
-        threshold=Block.BLOCK_MEDIUM_AND_ABOVE,
-    ),
-    SafetySetting(
-        category=Harm.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-        threshold=Block.BLOCK_MEDIUM_AND_ABOVE,
-    ),
-    SafetySetting(
-        category=Harm.HARM_CATEGORY_DANGEROUS_CONTENT,
-        threshold=Block.BLOCK_MEDIUM_AND_ABOVE,
-    ),
-]
+# Safety threshold mapping
+SAFETY_THRESHOLD_MAP: dict[str, Block] = {
+    "none": Block.BLOCK_NONE,
+    "low": Block.BLOCK_LOW_AND_ABOVE,
+    "medium": Block.BLOCK_MEDIUM_AND_ABOVE,
+    "high": Block.BLOCK_ONLY_HIGH,
+}
+
+
+def get_safety_settings(threshold: str = "medium") -> list[SafetySetting]:
+    """
+    Get safety settings based on configured threshold.
+
+    Args:
+        threshold: Safety threshold level (none, low, medium, high)
+
+    Returns:
+        List of SafetySetting objects configured with the specified threshold
+
+    Example:
+        >>> settings = get_safety_settings("high")
+        >>> len(settings)
+        4
+
+    """
+    block_threshold = SAFETY_THRESHOLD_MAP.get(threshold, Block.BLOCK_MEDIUM_AND_ABOVE)
+    return [
+        SafetySetting(
+            category=Harm.HARM_CATEGORY_HARASSMENT,
+            threshold=block_threshold,
+        ),
+        SafetySetting(
+            category=Harm.HARM_CATEGORY_HATE_SPEECH,
+            threshold=block_threshold,
+        ),
+        SafetySetting(
+            category=Harm.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            threshold=block_threshold,
+        ),
+        SafetySetting(
+            category=Harm.HARM_CATEGORY_DANGEROUS_CONTENT,
+            threshold=block_threshold,
+        ),
+    ]
+
 
 # Tools: Explicitly enable only what needed (Google Search)
 SEARCH_TOOL = [Tool(google_search=GoogleSearch())]
-
-GENERATION_CONFIG = GenerateContentConfig(
-    temperature=0.7,
-    top_p=0.8,
-    top_k=40,
-    max_output_tokens=8192,  # 4096 * 2
-    # response_mime_type="application/json",
-    # system_instruction="You are a friendly customer service assistant for a Bali travel agency called BaliBlissed.",
-    safety_settings=SAFETY_SETTINGS,
-    tools=SEARCH_TOOL,
-)
 
 
 class SecurityInfo(BaseModel):
@@ -134,18 +149,32 @@ class Settings(BaseSettings):
     APP_NAME: str = "BaliBlissed FastAPI Backend"
     DEBUG: bool = False
 
-    # AI Configuration
-    GEMINI_API_KEY: str | None = None
-    AI_REQUEST_TIMEOUT: int = 60  # seconds
-    AI_MAX_RETRIES: int = 2
-    AI_RETRY_DELAY: float = 1.0  # seconds
-    AI_BACKOFF_FACTOR: float = 2.0
+    # Server Configuration
+    HOST: str = "0.0.0.0"  # noqa: S104 - Required for Docker container binding
+    PORT: int = 8000
+    LOG_LEVEL: str = "INFO"
+    REQUEST_TIMEOUT: int = 30
+    MAX_REQUEST_SIZE_MB: int = 10
+
+    # API Documentation
+    DOCS_ENABLED: bool = True
 
     # Environment
     ENVIRONMENT: str = "development"
     LOG_TO_FILE: bool = True
     LOG_FILE: str = "logs/app.log"
     PRODUCTION_FRONTEND_URL: str | None = None
+
+    # Localization
+    TZ: str = "Asia/Singapore"
+
+    # AI Configuration
+    GEMINI_API_KEY: str | None = None
+    AI_REQUEST_TIMEOUT: int = 60  # seconds
+    AI_MAX_RETRIES: int = 2
+    AI_RETRY_DELAY: float = 1.0  # seconds
+    AI_BACKOFF_FACTOR: float = 2.0
+    AI_SAFETY_THRESHOLD: Literal["none", "low", "medium", "high"] = "medium"
 
     # OAuth Settings
     GOOGLE_CLIENT_ID: str | None = None
@@ -158,6 +187,10 @@ class Settings(BaseSettings):
     PASSWORD_SECURITY_LEVEL: str = "standard"
     PASSWORD_HASHER_DEBUG: bool = False
 
+    # Trusted Hosts (for security middleware)
+    # Includes testserver and test for unit testing
+    TRUSTED_HOSTS: str = "localhost,127.0.0.1,0.0.0.0,testserver,test"
+
     # Email Configuration
     # Path to the file downloaded from Google Cloud
     GMAIL_CLIENT_SECRET_FILE: Path = Path("secrets/client_secret.json")
@@ -168,6 +201,15 @@ class Settings(BaseSettings):
     COMPANY_TARGET_EMAIL: str = "example@gmail.com"
     # Scopes required for the application
     GMAIL_SCOPES: list[str] = ["https://www.googleapis.com/auth/gmail.send"]
+
+    # SMTP Configuration (fallback email provider)
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = 587
+    SMTP_USER: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_TLS: bool = True
+    SMTP_FROM_EMAIL: str | None = None
+    SMTP_FROM_NAME: str = "BaliBlissed"
 
     # Database settings
     DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost:5432/baliblissed"
@@ -203,6 +245,9 @@ class Settings(BaseSettings):
     # Pagination defaults
     DEFAULT_PAGE_SIZE: int = 10
     MAX_PAGE_SIZE: int = 100
+
+    # CORS Configuration
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://localhost:8000"
 
     # Redis Configuration
     REDIS_ENABLED: bool = True
@@ -256,6 +301,23 @@ class Settings(BaseSettings):
     MEDIA_VIDEO_MAX_COUNT_BLOG: int = 3
     MEDIA_IMAGE_ALLOWED_TYPES: list[str] = ["image/jpeg", "image/png", "image/webp"]
     MEDIA_VIDEO_ALLOWED_TYPES: list[str] = ["video/mp4", "video/webm", "video/quicktime"]
+
+    # Health Check Configuration
+    HEALTH_CHECK_ENABLED: bool = True
+    HEALTH_CHECK_ENDPOINT: str = "/health"
+
+    # Monitoring & Error Tracking
+    SENTRY_DSN: str | None = None
+    SENTRY_ENVIRONMENT: str = "development"
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.1
+
+    # Webhook Configuration
+    WEBHOOK_SECRET: str | None = None
+
+    # Feature Flags
+    FEATURE_REGISTRATION_ENABLED: bool = True
+    FEATURE_AI_CHAT_ENABLED: bool = True
+    FEATURE_EMAIL_VERIFICATION_REQUIRED: bool = True
 
     @field_validator("CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET")
     @classmethod
@@ -321,8 +383,79 @@ class Settings(BaseSettings):
                 raise ValueError(msg)
         return v
 
+    @field_validator("DOCS_ENABLED")
+    @classmethod
+    def validate_docs_in_prod(cls, v: bool, info: ValidationInfo) -> bool:  # noqa: FBT001
+        """Warn if API docs are enabled in production."""
+        env = info.data.get("ENVIRONMENT", "development")
+        if env == "production" and v:
+            warn(
+                "DOCS_ENABLED is true in production. It's recommended to disable "
+                "API documentation (Swagger/ReDoc) in production for security.",
+                stacklevel=2,
+            )
+        return v
+
+    @field_validator("TRUSTED_HOSTS")
+    @classmethod
+    def validate_trusted_hosts_in_prod(cls, v: str, info: ValidationInfo) -> str:
+        """Ensure TRUSTED_HOSTS is properly configured in production."""
+        env = info.data.get("ENVIRONMENT", "development")
+        if env == "production" and (not v or v == "localhost,127.0.0.1,0.0.0.0"):
+            warn(
+                "TRUSTED_HOSTS is using default development values in production. "
+                "Please configure TRUSTED_HOSTS with your production domain(s).",
+                stacklevel=2,
+            )
+        return v
+
+    @property
+    def trusted_hosts_list(self) -> list[str]:
+        """Get TRUSTED_HOSTS as a list of strings."""
+        return [host.strip() for host in self.TRUSTED_HOSTS.split(",") if host.strip()]
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Get CORS_ORIGINS as a list of strings."""
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
 
 settings = Settings()
+
+# Update SAFETY_SETTINGS after settings initialization
+SAFETY_SETTINGS = get_safety_settings(settings.AI_SAFETY_THRESHOLD)
+
+
+def get_generation_config(threshold: str | None = None) -> GenerateContentConfig:
+    """
+    Get generation config with optional custom safety threshold.
+
+    Args:
+        threshold: Optional safety threshold override (none, low, medium, high).
+                  If not provided, uses the value from settings.
+
+    Returns:
+        GenerateContentConfig configured with specified safety settings
+
+    Example:
+        >>> config = get_generation_config("high")
+        >>> config.temperature
+        0.7
+
+    """
+    safety_threshold = threshold or settings.AI_SAFETY_THRESHOLD
+    return GenerateContentConfig(
+        temperature=0.7,
+        top_p=0.8,
+        top_k=40,
+        max_output_tokens=8192,  # 4096 * 2
+        safety_settings=get_safety_settings(safety_threshold),
+        tools=SEARCH_TOOL,
+    )
+
+
+# Default generation config using settings from configuration
+GENERATION_CONFIG = get_generation_config()
 
 
 class RedisConfig(BaseSettings):
