@@ -77,6 +77,7 @@ from app.schemas import (
     UserUpdate,
     validate_user_response,
 )
+from app.services.geo_timezone import detect_timezone_by_ip
 from app.services.profile_picture import ProfilePictureService
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
 from app.utils.helpers import file_logger
@@ -386,8 +387,18 @@ async def create_user(
     HTTPException
         If username or email already exists.
     """
+    # Get timezone from middleware header (set by client)
+    user_timezone = getattr(request.state, "user_timezone", "UTC")
+
+    # Fallback to IP geolocation if timezone is default UTC (likely not sent by client)
+    if user_timezone == "UTC":
+        client_ip = request.client.host if request.client else None
+        if client_ip:
+            user_timezone = await detect_timezone_by_ip(client_ip)
+
     async with db_operation_context():
-        db_user = await repo.create(user)
+        # Pass detect timezone to repo
+        db_user = await repo.create(user, timezone=user_timezone)
         await _invalidate_user_cache(request, db_user.uuid, db_user.username)
         return validate_user_response(db_user)
 

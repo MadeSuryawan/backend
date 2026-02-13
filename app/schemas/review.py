@@ -5,9 +5,12 @@ This module defines the Review schemas used for representing user reviews
 in the BaliBlissed application.
 """
 
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+
+from app.schemas.datetime import DateTimeResponse
 
 
 class ReviewCreate(BaseModel):
@@ -73,8 +76,8 @@ class ReviewResponse(BaseModel):
     images_url: list[HttpUrl] | None = Field(default=None, alias="imagesUrl")
     is_verified_purchase: bool = Field(alias="isVerifiedPurchase")
     helpful_count: int = Field(alias="helpfulCount")
-    created_at: str = Field(alias="createdAt")
-    updated_at: str | None = Field(default=None, alias="updatedAt")
+    created_at: DateTimeResponse | datetime = Field(alias="createdAt")
+    updated_at: DateTimeResponse | datetime | None = Field(default=None, alias="updatedAt")
 
 
 class ReviewListResponse(BaseModel):
@@ -89,7 +92,7 @@ class ReviewListResponse(BaseModel):
     content: str
     is_verified_purchase: bool = Field(alias="isVerifiedPurchase")
     helpful_count: int = Field(alias="helpfulCount")
-    created_at: str = Field(alias="createdAt")
+    created_at: DateTimeResponse | datetime = Field(alias="createdAt")
 
 
 class MediaUploadResponse(BaseModel):

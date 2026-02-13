@@ -126,6 +126,13 @@ class UserDB(SQLModel, table=True):
         description="User testimonial",
     )
 
+    # Timezone for displaying datetimes in user's local time
+    timezone: str | None = Field(
+        default=None,
+        sa_column=Column(String(50)),
+        description="User's timezone (e.g., 'America/New_York', 'Asia/Singapore')",
+    )
+
     # Timestamps (timezone-aware)
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(tz=UTC).replace(second=0, microsecond=0),

@@ -682,6 +682,7 @@ class AuthService:
         self,
         user_info: dict[str, Any],
         provider: str,
+        timezone: str = "UTC",
     ) -> UserDB:
         """
         Get existing user or create new one from OAuth data.
@@ -689,6 +690,7 @@ class AuthService:
         Args:
             user_info: Dictionary containing user info from provider
             provider: Provider name (google, wechat)
+            timezone: User's timezone (default: UTC)
 
         Returns:
             UserDB: The user entity
@@ -725,5 +727,6 @@ class AuthService:
             user_create,
             auth_provider=provider,
             provider_id=user_info.get("sub"),
-            is_verified=True,  # OAuth emails are pre-verified by the provider
+            is_verified=True,
+            timezone=timezone,
         )

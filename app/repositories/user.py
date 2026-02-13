@@ -49,12 +49,25 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
         """
         super().__init__(session)
 
-    async def create(self, schema: UserCreate, **kwargs: Any) -> UserDB:  # noqa: ANN401
+    async def create(
+        self,
+        schema: UserCreate,
+        timezone: str | None = None,
+        auth_provider: str = "email",
+        provider_id: str | None = None,
+        *,
+        is_verified: bool = False,
+        **kwargs: dict[str, Any],
+    ) -> UserDB:
         """
         Create a new user in the database.
 
         Args:
             schema: User schema with user data
+            timezone: IANA timezone string (e.g., 'Asia/Makassar')
+            auth_provider: Authentication provider ('email', 'google', 'wechat')
+            provider_id: External provider user ID
+            is_verified: Whether the user's email is pre-verified (e.g., OAuth)
             **kwargs: Additional arguments for creation
 
         Returns:
@@ -82,9 +95,10 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
             gender=schema.gender,
             phone_number=schema.phone_number,
             country=schema.country,
-            auth_provider=kwargs.get("auth_provider", "email"),
-            provider_id=kwargs.get("provider_id"),
-            is_verified=kwargs.get("is_verified", False),
+            timezone=timezone,
+            auth_provider=auth_provider,
+            provider_id=provider_id,
+            is_verified=is_verified,
         )
 
         # Use the base class helper method for consistent error handling

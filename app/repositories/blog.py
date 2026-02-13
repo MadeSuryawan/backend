@@ -79,7 +79,7 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
         Args:
             schema: Blog schema with blog data
             author_id: UUID of the blog author (required, but optional in signature to match base)
-            **kwargs: Additional arguments
+            **kwargs: Additional arguments for creation
 
         Returns:
             BlogDB: Created blog database model

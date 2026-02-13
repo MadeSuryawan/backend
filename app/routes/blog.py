@@ -187,7 +187,11 @@ async def _get_blog_or_404(blog_id: UUID, repo: BlogRepoDep) -> BlogDB:
     return blog
 
 
-def _validate_blog_response(schema: type[BaseModel], db_blog: BlogDB) -> BaseModel:
+def _validate_blog_response(
+    schema: type[BaseModel],
+    db_blog: BlogDB,
+    user_timezone: str = "UTC",
+) -> BaseModel:
     """
     Validate a blog response model.
 
@@ -197,6 +201,8 @@ def _validate_blog_response(schema: type[BaseModel], db_blog: BlogDB) -> BaseMod
         The blog response model to validate.
     db_blog : BlogDB
         The database blog entity to validate.
+    user_timezone : str
+        IANA timezone string for datetime formatting.
 
     Returns
     -------
@@ -204,7 +210,7 @@ def _validate_blog_response(schema: type[BaseModel], db_blog: BlogDB) -> BaseMod
         The validated blog response model.
 
     """
-    _dict = response_datetime(db_blog)
+    _dict = response_datetime(db_blog, user_timezone)
     try:
         response = schema.model_validate(_dict, from_attributes=True)
     except ValidationError as e:
@@ -513,7 +519,10 @@ async def create_blog(
     check_owner_or_admin(blog.author_id, deps.current_user, "create_blog")
     try:
         blog_full = BlogSchema.model_validate(blog.model_dump())
-        db_blog = await deps.repo.create(blog_full, author_id=blog.author_id)
+        db_blog = await deps.repo.create(
+            blog_full,
+            author_id=blog.author_id,
+        )
         return cast(BlogResponse, _validate_blog_response(BlogResponse, db_blog))
     except DuplicateEntryError as e:
         logger.exception(f"Duplicate slug '{blog.slug}' detected on blog creation")

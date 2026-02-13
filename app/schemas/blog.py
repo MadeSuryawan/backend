@@ -6,6 +6,7 @@ in the BaliBlissed application. Includes complete validation, security
 features, and computed fields.
 """
 
+from datetime import datetime
 from re import match, sub
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
@@ -21,6 +22,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.schemas.datetime import DateTimeResponse
 from app.utils.helpers import today_str
 
 
@@ -359,8 +361,8 @@ class BlogResponse(BaseModel):
     status: str
     images_url: list[HttpUrl] | None = Field(default=None, alias="imagesUrl")
     videos_url: list[HttpUrl] | None = Field(default=None, alias="videosUrl")
-    created_at: str = Field(alias="createdAt")
-    updated_at: str = Field(alias="updatedAt")
+    created_at: DateTimeResponse | datetime = Field(alias="createdAt")
+    updated_at: DateTimeResponse | datetime = Field(alias="updatedAt")
 
 
 class BlogListResponse(BaseModel):
@@ -375,6 +377,6 @@ class BlogListResponse(BaseModel):
     view_count: int = Field(alias="viewCount")
     tags: list[str]
     status: str
-    created_at: str = Field(alias="createdAt")
-    updated_at: str = Field(alias="updatedAt")
+    created_at: DateTimeResponse | datetime = Field(alias="createdAt")
+    updated_at: DateTimeResponse | datetime = Field(alias="updatedAt")
     reading_time_minutes: int = Field(alias="readingTimeMinutes")

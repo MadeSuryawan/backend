@@ -43,7 +43,7 @@ class ReviewRepository(BaseRepository[ReviewDB, ReviewCreate, ReviewUpdate]):
         Args:
             schema: Review creation data
             user_id: ID of the user creating the review
-            **kwargs: Additional keyword arguments
+            **kwargs: Additional arguments for creation
 
         Returns:
             ReviewDB: Created review

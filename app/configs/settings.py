@@ -166,7 +166,7 @@ class Settings(BaseSettings):
     PRODUCTION_FRONTEND_URL: str | None = None
 
     # Localization
-    TZ: str = "Asia/Singapore"
+    TZ: str = "Asia/Makassar"
 
     # AI Configuration
     GEMINI_API_KEY: str | None = None
@@ -286,6 +286,9 @@ class Settings(BaseSettings):
     CLOUDINARY_CLOUD_NAME: str | None = None
     CLOUDINARY_API_KEY: str | None = None
     CLOUDINARY_API_SECRET: str | None = None
+
+    # IP Geolocation API Configuration\
+    IP_GEOLOCATION_API_KEY: str | None = None
 
     # Profile Picture Settings
     PROFILE_PICTURE_MAX_SIZE_MB: int = 5

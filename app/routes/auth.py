@@ -88,7 +88,8 @@ from app.schemas.auth import (
     Token,
     TokenRefreshRequest,
 )
-from app.schemas.user import UserCreate, UserResponse
+from app.schemas.user import UserCreate, UserResponse, validate_user_response
+from app.services.geo_timezone import detect_timezone_by_ip
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
 from app.utils.helpers import file_logger
 
@@ -1128,7 +1129,16 @@ async def register_user(
             # {'id': 'uuid...', 'username': 'johndoe', 'email': 'john@example.com', ...}
     """
     try:
-        user = await repo.create(user_create)
+        # Get timezone from middleware header, fallback to IP geolocation for registration
+        user_timezone = getattr(request.state, "user_timezone", "UTC")
+        if user_timezone == "UTC":
+            # Client didn't provide timezone header — try IP geolocation as fallback
+            client_ip = request.client.host if request.client else None
+            if client_ip:
+                user_timezone = await detect_timezone_by_ip(client_ip)
+
+        # Create user with detected timezone
+        user = await repo.create(user_create, timezone=user_timezone)
 
         # Trigger verification email
         await auth_service.send_verification_email(user)
@@ -1140,7 +1150,7 @@ async def register_user(
             users_list_key(0, 10),
             namespace="users",
         )
-        return UserResponse.model_validate(user, from_attributes=True)
+        return validate_user_response(user)
     except Exception as e:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
@@ -1347,7 +1357,7 @@ async def login_oauth(
 )
 @timed("/auth/callback")
 @limiter.limit("20/minute")
-async def auth_callback(
+async def auth_callback(  # noqa: C901
     request: Request,
     response: Response,
     provider: str,
@@ -1438,7 +1448,21 @@ async def auth_callback(
         if not user_info:
             user_info = await client.userinfo(token=token)
 
-        user = await auth_service.get_or_create_oauth_user(dict(user_info), provider)
+        # Get timezone from middleware header (set by client)
+        user_timezone = getattr(request.state, "user_timezone", "UTC")
+
+        # Fallback to IP geolocation if timezone is default UTC (likely not sent by client)
+        # This mirrors the logic in register_user
+        if user_timezone == "UTC":
+            client_ip = request.client.host if request.client else None
+            if client_ip:
+                user_timezone = await detect_timezone_by_ip(client_ip)
+
+        user = await auth_service.get_or_create_oauth_user(
+            dict(user_info),
+            provider,
+            timezone=user_timezone,
+        )
         return auth_service.create_token_for_user(user)
     except OAuthError:
         # Re-raise OAuthError as-is

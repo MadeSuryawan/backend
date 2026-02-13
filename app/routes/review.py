@@ -81,7 +81,11 @@ class ReviewListQuery:
     limit: Annotated[int, Query(ge=1, le=100)] = 10
 
 
-def _validate_review_response(schema: type[BaseModel], review_dict: ReviewDB) -> BaseModel:
+def _validate_review_response(
+    schema: type[BaseModel],
+    review_dict: ReviewDB,
+    user_timezone: str = "UTC",
+) -> BaseModel:
     """
     Validate review response.
 
@@ -91,6 +95,8 @@ def _validate_review_response(schema: type[BaseModel], review_dict: ReviewDB) ->
         The Pydantic model to validate against.
     review_dict : ReviewDB
         The database review object to validate.
+    user_timezone : str
+        IANA timezone string for datetime formatting.
 
     Returns
     -------
@@ -102,7 +108,7 @@ def _validate_review_response(schema: type[BaseModel], review_dict: ReviewDB) ->
     ValueError
         If validation error occurs.
     """
-    _dict = response_datetime(review_dict)
+    _dict = response_datetime(review_dict, user_timezone)
     try:
         return schema.model_validate(_dict)
     except ValidationError as e:
@@ -174,7 +180,10 @@ async def create_review(
     ReviewResponse
         The created review details.
     """
-    db_review = await deps.repo.create(review_data, deps.current_user.uuid)
+    db_review = await deps.repo.create(
+        review_data,
+        deps.current_user.uuid,
+    )
     return cast(ReviewResponse, _validate_review_response(ReviewResponse, db_review))
 
 
