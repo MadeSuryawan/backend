@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse, ORJSONResponse, Response
+from fastapi.responses import FileResponse, ORJSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -40,7 +40,6 @@ from app.errors import (
     validation_exception_handler,
 )
 from app.managers.circuit_breaker import ai_circuit_breaker, email_circuit_breaker
-from app.managers.metrics import get_system_metrics, metrics_manager
 from app.managers.rate_limiter import limiter, rate_limit_exceeded_handler
 from app.middleware import (
     LoggingMiddleware,
@@ -50,6 +49,7 @@ from app.middleware import (
     lifespan,
 )
 from app.middleware.context import ContextMiddleware
+from app.monitoring import setup_monitoring, shutdown_monitoring
 from app.routes import (
     admin_router,
     ai_router,
@@ -139,13 +139,17 @@ _ = [app.add_exception_handler(exc_type, handler) for exc_type, handler in error
 app.state.limiter = limiter
 limiter: Limiter = app.state.limiter
 
+# Setup comprehensive monitoring (Prometheus, Structlog, OpenTelemetry, Health checks)
+# This adds /metrics (Prometheus format), /health/live, /health/ready endpoints
+setup_monitoring(app, enable_tracing=settings.ENVIRONMENT != "test")
+
 
 if settings.HEALTH_CHECK_ENABLED:
 
     @app.get(
         settings.HEALTH_CHECK_ENDPOINT,
         tags=["🩺 Health"],
-        summary="Health check endpoint",
+        summary="Health check endpoint (legacy)",
         response_model=HealthCheckResponse,
         response_class=ORJSONResponse,
         responses={
@@ -173,7 +177,9 @@ if settings.HEALTH_CHECK_ENABLED:
     @limiter.exempt
     async def health_check(request: Request, email_client: EmailDep) -> ORJSONResponse:
         """
-        Health check endpoint with comprehensive status.
+        Health check endpoint with comprehensive status (legacy format).
+
+        Note: For Kubernetes deployments, use /health/live and /health/ready instead.
 
         Parameters
         ----------
@@ -239,71 +245,9 @@ async def get_favicon() -> FileResponse:
     return FileResponse("favicon.ico")
 
 
-@app.get(
-    "/metrics",
-    tags=["📈 Metrics"],
-    response_class=ORJSONResponse,
-    summary="Get metrics",
-    description="Get API performance metrics.",
-    responses={
-        200: {
-            "content": {
-                "application/json": {
-                    "example": {
-                        "timestamp": "2025-01-01",
-                        "api_metrics": {"requests": 100, "latency_ms_avg": 12.3},
-                        "system_metrics": {"cpu": 0.42, "mem": 0.58},
-                    },
-                },
-            },
-        },
-        429: {
-            "description": "Rate limit exceeded",
-            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
-        },
-    },
-    operation_id="get_metrics",
-)
-@limiter.limit("5/minute")
-async def get_metrics(request: Request, response: Response) -> ORJSONResponse:
-    """
-    Get API performance metrics.
-
-    Parameters
-    ----------
-    request : Request
-        Current request context.
-    response : Response
-        Current response context.
-
-    Returns
-    -------
-    ORJSONResponse
-        Dictionary containing performance metrics.
-
-    Notes
-    -----
-    Rate limited to 5 requests per minute.
-
-    Examples
-    --------
-    Request
-        GET /metrics
-    Response
-        200 OK
-        {"timestamp": "2025-01-01", "api_metrics": { ... }, "system_metrics": { ... }}
-    """
-
-    api_metrics = metrics_manager.get_metrics()
-    system_metrics = await get_system_metrics()
-
-    return ORJSONResponse(
-        content={
-            "timestamp": today_str(),
-            "api_metrics": api_metrics,
-            "system_metrics": system_metrics,
-        },
-    )
+# Note: The /metrics endpoint is now provided by Prometheus instrumentator
+# in Prometheus text format (not JSON). The old JSON metrics endpoint has been
+# removed. Use /metrics for Prometheus scraping.
 
 
 @app.get(
@@ -328,7 +272,7 @@ async def get_metrics(request: Request, response: Response) -> ORJSONResponse:
     operation_id="root_access",
 )
 @limiter.limit("5/minute")
-async def root(request: Request, response: Response) -> JSONResponse:
+async def root(request: Request) -> JSONResponse:
     """
     Root endpoint.
 
@@ -336,8 +280,6 @@ async def root(request: Request, response: Response) -> JSONResponse:
     ----------
     request : Request
         Current request context.
-    response : Response
-        Current response context.
 
     Returns
     -------
@@ -363,6 +305,13 @@ async def root(request: Request, response: Response) -> JSONResponse:
     }
     """
     return JSONResponse(content={"message": "Welcome to BaliBlissed Backend"})
+
+
+# Application shutdown hook for monitoring cleanup
+@app.on_event("shutdown")
+async def shutdown_event() -> None:
+    """Handle application shutdown for monitoring cleanup."""
+    shutdown_monitoring()
 
 
 if __name__ == "__main__":

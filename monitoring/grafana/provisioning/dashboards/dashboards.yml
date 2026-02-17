@@ -1,0 +1,17 @@
+# Grafana dashboard provisioning
+# https://grafana.com/docs/grafana/latest/administration/provisioning/#dashboards
+
+apiVersion: 1
+
+providers:
+  - name: 'BaliBlissed Dashboards'
+    orgId: 1
+    folder: 'BaliBlissed'
+    folderUid: 'baliblissed'
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

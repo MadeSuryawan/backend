@@ -1,0 +1,63 @@
+# Prometheus configuration for BaliBlissed Backend
+# https://prometheus.io/docs/prometheus/latest/configuration/configuration/
+
+global:
+  scrape_interval: 15s # How often to scrape targets
+  evaluation_interval: 15s # How often to evaluate rules
+  scrape_timeout: 10s # Scrape request timeout
+
+  # Attach these labels to any time series or alerts when communicating with
+  # external systems (federation, remote storage, Alertmanager)
+  external_labels:
+    monitor: 'baliblissed-monitor'
+    environment: 'development'
+
+# Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+# Rule files specifying recording rules and alerting rules
+# rule_files:
+#   - "alerts/*.yml"
+
+# Scrape configuration
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: /metrics
+
+  # BaliBlissed Backend API
+  - job_name: 'baliblissed-backend'
+    static_configs:
+      - targets: ['backend:8000']
+    metrics_path: /metrics
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    # Relabel configs to add service labels
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'baliblissed-api'
+
+  # OpenTelemetry Collector metrics
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8889']
+    metrics_path: /metrics
+
+  # Redis metrics (if redis-exporter is added)
+  # - job_name: 'redis'
+  #   static_configs:
+  #     - targets: ['redis-exporter:9121']
+
+# Remote write configuration (for long-term storage like Cortex, Thanos, or cloud providers)
+# remote_write:
+#   - url: "https://your-remote-write-endpoint/api/v1/write"
+#     basic_auth:
+#       username: "user"
+#       password: "password"
