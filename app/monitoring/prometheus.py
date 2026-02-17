@@ -452,6 +452,10 @@ def setup_metrics(app: FastAPI) -> Instrumentator:
 
     # Create and instrument the app
     instrumentator = create_instrumentator()
+
+    # Register custom metrics callback
+    instrumentator.add(metrics_callback)
+
     instrumentator.instrument(app)
 
     logger.info("Prometheus metrics initialized")
@@ -463,6 +467,10 @@ def expose_metrics(app: FastAPI, instrumentator: Instrumentator) -> None:
     """
     Expose the /metrics endpoint for Prometheus scraping.
 
+    The endpoint is protected by IP allowlist - only requests from
+    internal networks (127.0.0.1, 10.x.x.x, 172.16-31.x.x, 192.168.x.x)
+    are allowed to access metrics.
+
     Parameters
     ----------
     app : FastAPI
@@ -470,29 +478,54 @@ def expose_metrics(app: FastAPI, instrumentator: Instrumentator) -> None:
     instrumentator : Instrumentator
         The instrumentator instance from setup_metrics.
     """
-    instrumentator.expose(
-        app,
-        include_in_schema=False,
-        should_gzip=True,
-        endpoint="/metrics",
-        tags=["Monitoring"],
-    )
+    from fastapi import HTTPException
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+    from starlette.responses import Response as StarletteResponse
 
-    logger.info("Prometheus /metrics endpoint exposed")
+    @app.get("/metrics", include_in_schema=False, tags=["Monitoring"])
+    async def metrics_endpoint(request: Request) -> StarletteResponse:
+        """
+        Prometheus metrics endpoint with IP protection.
 
+        Only allows access from internal/trusted IP addresses.
+        """
+        # Get client IP from request
+        client_ip = request.client.host if request.client else "unknown"
 
-def metrics_middleware_factory() -> Callable[[Request, Response], None]:
-    """
-    Create middleware callback for updating metrics on each request.
+        # Check if IP is allowed
+        if not is_ip_allowed(client_ip):
+            logger.warning(f"Metrics access denied for IP: {client_ip}")
+            raise HTTPException(
+                status_code=403,
+                detail="Access to metrics endpoint is restricted",
+            )
 
-    Returns
-    -------
-    Callable
-        Middleware callback function.
-    """
-    async def callback(request: Request, response: Response) -> None:
-        """Update custom metrics after each request."""
-        # Update system metrics periodically (every request is fine for now)
+        # Update system metrics before generating output
         await update_system_metrics()
 
-    return callback
+        # Generate metrics output
+        metrics_output = generate_latest()
+        return StarletteResponse(
+            content=metrics_output,
+            media_type=CONTENT_TYPE_LATEST,
+        )
+
+    logger.info("Prometheus /metrics endpoint exposed with IP protection")
+
+
+def metrics_callback(info: MetricsInfo) -> None:
+    """
+    Callback for updating custom metrics after each request.
+
+    This is registered with the instrumentator to collect system metrics
+    periodically during normal request processing.
+
+    Parameters
+    ----------
+    info : MetricsInfo
+        Request/response information from the instrumentator.
+    """
+    # Note: We can't use async here as instrumentator callbacks are sync.
+    # System metrics are updated in the /metrics endpoint handler instead.
+    # This callback can be used for other sync metric updates if needed.
+    pass

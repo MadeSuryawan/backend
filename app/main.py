@@ -307,11 +307,9 @@ async def root(request: Request) -> JSONResponse:
     return JSONResponse(content={"message": "Welcome to BaliBlissed Backend"})
 
 
-# Application shutdown hook for monitoring cleanup
-@app.on_event("shutdown")
-async def shutdown_event() -> None:
-    """Handle application shutdown for monitoring cleanup."""
-    shutdown_monitoring()
+# Note: shutdown_monitoring() is called in the lifespan context manager
+# in app/middleware/middleware.py to avoid mixing deprecated @app.on_event
+# with the modern lifespan pattern.
 
 
 if __name__ == "__main__":

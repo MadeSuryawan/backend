@@ -17,12 +17,13 @@ from __future__ import annotations
 
 import os
 from logging import getLogger
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.configs import settings
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
+    from opentelemetry.trace import Span, Tracer
 
 logger = getLogger(__name__)
 
@@ -212,7 +213,7 @@ def shutdown_tracing() -> None:
         logger.warning("Error during tracing shutdown", exc_info=True)
 
 
-def get_tracer(name: str | None = None) -> trace.Tracer:
+def get_tracer(name: str | None = None) -> Tracer:
     """
     Get an OpenTelemetry tracer instance.
 
@@ -223,7 +224,7 @@ def get_tracer(name: str | None = None) -> trace.Tracer:
 
     Returns
     -------
-    trace.Tracer
+    Tracer
         An OpenTelemetry tracer instance.
     """
     from opentelemetry import trace
@@ -234,7 +235,7 @@ def get_tracer(name: str | None = None) -> trace.Tracer:
 def create_span(
     name: str,
     attributes: dict[str, str | int | float | bool] | None = None,
-) -> trace.Span:
+) -> Span:
     """
     Create a new span with the given name and attributes.
 
@@ -247,7 +248,7 @@ def create_span(
 
     Returns
     -------
-    trace.Span
+    Span
         The created span.
 
     Notes
@@ -259,7 +260,7 @@ def create_span(
     tracer = get_tracer()
 
     # Filter sensitive attributes
-    safe_attributes = {}
+    safe_attributes: dict[str, Any] = {}
     if attributes:
         for key, value in attributes.items():
             if key.lower() not in SENSITIVE_ATTRIBUTES:

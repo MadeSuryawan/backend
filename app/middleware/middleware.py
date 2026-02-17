@@ -139,6 +139,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Cleanup services
     try:
+        # Shutdown monitoring first to flush pending traces/metrics
+        from app.monitoring import shutdown_monitoring
+
+        shutdown_monitoring()
+
         if ai_client := app.state.ai_client:
             await ai_client.close()
         await close_db()
