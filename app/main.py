@@ -3,6 +3,7 @@
 """BaliBlissed Backend - Seamless caching integration with Redis for FastAPI."""
 
 from os import environ
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -236,7 +237,8 @@ if settings.HEALTH_CHECK_ENABLED:
 async def get_favicon() -> FileResponse:
     """Get favicon."""
 
-    return FileResponse("favicon.ico")
+    favicon_path = Path(__file__).parent / "favicon.ico"
+    return FileResponse(favicon_path)
 
 
 @app.get(
