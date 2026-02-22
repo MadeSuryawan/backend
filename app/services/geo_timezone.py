@@ -9,16 +9,15 @@ NOT on every request.
 """
 
 from json import loads
-from logging import getLogger
 from typing import Any
 
 from httpx import AsyncClient, ConnectError, HTTPError, TimeoutException
 
 from app.configs.settings import settings
 from app.decorators.with_retry import with_retry
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 @with_retry(

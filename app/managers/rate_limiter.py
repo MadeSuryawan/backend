@@ -1,7 +1,6 @@
 # app/managers/rate_limiter.py
 """Rate limiter configuration using slowapi."""
 
-from logging import getLogger
 from typing import cast
 
 from fastapi import Request
@@ -12,9 +11,9 @@ from slowapi.util import get_remote_address
 from starlette.status import HTTP_429_TOO_MANY_REQUESTS
 
 from app.configs import LimiterConfig
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 def get_identifier(request: Request) -> str:

@@ -1,14 +1,12 @@
 """Login attempt tracker for brute-force protection using Redis."""
 
-from logging import getLogger
-
 from redis.exceptions import RedisError
 
 from app.clients.redis_client import RedisClient
 from app.configs import settings
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 # Key prefixes for login attempts
 ATTEMPTS_PREFIX = "login:attempts:"

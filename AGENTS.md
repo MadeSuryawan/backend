@@ -240,7 +240,7 @@ uv run ruff format .
 
 ### Type Hints
 
-- Use `from __future__ import annotations` for forward references
+- Use `` for forward references
 - Use built-in generics: `list[str]` not `List[str]`
 - Use `|` for unions: `str | None` not `Optional[str]`
 - Use `type[ModelT]` for class references

@@ -21,8 +21,6 @@ Environment Variables:
     ADMIN_LAST_NAME: Last name (default: User)
 """
 
-from __future__ import annotations
-
 from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
 from asyncio import run as asyncio_run
 from dataclasses import dataclass

@@ -5,8 +5,6 @@ This module defines custom exceptions for file upload operations,
 including image validation and storage errors.
 """
 
-from logging import getLogger
-
 from starlette.status import (
     HTTP_400_BAD_REQUEST,
     HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -15,8 +13,9 @@ from starlette.status import (
 )
 
 from app.errors.base import BaseAppError, create_exception_handler
+from app.monitoring import get_logger
 
-logger = getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class UploadError(BaseAppError):

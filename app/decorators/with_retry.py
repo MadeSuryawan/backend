@@ -1,5 +1,4 @@
 from collections.abc import Awaitable, Callable
-from logging import getLogger
 from typing import ParamSpec, TypeVar
 
 from redis.exceptions import ConnectionError as RedisConnectionError
@@ -12,9 +11,9 @@ from tenacity import (
     wait_exponential,
 )
 
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 # Type variables for retry decorator
 P = ParamSpec("P")

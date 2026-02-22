@@ -36,7 +36,6 @@ Rate limits are enforced per-endpoint and can be configured via settings.
 """
 
 import secrets
-from logging import getLogger
 from typing import Annotated
 
 from authlib.integrations.starlette_client import OAuth
@@ -77,6 +76,7 @@ from app.managers.token_manager import (
     decode_password_reset_token,
     decode_verification_token,
 )
+from app.monitoring import get_logger
 from app.schemas.auth import (
     EmailVerificationRequest,
     LogoutRequest,
@@ -91,10 +91,9 @@ from app.schemas.auth import (
 from app.schemas.user import UserCreate, UserResponse, validate_user_response
 from app.services.geo_timezone import detect_timezone_by_ip
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
-from app.utils.helpers import file_logger
 
 router = APIRouter(prefix="/auth", tags=["🔐 Auth"])
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 # OAuth Configuration
 oauth = OAuth()

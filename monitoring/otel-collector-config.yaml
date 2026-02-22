@@ -1,0 +1,81 @@
+receivers:
+    otlp:
+        protocols:
+            grpc:
+                endpoint: 0.0.0.0:4317
+            http:
+                endpoint: 0.0.0.0:4318
+
+processors:
+    batch:
+        timeout: 1s
+        send_batch_size: 1024
+
+    # Redaction processor to remove sensitive data
+    redaction:
+        allowed_keys:
+            - trace_id
+            - span_id
+            - service.name
+            - http.method
+            - http.status_code
+            - http.route
+        blocked_values:
+            - "(?i)password"
+            - "(?i)token"
+            - "(?i)api[_-]?key"
+            - "(?i)secret"
+            - "(?i)authorization"
+        summary: info
+
+    # Resource detection
+    resource:
+        attributes:
+            - key: environment
+              value: production
+              action: upsert
+
+exporters:
+    # Jaeger OTLP exporter
+    otlp/jaeger:
+        endpoint: jaeger:4317
+        tls:
+            insecure: true
+
+    # Prometheus exporter for metrics
+    prometheus:
+        endpoint: 0.0.0.0:8889
+        namespace: baliblissed
+
+    # Debug/logging exporter
+    debug:
+        verbosity: info
+
+extensions:
+    health_check:
+        endpoint: 0.0.0.0:13133
+    pprof:
+        endpoint: 0.0.0.0:1888
+    zpages:
+        endpoint: 0.0.0.0:55679
+
+service:
+    telemetry:
+        metrics:
+            level: info
+            readers:
+                - pull:
+                      exporter:
+                          prometheus:
+                              host: 0.0.0.0
+                              port: 8888
+    extensions: [pprof, zpages, health_check]
+    pipelines:
+        traces:
+            receivers: [otlp]
+            processors: [redaction, batch, resource]
+            exporters: [otlp/jaeger, debug]
+        metrics:
+            receivers: [otlp]
+            processors: [batch]
+            exporters: [prometheus, debug]

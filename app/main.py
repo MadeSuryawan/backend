@@ -3,6 +3,12 @@
 """BaliBlissed Backend - Seamless caching integration with Redis for FastAPI."""
 
 from os import environ
+
+from app.configs import settings
+
+# Set timezone for consistent datetime handling
+environ["TZ"] = settings.TZ
+
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -17,10 +23,6 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import JSONResponse
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from app.configs import settings
-
-# Set timezone for consistent datetime handling
-environ["TZ"] = settings.TZ
 from app.decorators.caching import get_cache_manager
 from app.dependencies import EmailDep
 from app.errors import (
@@ -51,6 +53,13 @@ from app.middleware import (
     lifespan,
 )
 from app.middleware.context import ContextMiddleware
+from app.monitoring import (
+    HealthChecker,
+    configure_logging,
+    get_logger,
+    setup_prometheus,
+    setup_tracing,
+)
 from app.routes import (
     admin_router,
     ai_router,
@@ -63,9 +72,11 @@ from app.routes import (
     review_router,
     user_router,
 )
-from app.schemas import HealthCheckResponse
 from app.schemas.cache import CacheHealthResponse, CircuitBreakerStatus, ServicesStatus
 from app.utils.helpers import today_str
+
+configure_logging()
+logger = get_logger(__name__)
 
 # Configure API documentation endpoints based on settings
 app = FastAPI(
@@ -81,6 +92,12 @@ app = FastAPI(
         "operationsSorter": "method",
     },
 )
+
+# Set up Prometheus metrics (must be before other middleware)
+instrumentator = setup_prometheus(app)
+
+# Set up OpenTelemetry tracing
+setup_tracing(app)
 
 configure_cors(app)
 
@@ -140,30 +157,158 @@ _ = [app.add_exception_handler(exc_type, handler) for exc_type, handler in error
 app.state.limiter = limiter
 limiter: Limiter = app.state.limiter
 
+# Initialize health checker
+health_checker = HealthChecker(app, version=app.version)
 
+
+# Kubernetes-compatible health endpoints
+@app.get(
+    "/health/live",
+    tags=["🩺 Health"],
+    summary="Liveness probe",
+    response_model=dict,
+    response_class=ORJSONResponse,
+    include_in_schema=settings.DOCS_ENABLED,
+    operation_id="liveness_probe",
+)
+@limiter.exempt
+async def liveness_probe(request: Request) -> ORJSONResponse:
+    """
+    Kubernetes liveness probe endpoint.
+
+    This endpoint performs a basic check that the application is running.
+    It does NOT check external dependencies. If this fails, Kubernetes
+    will restart the pod.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+
+    Returns
+    -------
+    ORJSONResponse
+        Liveness status (always 200 if app is responsive).
+
+    Examples
+    --------
+    Request
+        GET /health/live
+    Response
+        200 OK
+        {"status": "live", "timestamp": "2025-01-01T12:00:00Z"}
+    """
+    status = health_checker.check_liveness()
+    return ORJSONResponse(
+        content=status.to_dict(),
+        status_code=200,
+    )
+
+
+@app.get(
+    "/health/ready",
+    tags=["🩺 Health"],
+    summary="Readiness probe",
+    response_model=dict,
+    response_class=ORJSONResponse,
+    include_in_schema=settings.DOCS_ENABLED,
+    responses={
+        200: {
+            "description": "Service is ready to accept traffic",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "ready",
+                        "timestamp": "2025-01-01T12:00:00Z",
+                        "version": "1.0.0",
+                        "checks": {
+                            "database": {"status": "pass", "response_ms": 15},
+                            "redis": {"status": "pass", "response_ms": 5},
+                            "disk": {"status": "pass", "usage_percent": 45},
+                        },
+                    },
+                },
+            },
+        },
+        503: {
+            "description": "Service is not ready",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "not_ready",
+                        "timestamp": "2025-01-01T12:00:00Z",
+                        "version": "1.0.0",
+                        "checks": {
+                            "database": {
+                                "status": "fail",
+                                "response_ms": 2000,
+                                "message": "Connection timeout",
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    },
+    operation_id="readiness_probe",
+)
+@limiter.exempt
+async def readiness_probe(request: Request) -> ORJSONResponse:
+    """
+    Kubernetes readiness probe endpoint.
+
+    This endpoint checks all external dependencies (database, Redis).
+    If this fails, Kubernetes stops routing traffic to the pod.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+
+    Returns
+    -------
+    ORJSONResponse
+        Readiness status with component checks.
+
+    Examples
+    --------
+    Request
+        GET /health/ready
+    Response
+        200 OK
+        {"status": "ready", "timestamp": "2025-01-01T12:00:00Z", "checks": {...}}
+    """
+    status = await health_checker.check_readiness()
+    status_code = 200 if status.is_healthy else 503
+    return ORJSONResponse(
+        content=status.to_dict(),
+        status_code=status_code,
+    )
+
+
+# Backward compatibility health endpoint
 if settings.HEALTH_CHECK_ENABLED:
 
     @app.get(
         settings.HEALTH_CHECK_ENDPOINT,
         tags=["🩺 Health"],
-        summary="Health check endpoint",
-        response_model=HealthCheckResponse,
+        summary="Health check endpoint (legacy)",
+        response_model=dict,
         response_class=ORJSONResponse,
+        include_in_schema=settings.DOCS_ENABLED,
         responses={
             200: {
                 "content": {
                     "application/json": {
                         "example": {
                             "version": "1.0.0",
-                            "status": "ok",
-                            "timestamp": "2025-01-01",
-                            "services": {
-                                "ai_client": "initialized",
-                                "email_client": "available",
-                                "ai_circuit_breaker": "closed",
-                                "email_circuit_breaker": "closed",
+                            "status": "ready",
+                            "timestamp": "2025-01-01T12:00:00Z",
+                            "checks": {
+                                "database": {"status": "pass", "response_ms": 15},
+                                "redis": {"status": "pass", "response_ms": 5},
+                                "disk": {"status": "pass", "usage_percent": 45},
                             },
-                            "cache": {"status": "healthy"},
                         },
                     },
                 },
@@ -174,7 +319,10 @@ if settings.HEALTH_CHECK_ENABLED:
     @limiter.exempt
     async def health_check(request: Request, email_client: EmailDep) -> ORJSONResponse:
         """
-        Health check endpoint with comprehensive status.
+        Health check endpoint with comprehensive status (legacy format).
+
+        This endpoint is kept for backward compatibility. New deployments
+        should use /health/live and /health/ready instead.
 
         Parameters
         ----------
@@ -194,7 +342,7 @@ if settings.HEALTH_CHECK_ENABLED:
             GET /health
         Response
             200 OK
-            {"version": "1.0.0", "status": "ok", "timestamp": "2025-01-01", "services": { ... }, "cache": { ... }}
+            {"version": "1.0.0", "status": "ready", ...}
         """
         # Get cache health info
         cache_health_data = await get_cache_manager(request).health_check()
@@ -206,12 +354,14 @@ if settings.HEALTH_CHECK_ENABLED:
             else "not_initialized"
         )
 
-        # Determine Email client status (check if credentials are configured)
+        # Determine Email client status
         try:
-            # Check if service can be initialized (credentials available)
             email_client_status = "available" if email_client.service else "not_configured"
         except EmailServiceError:
             email_client_status = "not_configured"
+
+        # Get readiness status
+        readiness = await health_checker.check_readiness()
 
         # Build services status
         services = ServicesStatus(
@@ -221,13 +371,14 @@ if settings.HEALTH_CHECK_ENABLED:
             email_circuit_breaker=CircuitBreakerStatus(**email_circuit_breaker.get_state()),
         )
 
-        # Build response
+        # Build response combining new and legacy formats
         response_data = {
             "version": app.version,
-            "status": "ok",
+            "status": readiness.status.value,
             "timestamp": today_str(),
             "services": services.model_dump(),
             "cache": CacheHealthResponse(**cache_health_data).model_dump(),
+            "checks": readiness.to_dict().get("checks", {}),
         }
 
         return ORJSONResponse(response_data)
@@ -236,17 +387,18 @@ if settings.HEALTH_CHECK_ENABLED:
 @app.get("/favicon.ico", tags=["🖼️ Assets"], include_in_schema=False)
 async def get_favicon() -> FileResponse:
     """Get favicon."""
-
     favicon_path = Path(__file__).parent / "favicon.ico"
     return FileResponse(favicon_path)
 
 
+# Legacy metrics endpoint (redirects to Prometheus format)
 @app.get(
-    "/metrics",
+    "/metrics/legacy",
     tags=["📈 Metrics"],
     response_class=ORJSONResponse,
-    summary="Get metrics",
-    description="Get API performance metrics.",
+    summary="Get legacy metrics format",
+    description="Get API performance metrics in legacy JSON format.",
+    include_in_schema=settings.DOCS_ENABLED,
     responses={
         200: {
             "content": {
@@ -259,17 +411,16 @@ async def get_favicon() -> FileResponse:
                 },
             },
         },
-        429: {
-            "description": "Rate limit exceeded",
-            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
-        },
     },
-    operation_id="get_metrics",
+    operation_id="get_metrics_legacy",
 )
 @limiter.limit("5/minute")
-async def get_metrics(request: Request, response: Response) -> ORJSONResponse:
+async def get_metrics_legacy(request: Request, response: Response) -> ORJSONResponse:
     """
-    Get API performance metrics.
+    Get API performance metrics in legacy format.
+
+    This endpoint is kept for backward compatibility.
+    The new /metrics endpoint provides Prometheus format.
 
     Parameters
     ----------
@@ -290,10 +441,10 @@ async def get_metrics(request: Request, response: Response) -> ORJSONResponse:
     Examples
     --------
     Request
-        GET /metrics
+        GET /metrics/legacy
     Response
         200 OK
-        {"timestamp": "2025-01-01", "api_metrics": { ... }, "system_metrics": { ... }}
+        {"timestamp": "2025-01-01", "api_metrics": {...}, "system_metrics": {...}}
     """
 
     api_metrics = metrics_manager.get_metrics()
@@ -322,10 +473,6 @@ async def get_metrics(request: Request, response: Response) -> ORJSONResponse:
                 },
             },
         },
-        429: {
-            "description": "Rate limit exceeded",
-            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
-        },
     },
     operation_id="root_access",
 )
@@ -346,10 +493,6 @@ async def root(request: Request, response: Response) -> JSONResponse:
     JSONResponse
         Welcome message payload.
 
-    Notes
-    -----
-    Rate limited to 5 requests per minute.
-
     Examples
     --------
     Request
@@ -357,12 +500,6 @@ async def root(request: Request, response: Response) -> JSONResponse:
     Response
         200 OK
         {"message": "Welcome to BaliBlissed Backend"}
-
-    Response schema
-    ---------------
-    {
-      "message": str
-    }
     """
     return JSONResponse(content={"message": "Welcome to BaliBlissed Backend"})
 

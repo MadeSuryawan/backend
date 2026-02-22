@@ -62,10 +62,10 @@ async def test_metrics_rate_limit(client: AsyncClient) -> None:
 
     # Hit the endpoint 5 times (allowed)
     for _ in range(5):
-        response = await client.get("/metrics", headers=headers)
+        response = await client.get("/metrics/legacy", headers=headers)
         assert response.status_code == 200
 
     # The 6th request should be rate limited
-    response = await client.get("/metrics", headers=headers)
+    response = await client.get("/metrics/legacy", headers=headers)
     assert response.status_code == 429
     assert "Rate limit exceeded" in response.text

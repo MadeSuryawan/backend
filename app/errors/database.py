@@ -1,5 +1,4 @@
-import re
-from logging import getLogger
+from re import search as re_search
 
 from starlette.status import (
     HTTP_404_NOT_FOUND,
@@ -8,9 +7,9 @@ from starlette.status import (
 )
 
 from app.errors.base import BaseAppError, create_exception_handler
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 def parse_unique_violation(error_msg: str) -> str:
@@ -32,7 +31,7 @@ def parse_unique_violation(error_msg: str) -> str:
     # Regex to match the DETAIL pattern in PostgreSQL unique violation errors
     # Pattern: Key (field_name)=(value) already exists.
     pattern = r"Key \((?P<field>.*)\)=\((?P<value>.*)\) already exists"
-    match = re.search(pattern, error_msg)
+    match = re_search(pattern, error_msg)
 
     if match:
         field = match.group("field")

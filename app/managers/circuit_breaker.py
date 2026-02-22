@@ -18,17 +18,14 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
 from functools import wraps
-from logging import getLogger
 from time import time
-from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
+from typing import Any, ParamSpec, TypeVar, cast
+from warnings import warn
 
 from app.errors import AiError, CircuitBreakerError, EmailServiceError
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger, metrics
 
-if TYPE_CHECKING:
-    from app.managers.metrics import MetricsManager
-
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 # Type variables for generic decorator support
 P = ParamSpec("P")
@@ -53,7 +50,7 @@ class CircuitBreakerConfig:
     expected_exceptions: type[Exception] | tuple[type[Exception], ...] = Exception
     half_open_max_calls: int = 1
     success_threshold: int = 1
-    metrics_manager: "MetricsManager | None" = None
+    metrics_manager: None = None  # Deprecated: use Prometheus metrics directly
 
 
 class CircuitBreaker:
@@ -108,7 +105,7 @@ class CircuitBreaker:
         self.expected_exceptions = config.expected_exceptions
         self.half_open_max_calls = config.half_open_max_calls
         self.success_threshold = config.success_threshold
-        self._metrics_manager = config.metrics_manager
+        self._metrics_manager = None  # Deprecated: use Prometheus metrics
 
         # Internal state (protected by async lock)
         self._failure_count: int = 0
@@ -116,6 +113,9 @@ class CircuitBreaker:
         self._last_failure_time: float | None = None
         self._state: CircuitState = CircuitState.CLOSED
         self._lock: Lock = Lock()
+
+        # Initialize Prometheus metric
+        self._update_prometheus_state()
 
     @property
     def state(self) -> CircuitState:
@@ -155,7 +155,7 @@ class CircuitBreaker:
         """
         exc = cast(type[Exception], self.expected_exceptions)
         async with self._lock:
-            await self._check_state()
+            self._check_state()
 
         try:
             result = await func(*args, **kwargs)
@@ -165,7 +165,7 @@ class CircuitBreaker:
             await self._on_failure()
             raise
 
-    async def _check_state(self) -> None:
+    def _check_state(self) -> None:
         """
         Check circuit state and transition if necessary.
 
@@ -176,6 +176,7 @@ class CircuitBreaker:
             if self._should_attempt_reset():
                 self._state = CircuitState.HALF_OPEN
                 self._half_open_successes = 0
+                self._update_prometheus_state()
                 logger.info(f"Circuit breaker '{self.name}' entering HALF_OPEN state")
             else:
                 retry_after = self._time_until_reset()
@@ -210,6 +211,7 @@ class CircuitBreaker:
                     self._state = CircuitState.CLOSED
                     self._failure_count = 0
                     self._half_open_successes = 0
+                    self._update_prometheus_state()
                     logger.info(f"Circuit breaker '{self.name}' recovered, now CLOSED")
             elif self._state == CircuitState.CLOSED:
                 # Reset failure count on success in CLOSED state
@@ -225,12 +227,14 @@ class CircuitBreaker:
                 # Any failure in HALF_OPEN reopens the circuit
                 self._state = CircuitState.OPEN
                 self._half_open_successes = 0
+                self._update_prometheus_state()
                 logger.warning(
                     f"Circuit breaker '{self.name}' reopened after failure in HALF_OPEN",
                 )
                 self._record_circuit_open()
             elif self._failure_count >= self.failure_threshold:
                 self._state = CircuitState.OPEN
+                self._update_prometheus_state()
                 logger.error(
                     f"Circuit breaker '{self.name}' OPENED after "
                     f"{self._failure_count} consecutive failures",
@@ -238,18 +242,37 @@ class CircuitBreaker:
                 self._record_circuit_open()
 
     def _record_circuit_open(self) -> None:
-        """Record circuit open event to metrics if available."""
-        if self._metrics_manager is not None:
-            self._metrics_manager.record_circuit_breaker_open()
+        """Record circuit open event to Prometheus metrics."""
+        # Record to Prometheus
+        metrics.set_circuit_breaker_state(self.name, 1)
+        metrics.circuit_breaker_opens_total.labels(breaker_name=self.name).inc()
 
-    def set_metrics_manager(self, metrics_manager: "MetricsManager") -> None:
+    def _update_prometheus_state(self) -> None:
+        """Update Prometheus metric with current circuit state."""
+        state_value = {
+            CircuitState.CLOSED: 0,
+            CircuitState.OPEN: 1,
+            CircuitState.HALF_OPEN: 2,
+        }.get(self._state, 0)
+        metrics.set_circuit_breaker_state(self.name, state_value)
+
+    def set_metrics_manager(self, _: object | None = None) -> None:
         """
-        Set the metrics manager for recording circuit breaker events.
+        Set metrics manager (deprecated).
+
+        This method is kept for backward compatibility but does nothing.
+        Metrics are now automatically sent to Prometheus.
 
         Args:
-            metrics_manager: MetricsManager instance for recording events.
+            metrics_manager: Ignored parameter.
         """
-        self._metrics_manager = metrics_manager
+
+        warn(
+            "set_metrics_manager is deprecated. Metrics are now automatically "
+            "sent to Prometheus. This method will be removed in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     async def reset(self) -> None:
         """Manually reset circuit breaker to CLOSED state."""
@@ -258,6 +281,7 @@ class CircuitBreaker:
             self._half_open_successes = 0
             self._last_failure_time = None
             self._state = CircuitState.CLOSED
+        self._update_prometheus_state()
         logger.info(f"Circuit breaker '{self.name}' manually reset")
 
     def reset_sync(self) -> None:
@@ -271,6 +295,7 @@ class CircuitBreaker:
         self._half_open_successes = 0
         self._last_failure_time = None
         self._state = CircuitState.CLOSED
+        self._update_prometheus_state()
         logger.info(f"Circuit breaker '{self.name}' manually reset (sync)")
 
     def get_state(self) -> dict[str, Any]:

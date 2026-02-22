@@ -1,13 +1,13 @@
 """Cache statistics and monitoring module."""
 
 from dataclasses import dataclass, field
-from logging import getLogger
 from threading import Lock
 
+from app.monitoring import get_logger
 from app.schemas.cache import CacheStatisticsData
-from app.utils.helpers import file_logger, today_str
+from app.utils.helpers import today_str
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 @dataclass

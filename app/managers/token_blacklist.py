@@ -1,14 +1,13 @@
 """Token blacklist manager for JWT revocation using Redis."""
 
 from datetime import UTC, datetime
-from logging import getLogger
 
 from redis.exceptions import RedisError
 
 from app.clients.redis_client import RedisClient
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 # Key prefix for blacklisted tokens
 BLACKLIST_PREFIX = "token:blacklist:"

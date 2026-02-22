@@ -5,7 +5,6 @@ Endpoints to inspect limiter health and reset rate limits with clear error respo
 """
 
 from dataclasses import dataclass
-from logging import getLogger
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -13,10 +12,10 @@ from fastapi.responses import ORJSONResponse
 
 from app.dependencies import AdminUserDep, CacheDep
 from app.managers.rate_limiter import get_identifier
+from app.monitoring import get_logger
 from app.schemas import LimiterHealthResponse, LimiterResetRequest, LimiterResetResponse
-from app.utils.helpers import file_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/limiter", tags=["🚦 Limiter"])
 

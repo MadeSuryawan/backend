@@ -10,14 +10,13 @@ Rate Limiting
 All endpoints include explicit rate limits and `429` responses.
 """
 
-from logging import getLogger
-
 from fastapi import APIRouter, Request
 from fastapi.responses import ORJSONResponse
 
 from app.decorators.metrics import timed
 from app.dependencies import AdminUserDep, CacheDep
 from app.managers.rate_limiter import limiter
+from app.monitoring import get_logger
 from app.schemas import (
     CacheClearResponse,
     CachePingResponse,
@@ -25,9 +24,8 @@ from app.schemas import (
     CacheStatsResponse,
     CacheToggleResponse,
 )
-from app.utils.helpers import file_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/cache", tags=["🧰 Cache"])
 

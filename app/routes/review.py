@@ -5,7 +5,6 @@ Provides CRUD endpoints for user reviews with media upload support.
 """
 
 from dataclasses import dataclass
-from logging import getLogger
 from typing import Annotated, cast
 from uuid import UUID
 
@@ -29,6 +28,7 @@ from app.errors.upload import (
 )
 from app.managers.rate_limiter import limiter
 from app.models.review import ReviewDB
+from app.monitoring import get_logger
 from app.schemas.review import (
     MediaUploadResponse,
     ReviewCreate,
@@ -37,11 +37,11 @@ from app.schemas.review import (
     ReviewUpdate,
 )
 from app.services import MediaService
-from app.utils.helpers import file_logger, response_datetime
+from app.utils.helpers import response_datetime
 
 router = APIRouter(prefix="/reviews", tags=["⭐ Reviews"])
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)

@@ -2,7 +2,7 @@
 """Redis client module for cache operations with retry logic and health checks."""
 
 from collections.abc import AsyncGenerator, Awaitable
-from logging import DEBUG, getLogger
+from logging import DEBUG
 from time import monotonic
 from typing import Any
 
@@ -12,9 +12,9 @@ from redis.exceptions import RedisError
 
 from app.configs import pool_kwargs
 from app.decorators.with_retry import RETRIABLE_EXCEPTIONS, with_retry
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 class RedisClient:

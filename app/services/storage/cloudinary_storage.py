@@ -7,16 +7,15 @@ use. Offers automatic image optimization, CDN delivery, and transformations.
 
 from asyncio import get_event_loop
 from functools import partial
-from logging import getLogger
 
 from cloudinary import config, exceptions
 from cloudinary.api import delete_resources_by_prefix, resource
 from cloudinary.uploader import destroy, upload
 
 from app.configs.settings import settings
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 class CloudinaryStorage:

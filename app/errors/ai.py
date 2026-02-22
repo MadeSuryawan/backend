@@ -1,5 +1,4 @@
 from collections.abc import Awaitable, Callable
-from logging import getLogger
 
 from fastapi.responses import ORJSONResponse
 from starlette.requests import Request
@@ -12,9 +11,9 @@ from starlette.status import (
 )
 
 from app.errors.base import BaseAppError, create_exception_handler
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 class AiError(BaseAppError):
@@ -34,7 +33,8 @@ class AiAuthenticationError(AiError):
     """Authentication failed."""
 
     def __init__(
-        self, detail: str = "Our AI service is temporarily unavailable. Please try again later.",
+        self,
+        detail: str = "Our AI service is temporarily unavailable. Please try again later.",
     ) -> None:
         super().__init__(detail)
         self.detail = detail
@@ -45,7 +45,8 @@ class AiQuotaExceededError(AiError):
     """Quota exceeded."""
 
     def __init__(
-        self, detail: str = "We've reached our AI service limit. Please try again in a few moments.",
+        self,
+        detail: str = "We've reached our AI service limit. Please try again in a few moments.",
     ) -> None:
         super().__init__(detail)
         self.detail = detail
@@ -56,7 +57,8 @@ class AiNetworkError(AiError):
     """Network connectivity issues."""
 
     def __init__(
-        self, detail: str = "We're having trouble connecting to our AI service. Please try again.",
+        self,
+        detail: str = "We're having trouble connecting to our AI service. Please try again.",
     ) -> None:
         super().__init__(detail)
         self.detail = detail

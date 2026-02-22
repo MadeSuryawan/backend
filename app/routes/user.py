@@ -30,7 +30,6 @@ authenticated/identified clients.
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from logging import getLogger
 from typing import Annotated
 from uuid import UUID
 
@@ -70,6 +69,7 @@ from app.errors.upload import (
 )
 from app.managers.rate_limiter import limiter
 from app.models import UserDB
+from app.monitoring import get_logger
 from app.schemas import (
     TestimonialUpdate,
     UserCreate,
@@ -80,11 +80,10 @@ from app.schemas import (
 from app.services.geo_timezone import detect_timezone_by_ip
 from app.services.profile_picture import ProfilePictureService
 from app.utils.cache_keys import user_id_key, username_key, users_list_key
-from app.utils.helpers import file_logger
 
 router = APIRouter(prefix="/users", tags=["👤 Users"])
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)

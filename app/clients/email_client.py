@@ -5,7 +5,6 @@ from base64 import urlsafe_b64encode
 from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import parseaddr
-from logging import getLogger
 from os import chmod
 from re import compile as re_compile
 from socket import gaierror
@@ -24,9 +23,9 @@ from app.configs import settings
 from app.errors import AuthenticationError, ConfigurationError, SendingError
 from app.errors.email import NetworkError
 from app.managers.circuit_breaker import email_circuit_breaker
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 # Network-related exceptions that indicate connectivity issues
 NETWORK_EXCEPTIONS = (

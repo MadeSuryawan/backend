@@ -1,6 +1,5 @@
 # app/clients/ai_client.py
 
-from logging import getLogger
 from typing import cast
 
 from google.genai import Client
@@ -29,11 +28,11 @@ from app.errors import (
 )
 from app.errors.ai import ContactAnalysisError, ItineraryGenerationError
 from app.managers.circuit_breaker import ai_circuit_breaker
+from app.monitoring import get_logger
 from app.schemas.ai import ChatResponse, ItineraryMD, ItineraryTXT
 from app.schemas.email import AnalysisFormat, ContactAnalysisResponse
-from app.utils.helpers import file_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 # Network-related exceptions that should be caught and converted
 NETWORK_EXCEPTIONS = (

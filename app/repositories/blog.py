@@ -1,7 +1,6 @@
 """Blog repository for database operations."""
 
 from datetime import UTC, datetime
-from logging import getLogger
 from typing import Any, Literal, cast
 from uuid import UUID
 
@@ -12,11 +11,11 @@ from sqlalchemy.sql.expression import ColumnElement
 
 from app.errors.database import DuplicateEntryError
 from app.models.blog import BlogDB
+from app.monitoring import get_logger
 from app.repositories.base import BaseRepository
 from app.schemas.blog import BlogSchema, BlogUpdate
-from app.utils.helpers import file_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 def calculate_word_count(content: str) -> int:

@@ -5,7 +5,6 @@ Endpoints for administrative operations requiring admin role.
 """
 
 from datetime import UTC, datetime
-from logging import getLogger
 from typing import Annotated
 from uuid import UUID
 
@@ -20,6 +19,7 @@ from app.db import get_session
 from app.decorators.metrics import timed
 from app.dependencies import AdminUserDep, UserRepoDep
 from app.models import UserDB
+from app.monitoring import get_logger
 from app.schemas.admin import (
     AdminUserListResponse,
     AdminUserResponse,
@@ -28,10 +28,9 @@ from app.schemas.admin import (
     UserVerificationUpdate,
 )
 from app.schemas.user import validate_user_response
-from app.utils.helpers import file_logger
 
 router = APIRouter(prefix="/admin", tags=["👑 Admin"])
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 def _validate_admin_response(user_db: UserDB) -> AdminUserResponse:

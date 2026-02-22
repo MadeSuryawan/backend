@@ -1,8 +1,5 @@
 from collections.abc import MutableMapping
 from datetime import datetime
-from logging import INFO, Formatter, Logger, NullHandler
-from logging.handlers import RotatingFileHandler
-from pathlib import Path as SyncPath
 from time import perf_counter
 from typing import Any
 
@@ -15,33 +12,16 @@ from fastapi.routing import APIRoute
 from markdown import markdown
 from mdformat import text as mdformat_text
 from starlette.routing import BaseRoute, Match, Route
+from structlog.stdlib import BoundLogger
 
-from app.configs.settings import settings
 from app.models.blog import BlogDB
 from app.models.review import ReviewDB
 from app.models.user import UserDB
 from app.utils.timezone import format_api_response
 
 
-def file_logger(logger: Logger) -> Logger:
-    """Log to file."""
-    log_file = SyncPath(settings.LOG_FILE)
-    log_file.parent.mkdir(exist_ok=True)
-    file_handler = (
-        RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=5)
-        if settings.LOG_TO_FILE
-        else NullHandler()
-    )
-    file_handler.setLevel(INFO)
-    formatter = Formatter("%(asctime)s - %(filename)s - %(levelname)s - %(message)s")
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-    return logger
-
-
 def today_str() -> str:
     """Return today's date as a string."""
-    # return datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M:%S")
     return datetime.now(datetime.now().astimezone().tzinfo).strftime(
         "%Y-%m-%d %H:%M:%S",
     )
@@ -121,7 +101,7 @@ def response_datetime(
     return db_dict
 
 
-async def clean_markdown(text: str, logger: Logger) -> str:
+async def clean_markdown(text: str, logger: BoundLogger) -> str:
     """
     Format raw Markdown text to be CommonMark/GFM compliant.
 

@@ -1,4 +1,3 @@
-from logging import getLogger
 from pathlib import Path
 from sys import exit as sys_exit
 from sys import path
@@ -10,9 +9,9 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 path.append(f"{Path(__file__).parent.parent}")
 
 from app.configs import settings
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 def generate_token() -> None:

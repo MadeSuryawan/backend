@@ -1,6 +1,5 @@
 # app/services/itinerary.py
 
-from logging import getLogger
 from typing import cast
 
 # from anyio import Path
@@ -8,6 +7,7 @@ from fastapi import Request
 
 from app.clients.ai_client import AiClient
 from app.configs.settings import WHATSAPP_NUMBER
+from app.monitoring import get_logger
 from app.schemas.ai import (
     ItineraryMD,
     ItineraryRequestMD,
@@ -16,11 +16,11 @@ from app.schemas.ai import (
 )
 
 # from app.utils.helpers import md_to_text
-from app.utils.helpers import clean_markdown, file_logger, host
+from app.utils.helpers import clean_markdown, host
 
 # from app.utils.helpers import save_to_file
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 def topics(duration: int) -> str:

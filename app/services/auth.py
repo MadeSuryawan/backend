@@ -1,7 +1,6 @@
 """Authentication service handling manual and OAuth flows with enhanced security."""
 
 from datetime import UTC, datetime, timedelta
-from logging import getLogger
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -28,13 +27,13 @@ from app.managers.token_manager import (
     get_token_jti,
 )
 from app.models import UserDB
+from app.monitoring import get_logger
 from app.repositories import UserRepository
 from app.schemas.auth import Token, VerificationTokenData
 from app.schemas.user import UserCreate
 from app.services.email_template_builder import EmailTemplateBuilder
-from app.utils.helpers import file_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 class AuthService:

@@ -8,7 +8,6 @@ which is considered one of the most secure password hashing algorithms available
 from asyncio import get_event_loop
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
-from logging import getLogger
 
 from passlib.context import CryptContext
 from passlib.exc import InternalBackendError
@@ -16,10 +15,10 @@ from passlib.exc import InternalBackendError
 from app.configs import CONFIG_MAP, settings
 from app.decorators.with_retry import with_retry
 from app.errors import PasswordHashingError, PasswordRehashError
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
 executor = ThreadPoolExecutor(max_workers=4)
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 class PasswordHasher:

@@ -169,11 +169,11 @@ ask_recreate_db() {
         log_info ""
 
         log_info "🔧 Initializing database tables..."
-        python -m app.db.init_db
+        uv run python -m app.db.init_db
         log_info "✅ Database initialized"
     else
         log_info "🔧 Checking/updating database tables..."
-        python -m app.db.init_db
+        uv run python -m app.db.init_db
         log_info "✅ Database ready"
     fi
     log_info ""
@@ -209,18 +209,45 @@ start() {
     check_docker
     create_directories
     
-    # docker-compose --profile development up --build -d
-    docker-compose up -d
-    uvicorn app:app --host 127.0.0.1 --port 8000 --reload --workers 4 --loop uvloop --http httptools
+    # Start services with otel profile to enable the collector
+    docker-compose --profile otel up -d
+    uv run uvicorn app:app --host 127.0.0.1 --port 8000 --reload --workers 4 --loop uvloop --http httptools
     # log_success "Development environment started successfully!"
 }
 
 # Stop development environment
 stop() {
     log_info "Stopping BaliBlissed development environment..."
-    # docker-compose --profile development down
-    docker-compose down -v
+    load_env
+    # Stop services including those in the otel profile
+    docker-compose --profile otel down -v
+    
+    # Cleanup browser state to prevent auto-launch issues
+    if [ -f "./scripts/clean_browser.sh" ]; then
+        ./scripts/clean_browser.sh
+    fi
+    
     log_success "Development environment stopped successfully!"
+}
+
+# Clean development environment
+clean() {
+    log_info "Cleaning development environment..."
+    stop
+    log_success "Environment cleaned!"
+}
+
+# Reset development environment
+reset() {
+    log_info "Resetting development environment..."
+    clean
+    start
+}
+
+# Run tests
+test() {
+    log_info "Running tests..."
+    uv run pytest
 }
 
 case "${1:-help}" in

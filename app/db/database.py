@@ -2,7 +2,6 @@
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from logging import getLogger
 
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import (
@@ -14,9 +13,9 @@ from sqlalchemy.ext.asyncio import (
 from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
 from app.configs import settings
-from app.utils.helpers import file_logger
+from app.monitoring.logging import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 STATEMENT_TIMEOUT_MS = 30000
 

@@ -6,7 +6,6 @@ in the BaliBlissed application.
 """
 
 from datetime import UTC, datetime
-from logging import getLogger
 from typing import Any
 from uuid import UUID
 
@@ -24,10 +23,11 @@ from pydantic import (
 from pydantic_core import PydanticCustomError
 
 from app.models import UserDB
+from app.monitoring import get_logger
 from app.schemas.datetime import DateTimeResponse
-from app.utils.helpers import file_logger, response_datetime
+from app.utils.helpers import response_datetime
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 class UserValidationMixin:

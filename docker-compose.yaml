@@ -29,6 +29,92 @@ services:
     networks:
       - baliblissed-network
 
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--web.enable-lifecycle"
+    networks:
+      - baliblissed-network
+    depends_on:
+      - backend
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    env_file:
+      - ./secrets/.env
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+      # GitHub OAuth
+      - GF_AUTH_GITHUB_ENABLED=true
+      - GF_AUTH_GITHUB_ALLOW_SIGN_UP=true
+      - GF_AUTH_GITHUB_CLIENT_ID=${GF_AUTH_GITHUB_CLIENT_ID}
+      - GF_AUTH_GITHUB_CLIENT_SECRET=${GF_AUTH_GITHUB_CLIENT_SECRET}
+      - GF_AUTH_GITHUB_ALLOWED_USERS=${GF_AUTH_GITHUB_ALLOWED_USER}
+      - GF_AUTH_GITHUB_SCOPES=user:email,read:org
+    networks:
+      - baliblissed-network
+    depends_on:
+      - prometheus
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:16686:16686" # Jaeger UI
+      - "14268:14268" # Accept thrift directly
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - baliblissed-network
+
+  # OpenTelemetry Collector (optional - for production setups)
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./monitoring/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "1888:1888" # pprof extension
+      - "8888:8888" # Prometheus metrics exposed by the collector
+      - "8889:8889" # Prometheus exporter metrics
+      - "13133:13133" # health check extension
+      - "55679:55679" # zpages extension
+    environment:
+      - JAEGER_ENDPOINT=jaeger:14250
+    networks:
+      - baliblissed-network
+    depends_on:
+      - jaeger
+    profiles:
+      - otel # Only start with --profile otel
+
   backend:
     build:
       context: .
@@ -42,14 +128,32 @@ services:
       - ./secrets/client_secret.json:/app/secrets/client_secret.json:ro
     env_file:
       - ./secrets/.env
+    environment:
+      # OpenTelemetry configuration
+      - OTEL_SERVICE_NAME=baliblissed-backend
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_TRACES_SAMPLER_ARG=1.0
+      - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=/metrics,/health,/health/live,/health/ready,/favicon.ico
     depends_on:
       redis:
         condition: service_healthy
+      # Observability services are not required for startup
+      # They are optional for graceful degradation
     networks:
       - baliblissed-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 volumes:
   redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
     driver: local
 
 networks:

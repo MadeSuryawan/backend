@@ -6,7 +6,6 @@ from functools import wraps
 from hashlib import sha256
 from inspect import signature
 from json import dumps
-from logging import getLogger
 from typing import Any
 
 from fastapi import Request
@@ -18,9 +17,9 @@ from app.context import cache_manager_ctx
 from app.dependencies import get_cache_manager
 from app.errors import BASE_EXCEPTION, CacheKeyError
 from app.managers.cache_manager import CacheManager
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger, metrics
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 exceptions = (
     RedisError,
@@ -203,6 +202,7 @@ def cached(
             try:
                 skip = bool(kwargs.get("refresh", False))
                 if not skip and (cached_value := await cache_manager.get(cache_key, namespace)):
+                    metrics.record_cache_hit()
                     logger.debug(f"Cache hit for key: {cache_key}")
 
                     type_annotation = response_model or _infer_response_type_from_callable(func)
@@ -213,6 +213,8 @@ def cached(
             except exceptions as e:
                 logger.warning(f"Cache retrieval failed: {e}")
 
+            # Cache miss - record metric before fetching new value
+            metrics.record_cache_miss()
             return await cache_new_value(
                 func,
                 cache_manager,
@@ -249,7 +251,6 @@ async def cache_new_value(
             namespace=namespace,
         ):
             logger.debug(f"Cached result for key: {cache_key}")
-            return result
     except exceptions as e:
         logger.warning(f"{e}")
 

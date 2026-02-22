@@ -1,7 +1,5 @@
 """Authentication errors."""
 
-from logging import getLogger
-
 from starlette.status import (
     HTTP_400_BAD_REQUEST,
     HTTP_401_UNAUTHORIZED,
@@ -11,9 +9,9 @@ from starlette.status import (
 )
 
 from app.errors.base import BaseAppError, create_exception_handler
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 class UserAuthenticationError(BaseAppError):
@@ -85,7 +83,8 @@ class InvalidRefreshTokenError(UserAuthenticationError):
 
     def __init__(self) -> None:
         super().__init__(
-            "Your session has expired. Please sign in again to continue.", HTTP_401_UNAUTHORIZED,
+            "Your session has expired. Please sign in again to continue.",
+            HTTP_401_UNAUTHORIZED,
         )
 
 

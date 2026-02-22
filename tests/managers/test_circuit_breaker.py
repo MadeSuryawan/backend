@@ -3,10 +3,11 @@
 
 from asyncio import gather
 from asyncio import sleep as async_sleep
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.errors import AiError
 from app.managers.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
@@ -40,7 +41,7 @@ class TestCircuitBreakerInit:
         cb = CircuitBreaker(config=CircuitBreakerConfig())
         assert cb.name == "default"
         assert cb.failure_threshold == 5
-        assert cb.recovery_timeout == 60.0
+        assert cb.recovery_timeout == 60
         assert cb.half_open_max_calls == 1
         assert cb.success_threshold == 1
         assert cb.state == CircuitState.CLOSED
@@ -51,14 +52,14 @@ class TestCircuitBreakerInit:
             config=CircuitBreakerConfig(
                 name="custom",
                 failure_threshold=3,
-                recovery_timeout=30.0,
+                recovery_timeout=30,
                 half_open_max_calls=2,
                 success_threshold=2,
             ),
         )
         assert cb.name == "custom"
         assert cb.failure_threshold == 3
-        assert cb.recovery_timeout == 30.0
+        assert cb.recovery_timeout == 30
         assert cb.half_open_max_calls == 2
         assert cb.success_threshold == 2
 
@@ -276,26 +277,33 @@ class TestCircuitBreakerMetrics:
     @pytest.mark.asyncio
     async def test_records_circuit_open_event(self) -> None:
         """Test metrics are recorded when circuit opens."""
-        mock_metrics = MagicMock()
-        cb = CircuitBreaker(
-            config=CircuitBreakerConfig(failure_threshold=1, metrics_manager=mock_metrics),
-        )
 
-        async def failing_func() -> None:
-            raise ValueError("error")
+        with patch("app.managers.circuit_breaker.metrics") as mock_metrics:
+            cb = CircuitBreaker(
+                config=CircuitBreakerConfig(
+                    failure_threshold=1,
+                    expected_exceptions=AiError,
+                ),
+            )
 
-        with pytest.raises(ValueError):
-            await cb.call(failing_func)
+            async def failing_func() -> None:
+                raise AiError("error")
 
-        mock_metrics.record_circuit_breaker_open.assert_called_once()
+            with pytest.raises(AiError):
+                await cb.call(failing_func)
+
+            # 1 for initialization (CLOSED -> 0)
+            # 1 for opening (OPEN -> 1)
+            assert mock_metrics.set_circuit_breaker_state.call_count >= 2
+            mock_metrics.circuit_breaker_opens_total.labels.return_value.inc.assert_called_once()
 
     def test_set_metrics_manager(self) -> None:
-        """Test setting metrics manager after initialization."""
+        """Test setting metrics manager issues deprecation warning."""
         cb = CircuitBreaker(config=CircuitBreakerConfig())
         mock_metrics = MagicMock()
 
-        cb.set_metrics_manager(mock_metrics)
-        assert cb._metrics_manager == mock_metrics
+        with pytest.warns(DeprecationWarning, match="set_metrics_manager is deprecated"):
+            cb.set_metrics_manager(mock_metrics)
 
 
 class TestCircuitBreakerStatus:

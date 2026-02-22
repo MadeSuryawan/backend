@@ -10,13 +10,12 @@ Note:
 """
 
 from asyncio import run as asyncio_run
-from logging import getLogger
 
 from app.db.database import init_db
 from app.errors.database import DatabaseInitializationError
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 async def main() -> None:

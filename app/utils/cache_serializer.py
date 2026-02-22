@@ -8,7 +8,6 @@ Falls back to standard json if orjson is not available.
 from base64 import b64decode, b64encode
 from gzip import compress as gzip_compress
 from gzip import decompress as gzip_decompress
-from logging import getLogger
 from typing import Any
 
 from pydantic_core import PydanticSerializationError
@@ -19,7 +18,7 @@ from app.errors import (
     CacheDeserializationError,
     CacheSerializationError,
 )
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
 # from app.schemas.items import Item
 
@@ -36,7 +35,7 @@ except ImportError:
 
     _HAS_ORJSON = False
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 COMPRESSION_MARKER = b"\x00GZIP\x00"
 

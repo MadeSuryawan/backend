@@ -23,7 +23,6 @@ Rate Limiting
 Write and read operations are rate limited to protect the service.
 """
 
-from logging import getLogger
 from typing import Annotated
 
 from fastapi import APIRouter, Body, HTTPException, Query, Request, Response
@@ -34,10 +33,10 @@ from starlette.status import HTTP_404_NOT_FOUND
 from app.decorators.caching import cache_busting, cached, get_cache_manager
 from app.decorators.metrics import timed
 from app.managers.rate_limiter import limiter
+from app.monitoring import get_logger
 from app.schemas import Item, ItemUpdate
-from app.utils.helpers import file_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/items", tags=["📦 Items"], include_in_schema=False)
 

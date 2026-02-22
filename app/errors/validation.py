@@ -1,6 +1,5 @@
 """Custom validation error handling for FastAPI."""
 
-from logging import getLogger
 from typing import cast
 
 from fastapi import Request
@@ -9,9 +8,10 @@ from fastapi.responses import ORJSONResponse
 from starlette.status import HTTP_422_UNPROCESSABLE_CONTENT
 
 from app.errors import BaseAppError
-from app.utils.helpers import file_logger, host
+from app.monitoring import get_logger
+from app.utils.helpers import host
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 class ValidationError(BaseAppError):

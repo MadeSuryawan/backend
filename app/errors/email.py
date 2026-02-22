@@ -1,5 +1,3 @@
-from logging import getLogger
-
 from starlette.status import (
     HTTP_401_UNAUTHORIZED,
     HTTP_500_INTERNAL_SERVER_ERROR,
@@ -8,16 +6,17 @@ from starlette.status import (
 )
 
 from app.errors import BaseAppError, create_exception_handler
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 class EmailServiceError(BaseAppError):
     """Base class for all email service related errors."""
 
     def __init__(
-        self, detail: str = "We're having trouble sending emails right now. Please try again later.",
+        self,
+        detail: str = "We're having trouble sending emails right now. Please try again later.",
     ) -> None:
         super().__init__(
             detail=detail,
@@ -29,7 +28,8 @@ class ConfigurationError(EmailServiceError):
     """Raised when files (secrets/tokens) are missing."""
 
     def __init__(
-        self, detail: str = "Email services are temporarily unavailable. Please try again later.",
+        self,
+        detail: str = "Email services are temporarily unavailable. Please try again later.",
     ) -> None:
         super().__init__(detail)
         self.detail = detail
@@ -40,7 +40,8 @@ class AuthenticationError(EmailServiceError):
     """Raised when OAuth2 token refresh fails."""
 
     def __init__(
-        self, detail: str = "We're having trouble sending emails right now. Please try again later.",
+        self,
+        detail: str = "We're having trouble sending emails right now. Please try again later.",
     ) -> None:
         super().__init__(detail)
         self.detail = detail

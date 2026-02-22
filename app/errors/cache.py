@@ -1,13 +1,11 @@
 """Custom exceptions for caching module."""
 
-from logging import getLogger
-
 from starlette import status
 
 from app.errors import BaseAppError, create_exception_handler
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 class CacheExceptionError(BaseAppError):

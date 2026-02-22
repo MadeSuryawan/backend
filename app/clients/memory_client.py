@@ -6,13 +6,13 @@ from collections import OrderedDict
 from collections.abc import AsyncGenerator
 from contextlib import suppress
 from fnmatch import fnmatch
-from logging import DEBUG, getLogger
+from logging import DEBUG
 from sys import getsizeof
 from time import time
 
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 class MemoryClient:

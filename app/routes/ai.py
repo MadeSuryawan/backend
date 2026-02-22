@@ -16,7 +16,6 @@ All endpoints define explicit rate limits and include `429` response examples.
 """
 
 from dataclasses import dataclass
-from logging import getLogger
 from typing import Annotated
 from uuid import UUID
 
@@ -35,6 +34,7 @@ from app.dependencies import (
     get_authorized_user,
 )
 from app.managers.rate_limiter import limiter
+from app.monitoring import get_logger
 from app.schemas.ai import (
     ChatRequest,
     ChatResponse,
@@ -47,9 +47,8 @@ from app.schemas.email import ContactAnalysisResponse, EmailInquiry
 from app.services.chatbot import chat_with_ai
 from app.services.email_inquiry import analyze_contact, confirmation_message
 from app.services.itinerary import ai_convert_txt, generate_itinerary
-from app.utils.helpers import file_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/ai", tags=["🤖 Ai"])
 

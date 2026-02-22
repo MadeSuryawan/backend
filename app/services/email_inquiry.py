@@ -1,14 +1,14 @@
-from logging import getLogger
 from typing import cast
 
 from fastapi import Request
 from pydantic import ValidationError
 
 from app.clients.ai_client import AiClient
+from app.monitoring import get_logger
 from app.schemas.email import AnalysisFormat, ContactAnalysisResponse, EmailInquiry
-from app.utils.helpers import file_logger, host
+from app.utils.helpers import host
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 def contact_analysis_prompt(name: str, message: str) -> str:

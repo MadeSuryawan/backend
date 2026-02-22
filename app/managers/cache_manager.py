@@ -4,7 +4,7 @@
 from asyncio import Lock as AsyncLock
 from collections import OrderedDict
 from collections.abc import Callable, Coroutine
-from logging import DEBUG, getLogger
+from logging import DEBUG
 from threading import Lock as ThreadLock
 from typing import Any
 
@@ -18,6 +18,7 @@ from app.clients.redis_client import RedisClient
 from app.configs import CacheConfig, settings
 from app.data import CacheStatistics
 from app.errors import BASE_EXCEPTION, CacheDeserializationError, CacheKeyError
+from app.monitoring import get_logger
 from app.schemas import CacheToggleResponse
 from app.schemas.cache import CacheStatisticsData
 from app.utils.cache_serializer import (
@@ -27,9 +28,8 @@ from app.utils.cache_serializer import (
     do_compress,
     serialize,
 )
-from app.utils.helpers import file_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 CacheCallback = Callable[..., Coroutine[Any, Any, Any]]

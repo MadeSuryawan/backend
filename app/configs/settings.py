@@ -159,10 +159,17 @@ class Settings(BaseSettings):
     # API Documentation
     DOCS_ENABLED: bool = True
 
+    # Monitoring & Metrics
+    ENABLE_METRICS: bool = False
+
+    # OpenTelemetry Configuration
+    OTEL_CONSOLE_EXPORT_ENABLED: bool = False  # Export traces to console (useful for debugging)
+
     # Environment
     ENVIRONMENT: str = "development"
     LOG_TO_FILE: bool = True
     LOG_FILE: str = "logs/app.log"
+    LOG_EXCLUDED_PATHS: str = "/metrics,/health,/health/live,/health/ready,/favicon.ico"
     PRODUCTION_FRONTEND_URL: str | None = None
 
     # Localization
@@ -314,6 +321,9 @@ class Settings(BaseSettings):
     SENTRY_ENVIRONMENT: str = "development"
     SENTRY_TRACES_SAMPLE_RATE: float = 0.1
 
+    # OpenTelemetry Configuration
+    OTEL_TRACES_SAMPLER_ARG: float = 0.1
+
     # Webhook Configuration
     WEBHOOK_SECRET: str | None = None
 
@@ -421,6 +431,11 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         """Get CORS_ORIGINS as a list of strings."""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def log_excluded_paths_list(self) -> list[str]:
+        """Get LOG_EXCLUDED_PATHS as a list of strings."""
+        return [path.strip() for path in self.LOG_EXCLUDED_PATHS.split(",") if path.strip()]
 
 
 settings = Settings()
@@ -630,14 +645,15 @@ def get_context(level: str) -> CryptContext:
 
 def print_config_info() -> None:
     """Print detailed information about all security levels."""
-    rprint("\n" + "[yellow]=[yellow]" * 80)
+    yellow = "[yellow]=[yellow]" * 80
+    rprint("\n" + yellow)
     rprint("[b i blue]Password Hashing Configuration Guide[b i blue]")
-    rprint("[yellow]=[yellow]" * 80)
+    rprint(yellow)
 
     for level, config in CONFIG_MAP.items():
         mem_cost: int = config.memory_cost
         rprint(f"\n[b green]{level.upper()}:[b green]")
-        rprint("[yellow]=[yellow]" * 80)
+        rprint(yellow)
         rprint(
             f"\t[i blue]Description:[i blue]        [green]{config.description}[green]",
         )
@@ -654,9 +670,9 @@ def print_config_info() -> None:
             f"\t[i blue]Estimated Time:[i blue]     [green]{config.hash_time}[green]",
         )
 
-    rprint("\n" + "[yellow]=[yellow]" * 80)
+    rprint("\n" + yellow)
     rprint("[b i blue]Recommendations:[b i blue]")
-    rprint("[yellow]=[yellow]" * 80)
+    rprint(yellow)
     rprint("""
   DEVELOPMENT:
     Use for local testing and development

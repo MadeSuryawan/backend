@@ -31,7 +31,6 @@ authenticated/identified clients.
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from logging import getLogger
 from typing import Annotated, Literal, Never, cast
 from uuid import UUID
 
@@ -70,14 +69,15 @@ from app.errors.upload import (
 )
 from app.managers.rate_limiter import limiter
 from app.models import BlogDB
+from app.monitoring import get_logger
 from app.schemas import BlogCreate, BlogListResponse, BlogResponse, BlogSchema, BlogUpdate
 from app.schemas.review import MediaUploadResponse
 from app.services import MediaService
-from app.utils.helpers import file_logger, response_datetime
+from app.utils.helpers import response_datetime
 
 router = APIRouter(prefix="/blogs", tags=["📝 Blogs"])
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)

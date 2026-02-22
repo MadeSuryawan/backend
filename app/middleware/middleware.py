@@ -29,13 +29,12 @@ from asyncio import get_event_loop
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from logging import basicConfig, getLogger
 from time import perf_counter
+from uuid import uuid4
 
 from anyio import Path as AsyncPath
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from rich.logging import RichHandler
 from rich.traceback import install
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from uvloop import Loop
@@ -47,19 +46,14 @@ from app.managers.cache_manager import CacheManager
 from app.managers.login_attempt_tracker import init_login_tracker
 from app.managers.rate_limiter import close_limiter
 from app.managers.token_blacklist import init_token_blacklist
-from app.utils.helpers import file_logger, get_summary, host
+from app.monitoring import get_logger
+from app.monitoring.logging import bind_request_id, clear_context
+from app.utils.helpers import get_summary, host
 from app.utils.timezone import format_logs
 
-# --- Logging Configuration ---
-basicConfig(
-    level=settings.LOG_LEVEL,
-    format="%(message)s",
-    datefmt="%X",
-    handlers=[RichHandler(rich_tracebacks=True)],
-)
-logger = getLogger("rich")
-file_logger(logger)
+logger = get_logger(__name__)
 
+# Install rich tracebacks for better error display
 install()
 
 
@@ -125,7 +119,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         logger.info("  - API Documentation: http://localhost:8000/docs")
         logger.info("  - API Documentation (ReDoc): http://localhost:8000/redoc")
         logger.info("  - Health Check: http://localhost:8000/health")
+        logger.info("  - Health Live: http://localhost:8000/health/live")
+        logger.info("  - Health Ready: http://localhost:8000/health/ready")
         logger.info("  - Metrics: http://localhost:8000/metrics")
+        logger.info("  - Legacy Metrics: http://localhost:8000/metrics/legacy")
+        logger.info("  - Grafana: http://localhost:3000")
+        logger.info("  - Prometheus: http://localhost:9090")
+        logger.info("  - Jaeger UI: http://localhost:16686")
         logger.info("  - Redis Commander: http://localhost:8081")
 
     except Exception:
@@ -192,7 +192,8 @@ class LoggingMiddleware(BaseHTTPMiddleware):
     Middleware for logging request and response information.
 
     Logs request details including method, path, client IP, and
-    response status code with timing information.
+    response status code with timing information. Binds request_id
+    for log correlation.
 
     Examples
     --------
@@ -210,7 +211,8 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         Log request summary and timing information.
 
         Processes the request through the middleware chain and logs
-        request details and response timing.
+        request details and response timing. Binds a request_id to
+        the logging context for correlation.
 
         Parameters
         ----------
@@ -228,6 +230,12 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         --------
         >>> response = await middleware.dispatch(request, call_next)
         """
+        # Generate and bind request ID for log correlation
+        request_id = str(uuid4())[:8]
+        bind_request_id(request_id)
+
+        # Check if path should be excluded from logs
+        should_log = request.url.path not in settings.log_excluded_paths_list
 
         start_time = perf_counter()
         summary = get_summary(request)
@@ -235,15 +243,33 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         # Log in Bali timezone for server/admin visibility
         bali_time = format_logs(datetime.now(UTC), settings.TZ)
         route_info = summary or f"{request.method} {request.url.path}"
-        logger.info(f"[{bali_time}] Request: {route_info}, from ip: {host(request)}")
+        client_ip = host(request)
+
+        if should_log:
+            logger.info(
+                "Request started",
+                path=request.url.path,
+                route_info=route_info,
+                client_ip=client_ip,
+                bali_time=bali_time,
+            )
 
         response = await call_next(request)
         duration = perf_counter() - start_time
 
-        logger.info(
-            f"Response: {response.status_code} for {request.method} {request.url.path} "
-            f"in {duration:.2f}s\n",
-        )
+        # Add request ID to response headers
+        response.headers["X-Request-ID"] = request_id
+
+        if should_log:
+            logger.info(
+                "Request completed",
+                path=request.url.path,
+                status_code=response.status_code,
+                duration_seconds=round(duration, 3),
+            )
+
+        # Clear context after request
+        clear_context()
 
         return response
 

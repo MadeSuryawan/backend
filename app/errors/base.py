@@ -1,9 +1,9 @@
 from collections.abc import Awaitable, Callable
-from logging import Logger
 
 from fastapi import Request
 from fastapi.responses import ORJSONResponse
 from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
+from structlog.stdlib import BoundLogger
 
 from app.utils.helpers import host
 
@@ -33,7 +33,7 @@ class BaseAppError(Exception):
 
 
 def create_exception_handler(
-    logger: Logger,
+    logger: BoundLogger,
 ) -> Callable[[Request, Exception], Awaitable[ORJSONResponse]]:
     """
     Create a standardized exception handler for the application.

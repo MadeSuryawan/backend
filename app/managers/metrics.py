@@ -14,7 +14,6 @@ Features:
 from asyncio import to_thread
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from logging import getLogger
 from threading import Lock
 from time import perf_counter
 from types import TracebackType
@@ -23,9 +22,9 @@ from typing import Any, Self
 from psutil import cpu_percent as get_cpu_percent
 from psutil import disk_usage, virtual_memory
 
-from app.utils.helpers import file_logger
+from app.monitoring import get_logger
 
-logger = file_logger(getLogger(__name__))
+logger = get_logger(__name__)
 
 
 # Constants
