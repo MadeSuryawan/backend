@@ -1,4 +1,3 @@
-from collections.abc import MutableMapping
 from datetime import datetime
 from time import perf_counter
 from typing import Any
@@ -6,12 +5,10 @@ from typing import Any
 from anyio import Path
 from bs4 import BeautifulSoup
 from bs4.exceptions import ParserRejectedMarkup
-from fastapi import FastAPI, Request
+from fastapi import Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.routing import APIRoute
 from markdown import markdown
 from mdformat import text as mdformat_text
-from starlette.routing import BaseRoute, Match, Route
 from structlog.stdlib import BoundLogger
 
 from app.models.blog import BlogDB
@@ -34,30 +31,9 @@ def host(request: Request) -> str:
 
 def time_taken(start_time: float) -> str:
     minutes, seconds = divmod(perf_counter() - start_time, 60)
-    formatted_time = f"{int(minutes)}m {int(seconds)}s"
+    formatted_time = f"{int(minutes)}m {seconds:.2f}s"
 
     return formatted_time
-
-
-def get_summary(request: Request) -> str | None:
-    """Extract route summary from request."""
-
-    scope: MutableMapping[str, Any] = request.scope
-    app: FastAPI = scope["app"]
-    routes: list[BaseRoute] = app.routes
-
-    summary = None
-    for route in routes:
-        is_api_route = type(route) is APIRoute
-        is_route = type(route) is Route
-        if is_api_route and route.matches(scope)[0] == Match.FULL:
-            summary = route.summary
-            break
-        if is_route and route.matches(scope)[0] == Match.FULL:
-            summary = route.name
-            break
-
-    return summary
 
 
 def response_datetime(

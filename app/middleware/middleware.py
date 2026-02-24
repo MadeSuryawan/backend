@@ -26,17 +26,20 @@ Examples
 """
 
 from asyncio import get_event_loop
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, MutableMapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from time import perf_counter
+from typing import Any
 from uuid import uuid4
 
 from anyio import Path as AsyncPath
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute
 from rich.traceback import install
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.routing import BaseRoute, Match, Route
 from uvloop import Loop
 
 from app.clients.ai_client import AiClient
@@ -48,7 +51,7 @@ from app.managers.rate_limiter import close_limiter
 from app.managers.token_blacklist import init_token_blacklist
 from app.monitoring import HealthChecker, get_logger
 from app.monitoring.logging import bind_request_id, clear_context
-from app.utils.helpers import get_summary, host
+from app.utils.helpers import host, time_taken
 from app.utils.timezone import format_logs
 
 logger = get_logger(__name__)
@@ -262,7 +265,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         should_log = request.url.path not in settings.log_excluded_paths_list
 
         start_time = perf_counter()
-        summary = get_summary(request)
+        summary = self._get_summary(request)
 
         # Log in Bali timezone for server/admin visibility
         bali_time = format_logs(datetime.now(UTC), settings.TZ)
@@ -279,7 +282,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             )
 
         response = await call_next(request)
-        duration = perf_counter() - start_time
+        duration = time_taken(start_time)
 
         # Add request ID to response headers
         response.headers["X-Request-ID"] = request_id
@@ -289,13 +292,33 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                 "Request completed",
                 path=request.url.path,
                 status_code=response.status_code,
-                duration_seconds=round(duration, 3),
+                duration=duration,
             )
 
         # Clear context after request
         clear_context()
 
         return response
+
+    def _get_summary(self, request: Request) -> str | None:
+        """Extract route summary from request."""
+
+        scope: MutableMapping[str, Any] = request.scope
+        app: FastAPI = scope["app"]
+        routes: list[BaseRoute] = app.routes
+
+        summary = None
+        for route in routes:
+            is_api_route = type(route) is APIRoute
+            is_route = type(route) is Route
+            if is_api_route and route.matches(scope)[0] == Match.FULL:
+                summary = route.summary
+                break
+            if is_route and route.matches(scope)[0] == Match.FULL:
+                summary = route.name
+                break
+
+        return summary
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):

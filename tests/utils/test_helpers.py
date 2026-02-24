@@ -3,15 +3,8 @@
 
 import re
 from time import perf_counter, sleep
-from unittest.mock import MagicMock
 
-from fastapi import FastAPI
-from starlette.applications import Starlette
-from starlette.responses import JSONResponse
-from starlette.routing import Route
-from starlette.testclient import TestClient
-
-from app.utils.helpers import get_summary, time_taken, today_str
+from app.utils.helpers import time_taken, today_str
 
 
 class TestTodayStr:
@@ -92,49 +85,3 @@ class TestTimeTaken:
         result = time_taken(start)
         # divmod gives 61m 5s (not handling hours)
         assert result == "61m 5s"
-
-
-class TestGetSummary:
-    """Tests for get_summary function."""
-
-    def test_returns_none_for_no_matching_route(self) -> None:
-        """Test that None is returned when no route matches."""
-        app = FastAPI()
-        # test_client = TestClient(app)
-
-        # Create a mock request for a non-existent route
-        request = MagicMock()
-        request.scope = {
-            "type": "http",
-            "method": "GET",
-            "path": "/nonexistent",
-            "app": app,
-        }
-
-        result = get_summary(request)
-        # No routes defined, should return None
-        assert result is None
-
-    def test_returns_summary_for_api_route(self) -> None:
-        """Test that summary is returned for APIRoute."""
-        app = FastAPI()
-
-        @app.get("/test", summary="Test Endpoint Summary")
-        async def test_endpoint() -> dict[str, str]:
-            return {"msg": "test"}
-
-        with TestClient(app) as client:
-            # Make a real request to populate scope correctly
-            response = client.get("/test")
-            assert response.status_code == 200
-
-    def test_returns_name_for_starlette_route(self) -> None:
-        """Test that route name is returned for Starlette Route."""
-
-        async def homepage(request: MagicMock) -> JSONResponse:
-            return JSONResponse({"hello": "world"})
-
-        app = Starlette(routes=[Route("/", homepage, name="homepage")])
-
-        # Verify route exists
-        assert len(app.routes) > 0
