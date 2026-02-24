@@ -2,14 +2,7 @@ from datetime import datetime
 from time import perf_counter
 from typing import Any
 
-from anyio import Path
-from bs4 import BeautifulSoup
-from bs4.exceptions import ParserRejectedMarkup
 from fastapi import Request
-from fastapi.concurrency import run_in_threadpool
-from markdown import markdown
-from mdformat import text as mdformat_text
-from structlog.stdlib import BoundLogger
 
 from app.models.blog import BlogDB
 from app.models.review import ReviewDB
@@ -75,71 +68,3 @@ def response_datetime(
         db_dict["updated_at"] = None
 
     return db_dict
-
-
-async def clean_markdown(text: str, logger: BoundLogger) -> str:
-    """
-    Format raw Markdown text to be CommonMark/GFM compliant.
-
-    Useful for standardizing AI outputs before sending to frontend.
-    """
-    try:
-        return await run_in_threadpool(
-            mdformat_text,
-            text,
-            extensions={"gfm"},  # 1. Enable Plugins: Explicitly list extensions that installed
-            options={  # 2. Options: Customize how the text is rendered
-                "wrap": "no",  # 'no' is best for Frontends (let CSS handle wrapping)
-                "number": True,  # Use ordered numbering (1. 2. 3.) instead of auto (1. 1. 1.)
-                "end_of_line": "lf",  # Use Unix line endings (LF)
-            },
-        )
-    except Exception:
-        # Fallback: If formatting fails (rare), return original text
-        # so the user still gets their answer.
-        logger.exception("Markdown formatting failed")
-        return text
-
-
-def md_to_text(text: str) -> str:
-    """
-    Convert Markdown text to plain text (removing Markdown syntax).
-
-    Uses BeautifulSoup to extract text content, which is safer and cleaner
-    than regex for removing complex Markdown formatting.
-    """
-    if not text:
-        return ""
-
-    try:
-        # 1. Parse Markdown to HTML
-        html_content = markdown(text)
-
-        # 2. Extract Text using BeautifulSoup
-        soup = BeautifulSoup(html_content, "html.parser")
-
-        # Prepend "- " to list items to preserve structure, handling indentation for nested lists
-        for li in soup.find_all("li"):
-            # Calculate depth based on parent ul/ol tags
-            depth = len(list(li.find_parents(["ul", "ol"])))
-            indent = "  " * (depth - 1)
-            li.string = f"{indent}- {li.get_text()}"
-
-        plain_text = soup.get_text()
-
-        return plain_text.strip()
-    except ParserRejectedMarkup:
-        # Fallback to original text if conversion fails
-        return text
-
-
-async def save_to_file(data: str, file_path: Path) -> None:
-    """
-    Write the itinerary to a file.
-
-    Args:
-        data: The data string to write.
-        file_path: The path to the file to write to.
-    """
-    async with await file_path.open("w") as f:
-        await f.write(data)
