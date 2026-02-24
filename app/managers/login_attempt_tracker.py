@@ -166,26 +166,6 @@ class LoginAttemptTracker:
             return 0
 
 
-# Global instance - initialized in app startup
-_login_tracker: LoginAttemptTracker | None = None
-
-
-def get_login_tracker() -> LoginAttemptTracker:
-    """
-    Get the global login attempt tracker instance.
-
-    Returns:
-        LoginAttemptTracker: The global tracker instance
-
-    Raises:
-        RuntimeError: If tracker not initialized
-    """
-    if _login_tracker is None:
-        msg = "Login tracker not initialized. Call init_login_tracker() first."
-        raise RuntimeError(msg)
-    return _login_tracker
-
-
 def init_login_tracker(redis_client: RedisClient) -> LoginAttemptTracker:
     """
     Initialize the global login attempt tracker.
@@ -196,7 +176,4 @@ def init_login_tracker(redis_client: RedisClient) -> LoginAttemptTracker:
     Returns:
         LoginAttemptTracker: The initialized tracker instance
     """
-    global _login_tracker  # noqa: PLW0603
-    _login_tracker = LoginAttemptTracker(redis_client)
-    logger.info("Login attempt tracker initialized")
-    return _login_tracker
+    return LoginAttemptTracker(redis_client)

@@ -306,7 +306,7 @@ class AuthService:
 
         user.is_verified = True
         user.updated_at = datetime.now(UTC)
-        await self.user_repo._add_and_refresh(user)  # noqa: SLF001
+        await self.user_repo._add_and_refresh(user)
         return True
 
     async def check_verification_rate_limit(self, user_id: UUID) -> bool:
@@ -565,7 +565,7 @@ class AuthService:
         password_hash = await hash_password(new_password)
         user.password_hash = password_hash
         user.updated_at = datetime.now(UTC)
-        await self.user_repo._add_and_refresh(user)  # noqa: SLF001
+        await self.user_repo._add_and_refresh(user)
 
         return True
 
@@ -666,7 +666,7 @@ class AuthService:
         password_hash = await hash_password(new_password)
         user.password_hash = password_hash
         user.updated_at = datetime.now(UTC)
-        await self.user_repo._add_and_refresh(user)  # noqa: SLF001
+        await self.user_repo._add_and_refresh(user)
 
         # Invalidate all refresh tokens for this user (soft invalidation)
         if self._blacklist:
@@ -705,7 +705,7 @@ class AuthService:
             if not existing_user.is_verified:
                 existing_user.is_verified = True
                 existing_user.updated_at = datetime.now(UTC)
-                await self.user_repo._add_and_refresh(existing_user)  # noqa: SLF001
+                await self.user_repo._add_and_refresh(existing_user)
             return existing_user
 
         # Create new user with unique username

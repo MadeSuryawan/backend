@@ -85,54 +85,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     --------
     >>> app = FastAPI(lifespan=lifespan)
     """
-    # Startup
     logger.info(f"Starting {app.title}...")
     logger.info(f"{app.description}")
 
-    # Initialize services
     try:
-        if settings.LOG_TO_FILE:
-            await AsyncPath("logs").mkdir(parents=True, exist_ok=True)
-            logger.info("Logging to file enabled.")
-
-        await init_db()
-
-        app.state.health_checker = HealthChecker(
-            app=app,
-            version=app.version,
-        )
-        logger.info("Health checker initialized")
-
-        cache_manager = CacheManager()
-        await cache_manager.initialize()
-        app.state.cache_manager = cache_manager
-
-        # Initialize token blacklist and login tracker if Redis is available
-        if cache_manager.is_redis_available:
-            init_token_blacklist(cache_manager.redis_client)
-            init_login_tracker(cache_manager.redis_client)
-            logger.info("Token blacklist and login tracker initialized")
-
-        logger.info(f"is uvloop: {type(get_event_loop()) is Loop}")
-
-        if ai_client := AiClient():
-            app.state.ai_client = ai_client
-            logger.info("AI client initialized successfully.")
-
-        logger.info("Services initialized successfully")
-        logger.info("Services:")
-        logger.info("  - Backend API: http://localhost:8000")
-        logger.info("  - API Documentation: http://localhost:8000/docs")
-        logger.info("  - API Documentation (ReDoc): http://localhost:8000/redoc")
-        logger.info("  - Health Check: http://localhost:8000/health")
-        logger.info("  - Health Live: http://localhost:8000/health/live")
-        logger.info("  - Health Ready: http://localhost:8000/health/ready")
-        logger.info("  - Metrics: http://localhost:8000/metrics")
-        logger.info("  - Legacy Metrics: http://localhost:8000/metrics/legacy")
-        logger.info("  - Grafana: http://localhost:3000")
-        logger.info("  - Prometheus: http://localhost:9090")
-        logger.info("  - Jaeger UI: http://localhost:16686")
-        logger.info("  - Redis Commander: http://localhost:8081")
+        cache_manager = await _init_services(app)
 
     except Exception:
         logger.exception("Failed to initialize services")
@@ -140,21 +97,84 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     yield
 
-    # Shutdown
     logger.info(f"Shutting down {app.title}...")
 
-    # Cleanup services
     try:
-        if ai_client := app.state.ai_client:
-            await ai_client.close()
-        await close_db()
-        await close_limiter()
-        await cache_manager.shutdown()
-        logger.info("Cache manager stopped")
-        logger.info("Services cleaned up successfully")
-
+        await _cleanup_services(app, cache_manager)
     except Exception:
         logger.exception("Error during service cleanup")
+
+
+async def _init_services(app: FastAPI) -> CacheManager:
+    """Initialize services."""
+    if settings.LOG_TO_FILE:
+        await AsyncPath("logs").mkdir(parents=True, exist_ok=True)
+        logger.info("Logging to file enabled.")
+
+    await init_db()
+
+    app.state.health_checker = HealthChecker(
+        app=app,
+        version=app.version,
+    )
+    logger.info("Health checker initialized")
+
+    cache_manager = CacheManager()
+    await cache_manager.initialize()
+    app.state.cache_manager = cache_manager
+
+    _blacklist_login_tracker_init(app, cache_manager)
+
+    logger.info(f"is uvloop: {type(get_event_loop()) is Loop}")
+
+    if ai_client := AiClient():
+        app.state.ai_client = ai_client
+        logger.info("AI client initialized successfully.")
+
+    logger.info("Services initialized successfully")
+    _show_links()
+
+    return cache_manager
+
+
+def _blacklist_login_tracker_init(app: FastAPI, cache_manager: CacheManager) -> None:
+    """Initialize token blacklist and login tracker if Redis is available."""
+    if cache_manager.is_redis_available:
+        redis_client = cache_manager.redis_client
+        token_blacklist = init_token_blacklist(redis_client)
+        logger.info("Token blacklist initialized")
+        login_tracker = init_login_tracker(redis_client)
+        logger.info("Login attempt tracker initialized")
+        app.state.token_blacklist = token_blacklist
+        app.state.login_tracker = login_tracker
+
+
+def _show_links() -> None:
+    """Show links to services."""
+    logger.info("Services:")
+    logger.info("  - Backend API: http://localhost:8000")
+    logger.info("  - API Documentation: http://localhost:8000/docs")
+    logger.info("  - API Documentation (ReDoc): http://localhost:8000/redoc")
+    logger.info("  - Health Check: http://localhost:8000/health")
+    logger.info("  - Health Live: http://localhost:8000/health/live")
+    logger.info("  - Health Ready: http://localhost:8000/health/ready")
+    logger.info("  - Metrics: http://localhost:8000/metrics")
+    logger.info("  - Legacy Metrics: http://localhost:8000/metrics/legacy")
+    logger.info("  - Grafana: http://localhost:3000")
+    logger.info("  - Prometheus: http://localhost:9090")
+    logger.info("  - Jaeger UI: http://localhost:16686")
+    logger.info("  - Redis Commander: http://localhost:8081")
+
+
+async def _cleanup_services(app: FastAPI, cache_manager: CacheManager) -> None:
+    """Cleanup services on shutdown."""
+    if ai_client := app.state.ai_client:
+        await ai_client.close()
+    await close_db()
+    await close_limiter()
+    await cache_manager.shutdown()
+    logger.info("Cache manager stopped")
+    logger.info("Services cleaned up successfully")
 
 
 def configure_cors(app: FastAPI) -> None:

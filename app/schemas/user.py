@@ -6,7 +6,6 @@ in the BaliBlissed application.
 """
 
 from datetime import UTC, datetime
-from typing import Any
 from uuid import UUID
 
 from pydantic import (
@@ -21,6 +20,7 @@ from pydantic import (
     model_validator,
 )
 from pydantic_core import PydanticCustomError
+from pydantic_core.core_schema import ValidationInfo
 
 from app.models import UserDB
 from app.monitoring import get_logger
@@ -319,7 +319,7 @@ class UserResponse(BaseModel):
 
     @field_validator("first_name", "last_name", "bio", "country", mode="before")
     @classmethod
-    def none_to_default(cls, v: Any, info: Any) -> Any:  # noqa: ANN401
+    def none_to_default(cls, v: str | None, info: ValidationInfo) -> str:
         """Convert None to default value if field has one."""
         if v is None:
             # Pydantic v2 doesn't easily expose 'default' in validator context cleanly for this

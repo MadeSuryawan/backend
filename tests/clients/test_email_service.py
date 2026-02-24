@@ -136,7 +136,7 @@ class TestGetCredentials:
     """Tests for _get_credentials method."""
 
     @patch("pathlib.Path.exists", return_value=False)
-    def test_get_credentials_no_token_file(self, mock_exists: MagicMock) -> None:  # noqa: ARG002
+    def test_get_credentials_no_token_file(self, mock_exists: MagicMock) -> None:
         """Test ConfigurationError when token file doesn't exist."""
         client = EmailClient()
         with pytest.raises(ConfigurationError, match="Valid token not found"):
@@ -147,7 +147,7 @@ class TestGetCredentials:
     def test_get_credentials_corrupt_token(
         self,
         mock_creds: MagicMock,
-        mock_exists: MagicMock,  # noqa: ARG002
+        mock_exists: MagicMock,
     ) -> None:
         """Test AuthenticationError when token file is corrupt."""
         mock_creds.side_effect = ValueError("Invalid token")

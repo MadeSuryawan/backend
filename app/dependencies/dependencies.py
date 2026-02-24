@@ -24,8 +24,8 @@ from app.clients.redis_client import RedisClient
 from app.configs.settings import settings
 from app.db import get_session
 from app.managers.cache_manager import CacheManager
-from app.managers.login_attempt_tracker import LoginAttemptTracker, get_login_tracker
-from app.managers.token_blacklist import TokenBlacklist, get_token_blacklist
+from app.managers.login_attempt_tracker import LoginAttemptTracker
+from app.managers.token_blacklist import TokenBlacklist
 from app.managers.token_manager import decode_access_token
 from app.models import UserDB
 from app.monitoring import HealthChecker
@@ -45,8 +45,8 @@ HealthCheckerDep = Annotated[HealthChecker, Depends(get_health_checker)]
 
 
 def get_auth_service(
-    session: Annotated[AsyncSession, Depends(get_session)],
     request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> AuthService:
     """
     Dependency to get AuthService with optional blacklist and tracker.
@@ -55,27 +55,19 @@ def get_auth_service(
     """
     repo = UserRepository(session)
 
-    # Try to get blacklist and tracker, but don't fail if not available
     blacklist: TokenBlacklist | None = None
-    tracker: LoginAttemptTracker | None = None
+    login_tracker: LoginAttemptTracker | None = None
     redis_client: RedisClient | None = None
 
-    with suppress(RuntimeError):
-        blacklist = get_token_blacklist()
-
-    with suppress(RuntimeError):
-        tracker = get_login_tracker()
-
-    # Get Redis client from app state cache_manager
     with suppress(AttributeError):
-        cache_manager = request.app.state.cache_manager
-        if cache_manager and cache_manager.is_redis_available:
-            redis_client = cache_manager.redis_client
+        blacklist = request.app.state.token_blacklist
+        login_tracker = request.app.state.login_tracker
+        redis_client = blacklist.redis_client
 
     return AuthService(
         repo,
         token_blacklist=blacklist,
-        login_tracker=tracker,
+        login_tracker=login_tracker,
         redis_client=redis_client,
         email_client=EmailClient(),
     )
@@ -149,6 +141,7 @@ OauthDep = Annotated[OAuthClient, Depends(get_oauth_client)]
 
 
 async def get_current_user(
+    request: Request,
     token: Annotated[str, Depends(oauth2_scheme)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> UserDB:
@@ -159,6 +152,8 @@ async def get_current_user(
 
     Parameters
     ----------
+    request : Request
+        Current request context.
     token : str
         Bearer token.
     session : AsyncSession
@@ -177,9 +172,8 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Check token blacklist if available
-    try:
-        blacklist = get_token_blacklist()
+    if hasattr(request.app.state, "token_blacklist"):
+        blacklist: TokenBlacklist = request.app.state.token_blacklist
         is_blacklisted = await blacklist.is_blacklisted(token_data.jti)
         if is_blacklisted:
             raise HTTPException(
@@ -187,8 +181,6 @@ async def get_current_user(
                 detail="Your session has been signed out. Please sign in again to continue.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-    except RuntimeError:
-        pass  # Blacklist not initialized, skip check
 
     # Use user_id for efficient lookup (no username index scan)
     user_repo = UserRepository(session)

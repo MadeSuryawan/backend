@@ -73,7 +73,7 @@ class TestCircuitBreakerInit:
         cb = CircuitBreaker(
             config=CircuitBreakerConfig(expected_exceptions=(ValueError, TypeError)),
         )
-        assert cb.expected_exceptions == (ValueError, TypeError)  # noqa: E721
+        assert cb.expected_exceptions == (ValueError, TypeError)
 
 
 class TestCircuitBreakerStateTransitions:

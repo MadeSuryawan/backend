@@ -42,6 +42,11 @@ class TokenBlacklist:
         """
         return f"{BLACKLIST_PREFIX}{jti}"
 
+    @property
+    def redis_client(self) -> RedisClient:
+        """Get the Redis client."""
+        return self._redis
+
     async def add_to_blacklist(self, jti: str, exp: datetime) -> bool:
         """
         Add a token to the blacklist.
@@ -127,26 +132,6 @@ class TokenBlacklist:
             return -1
 
 
-# Global instance - initialized in app startup
-_token_blacklist: TokenBlacklist | None = None
-
-
-def get_token_blacklist() -> TokenBlacklist:
-    """
-    Get the global token blacklist instance.
-
-    Returns:
-        TokenBlacklist: The global blacklist instance
-
-    Raises:
-        RuntimeError: If blacklist not initialized
-    """
-    if _token_blacklist is None:
-        msg = "Token blacklist not initialized. Call init_token_blacklist() first."
-        raise RuntimeError(msg)
-    return _token_blacklist
-
-
 def init_token_blacklist(redis_client: RedisClient) -> TokenBlacklist:
     """
     Initialize the global token blacklist.
@@ -157,7 +142,4 @@ def init_token_blacklist(redis_client: RedisClient) -> TokenBlacklist:
     Returns:
         TokenBlacklist: The initialized blacklist instance
     """
-    global _token_blacklist  # noqa: PLW0603
-    _token_blacklist = TokenBlacklist(redis_client)
-    logger.info("Token blacklist initialized")
-    return _token_blacklist
+    return TokenBlacklist(redis_client)

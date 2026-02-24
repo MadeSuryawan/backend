@@ -182,7 +182,7 @@ async def test_cache_clear_with_statistics_reset(cache_manager: CacheManager) ->
     side_effect=RedisConnectionError("Test error"),
 )
 async def test_cache_manager_fallback_to_memory(
-    mock_connect: Mock,  # noqa: ARG001
+    mock_connect: Mock,
 ) -> None:
     """Test that CacheManager falls back to in-memory cache when Redis connection fails."""
     manager = CacheManager()
@@ -351,7 +351,7 @@ async def test_try_reconnect_redis_success(
     side_effect=RedisConnectionError("Connection refused"),
 )
 async def test_try_reconnect_redis_failure(
-    mock_connect: Mock,  # noqa: ARG001
+    mock_connect: Mock,
 ) -> None:
     """Test _try_reconnect_redis failed reconnection."""
     manager = CacheManager()
@@ -431,7 +431,7 @@ async def test_enable_redis_success(mock_connect: Mock) -> None:
     "app.clients.redis_client.RedisClient.connect",
     side_effect=RedisConnectionError("Connection refused"),
 )
-async def test_enable_redis_failure(mock_connect: Mock) -> None:  # noqa: ARG001
+async def test_enable_redis_failure(mock_connect: Mock) -> None:
     """Test enable_redis when Redis connection fails."""
     manager = CacheManager()
     manager.is_redis_available = False
