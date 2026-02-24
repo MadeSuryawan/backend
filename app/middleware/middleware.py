@@ -265,12 +265,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         should_log = request.url.path not in settings.log_excluded_paths_list
 
         start_time = perf_counter()
-        summary = self._get_summary(request)
-
-        # Log in Bali timezone for server/admin visibility
-        bali_time = format_logs(datetime.now(UTC), settings.TZ)
-        route_info = summary or f"{request.method} {request.url.path}"
-        client_ip = host(request)
+        bali_time, route_info, client_ip = self._get_kwargs(request)
 
         if should_log:
             logger.info(
@@ -283,7 +278,6 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
         response = await call_next(request)
         duration = time_taken(start_time)
-
         # Add request ID to response headers
         response.headers["X-Request-ID"] = request_id
 
@@ -297,8 +291,17 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
         # Clear context after request
         clear_context()
-
         return response
+
+    def _get_kwargs(self, request: Request) -> tuple[str | None, str, str]:
+        """Extract kwargs from request."""
+
+        # Log in Bali timezone for server/admin visibility
+        bali_time = format_logs(datetime.now(UTC), settings.TZ)
+        route_info = self._get_summary(request) or f"{request.method} {request.url.path}"
+        client_ip = host(request)
+
+        return bali_time, route_info, client_ip
 
     def _get_summary(self, request: Request) -> str | None:
         """Extract route summary from request."""
