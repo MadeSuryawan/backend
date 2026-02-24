@@ -64,7 +64,7 @@ class ReviewRepository(BaseRepository[ReviewDB, ReviewCreate, ReviewUpdate]):
             updated_at=None,
         )
 
-        return await self._add_and_refresh(db_review)
+        return await self.add_and_refresh(db_review)
 
     async def get_by_user(
         self,

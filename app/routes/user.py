@@ -195,7 +195,7 @@ async def _handle_email_change(
         db_user.email,
     )
     db_user.is_verified = False
-    await repo._add_and_refresh(db_user)
+    await repo.add_and_refresh(db_user)
     await auth_service.send_verification_email(db_user)
     await auth_service.record_verification_sent(db_user.uuid)
     logger.info("Verification email sent to new address: %s", db_user.email)

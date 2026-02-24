@@ -61,7 +61,7 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT: BaseModel, UpdateSchemaT: 
         data = schema.model_dump(exclude_unset=True)
         # Create database model instance
         db_obj = self.model.model_validate(data)
-        return await self._add_and_refresh(db_obj)
+        return await self.add_and_refresh(db_obj)
 
     async def get_by_id(self, record_id: UUID) -> ModelT | None:
         """
@@ -160,7 +160,7 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT: BaseModel, UpdateSchemaT: 
         for key, value in obj_data.items():
             setattr(db_obj, key, value)
 
-        return await self._add_and_refresh(db_obj)
+        return await self.add_and_refresh(db_obj)
 
     async def delete(self, record_id: UUID) -> bool:
         """
@@ -208,7 +208,7 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT: BaseModel, UpdateSchemaT: 
         count = result.scalar()
         return count if count is not None else 0
 
-    async def _add_and_refresh(self, record: ModelT) -> ModelT:
+    async def add_and_refresh(self, record: ModelT) -> ModelT:
         """
         Add a record and refresh it from the database with error handling.
 

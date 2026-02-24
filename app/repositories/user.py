@@ -102,7 +102,7 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
         )
 
         # Use the base class helper method for consistent error handling
-        return await self._add_and_refresh(db_user)
+        return await self.add_and_refresh(db_user)
 
     async def get_by_username(self, username: str) -> UserDB | None:
         """
@@ -178,7 +178,7 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
         for key, value in update_data.items():
             setattr(db_user, key, value)
 
-        return await self._add_and_refresh(db_user)
+        return await self.add_and_refresh(db_user)
 
     async def do_password_verify(self, username: str, password: str) -> UserDB | None:
         """

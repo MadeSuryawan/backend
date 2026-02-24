@@ -66,7 +66,7 @@ logger = get_logger(__name__)
 # Configure API documentation endpoints based on settings
 app = FastAPI(
     title="BaliBlissed Backend",
-    description="BaliBlissed Backend API",
+    description="BaliBlissed Travel Agency Backend API",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs" if settings.DOCS_ENABLED else None,

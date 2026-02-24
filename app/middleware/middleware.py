@@ -90,7 +90,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     try:
         cache_manager = await _init_services(app)
-
     except Exception:
         logger.exception("Failed to initialize services")
         raise
@@ -123,13 +122,12 @@ async def _init_services(app: FastAPI) -> CacheManager:
     await cache_manager.initialize()
     app.state.cache_manager = cache_manager
 
-    _blacklist_login_tracker_init(app, cache_manager)
+    _blacklist_and_tracker_init(app, cache_manager)
 
     logger.info(f"is uvloop: {type(get_event_loop()) is Loop}")
 
     if ai_client := AiClient():
         app.state.ai_client = ai_client
-        logger.info("AI client initialized successfully.")
 
     logger.info("Services initialized successfully")
     _show_links()
@@ -137,7 +135,7 @@ async def _init_services(app: FastAPI) -> CacheManager:
     return cache_manager
 
 
-def _blacklist_login_tracker_init(app: FastAPI, cache_manager: CacheManager) -> None:
+def _blacklist_and_tracker_init(app: FastAPI, cache_manager: CacheManager) -> None:
     """Initialize token blacklist and login tracker if Redis is available."""
     if cache_manager.is_redis_available:
         redis_client = cache_manager.redis_client

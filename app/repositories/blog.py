@@ -113,7 +113,7 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
         )
 
         try:
-            return await self._add_and_refresh(db_blog)
+            return await self.add_and_refresh(db_blog)
         except DuplicateEntryError as e:
             # Re-raise with friendlier message if it's a slug conflict
             if "slug" in str(e):
@@ -241,7 +241,7 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
         for key, value in update_data.items():
             setattr(db_blog, key, value)
 
-        return await self._add_and_refresh(db_blog)
+        return await self.add_and_refresh(db_blog)
 
     async def increment_view_count(self, blog_id: UUID) -> BlogDB | None:
         """
@@ -258,7 +258,7 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
             return None
 
         db_blog.view_count += 1
-        return await self._add_and_refresh(db_blog)
+        return await self.add_and_refresh(db_blog)
 
     async def search_by_tags(
         self,
