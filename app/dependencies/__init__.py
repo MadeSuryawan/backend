@@ -9,6 +9,7 @@ from app.dependencies.dependencies import (
     BlogRepoDep,
     CacheDep,
     EmailDep,
+    HealthCheckerDep,
     ModeratorUserDep,
     OauthDep,
     ReviewRepoDep,
@@ -50,4 +51,5 @@ __all__ = [
     "get_email_client",
     "get_user_or_404",
     "oauth2_scheme",
+    "HealthCheckerDep",
 ]

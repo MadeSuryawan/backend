@@ -28,11 +28,20 @@ from app.managers.login_attempt_tracker import LoginAttemptTracker, get_login_tr
 from app.managers.token_blacklist import TokenBlacklist, get_token_blacklist
 from app.managers.token_manager import decode_access_token
 from app.models import UserDB
+from app.monitoring import HealthChecker
 from app.repositories import BlogRepository, ReviewRepository, UserRepository
 from app.schemas.user import UserResponse
 from app.services import AuthService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+
+def get_health_checker(request: Request) -> HealthChecker:
+    """Dependency to get the global health checker instance."""
+    return request.app.state.health_checker
+
+
+HealthCheckerDep = Annotated[HealthChecker, Depends(get_health_checker)]
 
 
 def get_auth_service(

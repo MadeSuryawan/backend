@@ -46,7 +46,7 @@ from app.managers.cache_manager import CacheManager
 from app.managers.login_attempt_tracker import init_login_tracker
 from app.managers.rate_limiter import close_limiter
 from app.managers.token_blacklist import init_token_blacklist
-from app.monitoring import get_logger
+from app.monitoring import HealthChecker, get_logger
 from app.monitoring.logging import bind_request_id, clear_context
 from app.utils.helpers import get_summary, host
 from app.utils.timezone import format_logs
@@ -96,6 +96,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             logger.info("Logging to file enabled.")
 
         await init_db()
+
+        app.state.health_checker = HealthChecker(
+            app=app,
+            version=app.version,
+        )
+        logger.info("Health checker initialized")
 
         cache_manager = CacheManager()
         await cache_manager.initialize()
