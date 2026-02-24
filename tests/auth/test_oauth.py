@@ -15,10 +15,9 @@ import pytest
 from httpx import AsyncClient
 
 from app.dependencies import get_cache_manager
-from app.dependencies.dependencies import get_auth_service
+from app.dependencies.dependencies import get_auth_service, oauth
 from app.main import app
 from app.models import UserDB
-from app.routes.auth import oauth
 
 
 def setup_mock_cache() -> MagicMock:
@@ -64,7 +63,7 @@ class TestOAuthLogin:
         mock_cache = setup_test_with_cache()
 
         try:
-            with patch("app.routes.auth.oauth") as mock_oauth:
+            with patch("app.dependencies.dependencies.oauth") as mock_oauth:
                 mock_client = MagicMock()
                 mock_client.authorize_redirect = AsyncMock(
                     return_value=MagicMock(
@@ -76,8 +75,11 @@ class TestOAuthLogin:
 
                 # Mock settings to enable Google OAuth
                 with (
-                    patch("app.routes.auth.settings.GOOGLE_CLIENT_ID", "test-client-id"),
-                    patch("app.routes.auth.settings.OAUTH_STATE_EXPIRE_SECONDS", 600),
+                    patch(
+                        "app.dependencies.dependencies.settings.GOOGLE_CLIENT_ID",
+                        "test-client-id",
+                    ),
+                    patch("app.dependencies.dependencies.settings.OAUTH_STATE_EXPIRE_SECONDS", 600),
                 ):
                     _ = await client.get("/auth/login/google")
 
@@ -271,14 +273,17 @@ class TestOAuthSecurityFeatures:
         mock_cache = setup_test_with_cache()
 
         try:
-            with patch("app.routes.auth.oauth") as mock_oauth:
+            with patch("app.dependencies.dependencies.oauth") as mock_oauth:
                 mock_client = MagicMock()
                 mock_client.authorize_redirect = AsyncMock(
                     return_value=MagicMock(status_code=302),
                 )
                 mock_oauth.create_client.return_value = mock_client
 
-                with patch("app.routes.auth.settings.GOOGLE_CLIENT_ID", "test-client-id"):
+                with patch(
+                    "app.dependencies.dependencies.settings.GOOGLE_CLIENT_ID",
+                    "test-client-id",
+                ):
                     await client.get("/auth/login/google")
 
                     # Verify state stored with provider info

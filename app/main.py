@@ -69,6 +69,7 @@ from app.routes import (
     email_router,
     items_router,
     limiter_router,
+    oauth_router,
     review_router,
     user_router,
 )
@@ -118,6 +119,7 @@ app.add_middleware(ContextMiddleware)
 routes = [
     admin_router,
     auth_router,
+    oauth_router,
     ai_router,
     email_router,
     user_router,

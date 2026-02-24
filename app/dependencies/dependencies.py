@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import Annotated, Literal
 from uuid import UUID
 
+from authlib.integrations.starlette_client import OAuth
+from authlib.integrations.starlette_client import StarletteOAuth2App as OAuthClient
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +21,7 @@ from starlette.status import (
 from app.clients.ai_client import AiClient
 from app.clients.email_client import EmailClient
 from app.clients.redis_client import RedisClient
+from app.configs.settings import settings
 from app.db import get_session
 from app.managers.cache_manager import CacheManager
 from app.managers.login_attempt_tracker import LoginAttemptTracker, get_login_tracker
@@ -70,6 +73,70 @@ def get_auth_service(
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+
+
+# OAuth Configuration
+oauth = OAuth()
+
+PROVIDER_NOT_FOUND = (
+    "This sign-in method is not available right now. Please try a different sign-in option."
+)
+
+if settings.GOOGLE_CLIENT_ID:
+    oauth.register(
+        name="google",
+        client_id=settings.GOOGLE_CLIENT_ID,
+        client_secret=settings.GOOGLE_CLIENT_SECRET,
+        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+        client_kwargs={
+            "scope": "openid email profile",
+            "code_challenge_method": "S256",  # Enable PKCE
+        },
+    )
+
+if settings.WECHAT_APP_ID:
+    oauth.register(
+        name="wechat",
+        client_id=settings.WECHAT_APP_ID,
+        client_secret=settings.WECHAT_APP_SECRET,
+        authorize_url="https://open.weixin.qq.com/connect/qrconnect",
+        access_token_url="https://api.weixin.qq.com/sns/oauth2/access_token",
+        client_kwargs={
+            "scope": "snsapi_login",
+            "code_challenge_method": "S256",  # Enable PKCE
+        },
+    )
+
+
+def get_oauth_client(provider: str) -> OAuthClient:
+    """
+    Get OAuth client for the specified provider.
+
+    Parameters
+    ----------
+    provider : str
+        The OAuth provider name (e.g., 'google', 'wechat').
+
+    Returns
+    -------
+    OAuthClient
+        The configured OAuth client for the provider.
+
+    Raises
+    ------
+    HTTPException
+        If the provider is not configured.
+    """
+    client = oauth.create_client(provider)
+    if not client:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=PROVIDER_NOT_FOUND,
+        )
+    return client
+
+
+OauthDep = Annotated[OAuthClient, Depends(get_oauth_client)]
 
 
 async def get_current_user(

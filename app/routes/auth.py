@@ -5,7 +5,6 @@ This module provides comprehensive authentication endpoints for the BaliBlissed
 backend API, including:
 
 - **Traditional Authentication**: Username/password login with JWT tokens
-- **OAuth 2.0 Integration**: Google and WeChat OAuth providers
 - **Email Verification**: Token-based email verification with rate limiting
 - **Password Management**: Reset, change, and forgot password flows
 - **Token Management**: Access token refresh and logout functionality
@@ -15,39 +14,35 @@ Security Features
 All endpoints implement multiple security layers:
 
 - **Rate Limiting**: Prevents brute force and abuse attacks
-- **CSRF Protection**: OAuth flows use cryptographically secure state parameters
 - **Token Blacklisting**: Logout invalidates tokens server-side
 - **Single-Use Tokens**: Verification and reset tokens can only be used once
 - **Anti-Enumeration**: Password reset and verification endpoints return
   consistent responses to prevent user enumeration attacks
-- **PKCE Support**: OAuth providers use Proof Key for Code Exchange
 
 Dependencies
 ------------
 - AuthService: Core authentication business logic
 - UserRepository: Database operations for user entities
 - CacheManager: Redis-backed caching for tokens and rate limits
-- OAuth (authlib): OAuth 2.0 client for third-party providers
 
 Notes
 -----
 All endpoints use ORJSONResponse for optimal JSON serialization performance.
 Rate limits are enforced per-endpoint and can be configured via settings.
+
+For OAuth 2.0 authentication (Google, WeChat), see app/routes/oauth.py.
 """
 
-import secrets
 from typing import Annotated
 
-from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import ORJSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from starlette.responses import RedirectResponse, Response
+from starlette.responses import Response
 from starlette.status import (
     HTTP_200_OK,
     HTTP_201_CREATED,
     HTTP_400_BAD_REQUEST,
-    HTTP_404_NOT_FOUND,
     HTTP_429_TOO_MANY_REQUESTS,
 )
 
@@ -56,7 +51,6 @@ from app.decorators.caching import get_cache_manager
 from app.decorators.metrics import timed
 from app.dependencies import (
     AuthServiceDep,
-    CacheDep,
     UserDBDep,
     UserRepoDep,
     UserRespDep,
@@ -64,8 +58,6 @@ from app.dependencies import (
 )
 from app.errors.auth import (
     EmailVerificationError,
-    OAuthError,
-    OAuthStateError,
     PasswordChangeError,
     PasswordResetError,
     ResetTokenUsedError,
@@ -94,34 +86,6 @@ from app.utils.cache_keys import user_id_key, username_key, users_list_key
 
 router = APIRouter(prefix="/auth", tags=["🔐 Auth"])
 logger = get_logger(__name__)
-
-# OAuth Configuration
-oauth = OAuth()
-
-if settings.GOOGLE_CLIENT_ID:
-    oauth.register(
-        name="google",
-        client_id=settings.GOOGLE_CLIENT_ID,
-        client_secret=settings.GOOGLE_CLIENT_SECRET,
-        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-        client_kwargs={
-            "scope": "openid email profile",
-            "code_challenge_method": "S256",  # Enable PKCE
-        },
-    )
-
-if settings.WECHAT_APP_ID:
-    oauth.register(
-        name="wechat",
-        client_id=settings.WECHAT_APP_ID,
-        client_secret=settings.WECHAT_APP_SECRET,
-        authorize_url="https://open.weixin.qq.com/connect/qrconnect",
-        access_token_url="https://api.weixin.qq.com/sns/oauth2/access_token",
-        client_kwargs={
-            "scope": "snsapi_login",
-            "code_challenge_method": "S256",  # Enable PKCE
-        },
-    )
 
 
 @router.post(
@@ -1152,324 +1116,6 @@ async def register_user(
         return validate_user_response(user)
     except Exception as e:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(e)) from e
-
-
-@router.get(
-    "/login/{provider}",
-    summary="Initiate OAuth login",
-    description="""Redirect user to the OAuth provider's login page with CSRF protection.
-
-    **Security Features:**
-    - Generates a cryptographically secure `state` parameter to prevent CSRF attacks
-    - Stores state in cache with 10-minute TTL
-    - Enables PKCE (Proof Key for Code Exchange) for enhanced security
-    - Rate limited to prevent abuse
-
-    **Supported Providers:**
-    - `google` - Google OAuth 2.0 (requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
-    - `wechat` - WeChat Open Platform (requires WECHAT_APP_ID and WECHAT_APP_SECRET)
-
-    **Flow:**
-    1. Call this endpoint to get a redirect to the OAuth provider
-    2. User authenticates with the provider
-    3. Provider redirects to `/auth/callback/{provider}` with authorization code
-    4. Exchange code for JWT tokens
-
-    **Note:** The callback URL must be registered in your OAuth provider settings.
-    """,
-    responses={
-        307: {
-            "description": "Temporary redirect to OAuth provider authorization page",
-            "headers": {
-                "Location": {
-                    "description": "OAuth provider authorization URL with state parameter",
-                    "schema": {"type": "string"},
-                },
-                "Set-Cookie": {
-                    "description": "Session cookie for OAuth state management",
-                    "schema": {"type": "string"},
-                },
-            },
-        },
-        404: {
-            "description": "Provider not configured",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "This sign-in method is not available right now. Please try a different sign-in option.",
-                    },
-                },
-            },
-        },
-        429: {
-            "description": "Rate limit exceeded",
-            "content": {
-                "application/json": {"example": {"detail": "Too Many Requests"}},
-            },
-        },
-    },
-    operation_id="auth_login_oauth",
-    tags=["🔐 OAuth"],
-)
-@timed("/auth/login/oauth")
-@limiter.limit("10/minute")
-async def login_oauth(
-    request: Request,
-    response: Response,
-    provider: str,
-    cache: CacheDep,
-) -> RedirectResponse:
-    """
-    Initiate OAuth login flow with CSRF protection.
-
-    Generates a cryptographically secure state parameter to prevent CSRF attacks.
-    The state is stored in cache with a TTL and validated in the callback.
-
-    Parameters
-    ----------
-    request : Request
-        The incoming HTTP request.
-    response : Response
-        The outgoing HTTP response.
-    provider : str
-        The OAuth provider name (e.g., 'google', 'wechat').
-    cache : CacheDep
-        Cache manager for storing the state parameter.
-
-    Returns
-    -------
-    RedirectResponse
-        Redirects to the OAuth provider's authorization endpoint.
-
-    Raises
-    ------
-    HTTPException
-        If the provider is not configured.
-    """
-    client = oauth.create_client(provider)
-    if not client:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail="This sign-in method is not available right now. Please try a different sign-in option.",
-        )
-
-    # Generate cryptographically secure state parameter for CSRF protection
-    state = secrets.token_urlsafe(32)
-
-    # Store state in cache with TTL (single-use, expires after callback or timeout)
-    state_key = f"oauth_state:{state}"
-    await cache.set(
-        state_key,
-        {"provider": provider, "ip": request.client.host if request.client else None},
-        ttl=settings.OAUTH_STATE_EXPIRE_SECONDS,
-    )
-
-    redirect_uri = request.url_for("auth_callback", provider=provider)
-    return await client.authorize_redirect(request, redirect_uri, state=state)
-
-
-@router.get(
-    "/callback/{provider}",
-    name="auth_callback",
-    response_class=ORJSONResponse,
-    response_model=Token,
-    summary="OAuth callback handler",
-    description="""Handle the redirect from the OAuth provider and exchange for local JWT tokens.
-
-    **Security Validation:**
-    - Validates the `state` parameter to prevent CSRF attacks
-    - Ensures state is single-use (deleted after validation)
-    - Verifies provider matches the state stored during login
-    - State expires after 10 minutes
-    - Rate limited to prevent abuse
-
-    **Flow:**
-    1. Receives authorization `code` and `state` from OAuth provider
-    2. Validates state exists in cache and matches provider
-    3. Exchanges code for access token with provider
-    4. Fetches user info from provider
-    5. Creates or retrieves local user
-    6. Returns JWT access and refresh tokens
-
-    **Note:** This endpoint is called by OAuth providers, not directly by clients.
-    """,
-    responses={
-        200: {
-            "description": "Successfully authenticated, JWT tokens returned",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                        "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                        "token_type": "bearer",
-                    },
-                },
-            },
-        },
-        400: {
-            "description": "Invalid request - missing/invalid state or OAuth error",
-            "content": {
-                "application/json": {
-                    "examples": {
-                        "missing_state": {
-                            "value": {
-                                "detail": "For your security, this sign-in attempt couldn't be verified. Please try signing in again.",
-                            },
-                        },
-                        "invalid_state": {
-                            "value": {
-                                "detail": "For your security, this sign-in session has expired. Please try signing in again.",
-                            },
-                        },
-                        "provider_mismatch": {
-                            "value": {
-                                "detail": "There was a problem with your sign-in. Please try again or use a different sign-in method.",
-                            },
-                        },
-                        "oauth_failed": {
-                            "value": {
-                                "detail": "We couldn't complete your sign-in with this provider. Please try again or use a different sign-in method.",
-                            },
-                        },
-                    },
-                },
-            },
-        },
-        404: {
-            "description": "Provider not found",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": "This sign-in method is not available right now. Please try a different sign-in option.",
-                    },
-                },
-            },
-        },
-        429: {
-            "description": "Rate limit exceeded",
-            "content": {"application/json": {"example": {"detail": "Too Many Requests"}}},
-        },
-    },
-    operation_id="auth_oauth_callback",
-    tags=["🔐 OAuth"],
-    include_in_schema=True,
-)
-@timed("/auth/callback")
-@limiter.limit("20/minute")
-async def auth_callback(  # noqa: C901
-    request: Request,
-    response: Response,
-    provider: str,
-    auth_service: AuthServiceDep,
-    cache: CacheDep,
-) -> Token:
-    """
-    Handle OAuth callback and exchange for local token.
-
-    Validates the state parameter to prevent CSRF attacks. The state must exist
-    in cache and match the provider. It is deleted after validation (single-use).
-
-    Parameters
-    ----------
-    request : Request
-        The incoming HTTP request containing the authorization code and state.
-    response : Response
-        The outgoing HTTP response.
-    provider : str
-        The OAuth provider name (e.g., 'google', 'wechat').
-    auth_service : AuthServiceDep
-        Authentication service for user management.
-    cache : CacheDep
-        Cache manager for validating and deleting the state parameter.
-
-    Returns
-    -------
-    Token
-        JWT access and refresh tokens for the authenticated user.
-
-    Raises
-    ------
-    OAuthStateError
-        If the state parameter is missing, invalid, or expired.
-    OAuthError
-        If the OAuth provider returns an error or token exchange fails.
-    HTTPException
-        If the provider is not found or other unexpected errors occur.
-    """
-    client = oauth.create_client(provider)
-    if not client:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail="This sign-in method is not available right now. Please try a different sign-in option.",
-        )
-
-    # Validate state parameter for CSRF protection
-    state = request.query_params.get("state")
-    if not state:
-        logger.warning("OAuth callback missing state parameter", extra={"provider": provider})
-        raise OAuthStateError("Missing OAuth state parameter")  # noqa: TRY003
-
-    state_key = f"oauth_state:{state}"
-    cached_value = await cache.get(state_key)
-
-    if not isinstance(cached_value, dict):
-        logger.warning(
-            "OAuth state validation failed: state not found or expired",
-            extra={"provider": provider, "state": state[:8] + "..."},
-        )
-        raise OAuthStateError("Invalid or expired OAuth state")  # noqa: TRY003
-
-    stored_state: dict[str, str | None] = cached_value
-
-    if stored_state.get("provider") != provider:
-        logger.warning(
-            "OAuth state validation failed: provider mismatch",
-            extra={"expected": stored_state.get("provider"), "got": provider},
-        )
-        raise OAuthStateError("OAuth provider mismatch")  # noqa: TRY003
-
-    # Delete state immediately after validation (single-use token)
-    await cache.delete(state_key)
-
-    try:
-        token = await client.authorize_access_token(request)
-    except Exception as exc:  # authlib raises various exceptions for OAuth errors
-        error_desc = getattr(exc, "description", str(exc))
-        logger.warning(
-            "OAuth token exchange failed",
-            extra={"provider": provider, "error": error_desc},
-        )
-        msg = f"OAuth authorization failed: {error_desc}"
-        raise OAuthError(msg) from exc
-
-    try:
-        user_info = token.get("userinfo")
-        if not user_info:
-            user_info = await client.userinfo(token=token)
-
-        # Get timezone from middleware header (set by client)
-        user_timezone = getattr(request.state, "user_timezone", "UTC")
-
-        # Fallback to IP geolocation if timezone is default UTC (likely not sent by client)
-        # This mirrors the logic in register_user
-        if user_timezone == "UTC":
-            client_ip = request.client.host if request.client else None
-            if client_ip:
-                user_timezone = await detect_timezone_by_ip(client_ip)
-
-        user = await auth_service.get_or_create_oauth_user(
-            dict(user_info),
-            provider,
-            timezone=user_timezone,
-        )
-        return auth_service.create_token_for_user(user)
-    except OAuthError:
-        # Re-raise OAuthError as-is
-        raise
-    except Exception as exc:
-        logger.exception("OAuth user processing failed", extra={"provider": provider})
-        msg = f"OAuth user processing failed: {exc!s}"
-        raise OAuthError(msg) from exc
 
 
 @router.get(

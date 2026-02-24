@@ -6,6 +6,7 @@ from app.routes.cache import router as cache_router
 from app.routes.email import router as email_router
 from app.routes.items import router as items_router
 from app.routes.limiter import router as limiter_router
+from app.routes.oauth import router as oauth_router
 from app.routes.review import router as review_router
 from app.routes.user import router as user_router
 
@@ -18,6 +19,7 @@ __all__ = [
     "email_router",
     "items_router",
     "limiter_router",
+    "oauth_router",
     "review_router",
     "user_router",
 ]
