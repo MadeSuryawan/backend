@@ -150,7 +150,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # Server Configuration
-    HOST: str = "0.0.0.0"  # noqa: S104 - Required for Docker container binding
+    HOST: str = "127.0.0.1"
     PORT: int = 8000
     LOG_LEVEL: str = "INFO"
     REQUEST_TIMEOUT: int = 30
