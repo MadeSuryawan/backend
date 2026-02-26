@@ -3,16 +3,18 @@
 # Encrypt all files in secrets/
 secrets/** filter=git-crypt diff=git-crypt
 
-# Encrypt specific sensitive files
+# Encrypt sensitive file types
 *.key filter=git-crypt diff=git-crypt
 *.pem filter=git-crypt diff=git-crypt
 *.p12 filter=git-crypt diff=git-crypt
 .env filter=git-crypt diff=git-crypt
 
-# Do NOT encrypt these (public/non-sensitive)
-secrets/.env.example !filter !diff
-secrets/redis-certs/* !filter !diff
+# Do NOT encrypt these (templates and examples)
+.env.example -filter -diff
+*.example -filter -diff
+*.md -filter -diff
+*.txt -filter -diff
 
-# Documentation and examples remain unencrypted
-*.md !filter !diff
-*.txt !filter !diff
+# Redis certificates are public (optional)
+# Uncomment if you don't want to encrypt certs
+# secrets/redis-certs/* !filter !diff
