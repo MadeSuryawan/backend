@@ -42,4 +42,7 @@ We need to restrict its usage to prevent logical errors (duplicate database rows
 
 ## **Deliverable:**
 
-Please scan the `app/routes/` and `app/clients/` directories. Apply the changes above to ensure that no `POST` request or AI Costly operation is wrapped in a blind retry loop.
+1. Review `app/routes/` and `app/clients/` directories to remove blind `@with_retry` loops from non-idempotent operations (AI calls, unguarded POSTs).
+2. For critical `POST` endpoints (like `/blogs/create`, `/auth/register` and AI generation routes), implement the **Redis-based Idempotency Key** mechanism as defined in the architectural plan (`docs/plan/idempotency.md`).
+   * Use the `get_idempotency_key` dependency to enforce the `Idempotency-Key` header.
+   * Use the `IdempotencyManager` to atomic-check-and-set the processing state, and return cached responses for duplicate requests.
