@@ -10,7 +10,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-COMPOSE_FILE="docker-compose.yml"
+COMPOSE_FILE="docker-compose.yaml"
 ENV_FILE="./secrets/.env"
 PROJECT_NAME="baliblissed"
 
@@ -38,10 +38,24 @@ log_error() {
 }
 
 # load environment variables
+# Uses set -a / source / set +a to safely handle values with spaces,
+# special characters, and quoted strings.
 load_env() {
     if [ -f "$ENV_FILE" ]; then
         log_info "Loading environment variables from $ENV_FILE"
-        export $(grep -v '^#' "$ENV_FILE" | xargs)
+        set -a
+        # shellcheck source=/dev/null
+        source "$ENV_FILE"
+        set +a
+
+        # Dynamically select compose file based on environment or Redis SSL setting
+        if [ "$ENVIRONMENT" = "production" ] || [ "$REDIS_SSL" = "true" ]; then
+            COMPOSE_FILE="docker-compose.redis-ssl.yaml"
+            log_info "Using production compose file: $COMPOSE_FILE"
+        else
+            COMPOSE_FILE="docker-compose.yaml"
+            log_info "Using development compose file: $COMPOSE_FILE"
+        fi
     else
         log_error "Environment file $ENV_FILE not found"
         exit 1
@@ -179,6 +193,21 @@ ask_recreate_db() {
     log_info ""
 }
 
+# Check if a port is already in use by a host process (to prevent Docker conflicts)
+check_port_conflict() {
+    local port="${1:-5432}"
+    if nc -z 127.0.0.1 "$port" > /dev/null 2>&1; then
+        # Port is in use. Check if it's occupied by our own Docker project containers.
+        if ! docker ps --filter "name=${PROJECT_NAME}-db" --filter "status=running" --format '{{.Names}}' | grep -q "${PROJECT_NAME}-db"; then
+            log_error "❌ Port $port is already in use by another application (likely your Desktop Postgres app)."
+            log_error "   Please stop the host-side Postgres service before running in Docker mode."
+            log_error "   - macOS: Turn off your Postgres Desktop App or 'brew services stop postgresql'"
+            log_error "   - Linux: 'sudo service postgresql stop'"
+            exit 1
+        fi
+    fi
+}
+
 # Check if Docker is running
 check_docker() {
     if ! docker info > /dev/null 2>&1; then
@@ -198,43 +227,118 @@ create_directories() {
 
 # Start development environment
 start() {
-    # log_info "Starting BaliBlissed development environment..."
     log_info "🚀 BaliBlissed Blog API - Quick Start"
     log_info "======================================"
     log_info ""
     load_env
     get_db_name
-    check_postgres
-    ask_recreate_db
     check_docker
     create_directories
     
-    # Start services with otel profile to enable the collector
-    docker-compose --profile otel up -d
-    uv run uvicorn app:app --host 127.0.0.1 --port 8000 --reload --workers 4 --loop uvloop --http httptools
-    # log_success "Development environment started successfully!"
+    # Start basic infrastructure services
+    # redis-commander is excluded in production compose for security
+    local infra_services="db redis prometheus grafana jaeger otel-collector"
+    if docker compose -f "$COMPOSE_FILE" config --services | grep -q "redis-commander"; then
+        infra_services="$infra_services redis-commander"
+    fi
+    
+    # Check for port conflicts before starting the DB
+    if ! is_neon_postgres; then
+        check_port_conflict 5432
+    fi
+    
+    log_info "Starting infrastructure services..."
+    docker compose -f "$COMPOSE_FILE" --profile otel up -d $infra_services
+    
+    if ! is_neon_postgres; then
+        log_info "Waiting for database to be healthy..."
+        until docker compose -f "$COMPOSE_FILE" exec -T db pg_isready -U "${DB_USER:-postgres}" > /dev/null 2>&1; do
+            sleep 1
+        done
+        log_success "Database is ready!"
+    fi
+    
+    log_info "Starting backend service using local uvicorn..."
+    uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --workers 1 --loop uvloop --http httptools
 }
 
-# Stop development environment
+# Start backend inside Docker
+start_docker() {
+    log_info "🚀 BaliBlissed Blog API - Docker Environment"
+    log_info "========================================="
+    load_env
+    get_db_name
+    check_docker
+    create_directories
+    
+    # If not using Neon, we need to spin up the DB and route it correctly
+    if ! is_neon_postgres; then
+        # Rewrite localhost/127.0.0.1 to the Docker service name 'db'.
+        # Warn and use as-is if neither is found (e.g. custom hostname).
+        if echo "$DATABASE_URL" | grep -qE "(localhost|127\.0\.0\.1)"; then
+            export DOCKER_DATABASE_URL=$(echo "$DATABASE_URL" | sed -E 's/(localhost|127\.0\.0\.1)/db/g')
+        else
+            log_warning "DATABASE_URL does not contain 'localhost' or '127.0.0.1' — using as-is for Docker"
+            export DOCKER_DATABASE_URL="$DATABASE_URL"
+        fi
+        
+        # Check for port conflicts before starting the DB
+        check_port_conflict 5432
+        
+        log_info "Starting local Postgres container..."
+        docker compose -f "$COMPOSE_FILE" up -d db
+        
+        log_info "Waiting for database to be healthy..."
+        until docker compose -f "$COMPOSE_FILE" exec -T db pg_isready -U "${DB_USER:-postgres}" > /dev/null 2>&1; do
+            sleep 1
+        done
+        log_success "Database is ready!"
+    else
+        export DOCKER_DATABASE_URL="$DATABASE_URL"
+    fi
+
+    # Run DB checks and recreation logic (just like start command)
+    # check_postgres  <-- Removed: redundant and causes failure if host-side Postgres app is off
+    # ask_recreate_db
+
+    log_info "Starting all remaining services via Docker Compose..."
+    docker compose -f "$COMPOSE_FILE" --profile otel up -d
+    log_success "Environment is running in Docker!"
+    log_info "You can view logs with: ./scripts/run.sh logs backend"
+}
+
+# Stop development environment (SAFE: preserves database volumes)
 stop() {
     log_info "Stopping BaliBlissed development environment..."
     load_env
     # Stop services including those in the otel profile
-    docker-compose --profile otel down -v
-    
-    # Cleanup browser state to prevent auto-launch issues
-    if [ -f "./scripts/clean_browser.sh" ]; then
-        ./scripts/clean_browser.sh
-    fi
+    # -v is NOT used here to ensure data persistence
+    docker compose -f "$COMPOSE_FILE" --profile otel down
     
     log_success "Development environment stopped successfully!"
 }
 
-# Clean development environment
-clean() {
-    log_info "Cleaning development environment..."
+# Cleanup browser state to prevent auto-launch issues
+clean_browser() {
+    if [ -f "./scripts/clean_browser.sh" ]; then
+        ./scripts/clean_browser.sh
+    fi
+}
+
+# Restart development environment (full Docker mode).
+# To restart in hybrid mode (infra in Docker, backend local), use 'reset' instead.
+restart() {
+    log_info "Restarting development environment (Docker mode)..."
     stop
-    log_success "Environment cleaned!"
+    start_docker
+}
+
+# Clean development environment (WIPES database volumes)
+clean() {
+    log_info "Wiping BaliBlissed development environment (deleting volumes)..."
+    load_env
+    docker compose -f "$COMPOSE_FILE" --profile otel down -v
+    log_success "Environment wiped and volumes removed!"
 }
 
 # Reset development environment
@@ -250,9 +354,64 @@ test() {
     uv run pytest
 }
 
-case "${1:-help}" in
+# Show logs
+logs() {
+    load_env
+    local service="${1:-backend}"
+    log_info "Showing logs for $service..."
+    docker compose -f "$COMPOSE_FILE" logs -f "$service"
+}
+
+# Show status
+status() {
+    load_env
+    log_info "Checking service status..."
+    docker compose -f "$COMPOSE_FILE" ps
+}
+
+# Build docker images
+build() {
+    load_env
+    local target="${1:-development}"
+    log_info "Building specific Docker image for target: $target"
+    
+    if [ "$target" = "production" ]; then
+        docker build --target production -t baliblissed:prod .
+        log_success "Production image built successfully"
+    else
+        # For development build, we build the backend image with development stage explicitly
+        docker build --target development -t baliblissed:dev .
+        log_success "Development image built successfully"
+    fi
+}
+
+# Print help message
+help() {
+    echo "Usage: ./scripts/run.sh [command] [args]"
+    echo ""
+    echo "Commands:"
+    echo "  start         Start infrastructure in Docker, run Backend via local uvicorn (default)"
+    echo "  start_docker  Start all services including Backend in Docker"
+    echo "  stop          Stop all services (safe: preserves database volumes)"
+    echo "  restart       Stop and then start_docker (safe: preserves database volumes)"
+    echo "  clean         Stop all services and REMOVE volumes (hard reset)"
+    echo "  reset         Wipe volumes and then start in hybrid mode"
+    echo "  logs [svc]    View logs for a specific service (default: backend)"
+    echo "  status        Show status of all Docker containers"
+    echo "  build [target] Build Docker images (target options: development, production)"
+    echo "  test          Run pytest"
+    echo "  help          Show this help message"
+    echo ""
+    echo "Environment Switching:"
+    echo "  Set ENVIRONMENT=production or REDIS_SSL=true in .env to use Redis SSL"
+}
+
+case "${1:-start}" in
     start)
         start
+        ;;
+    start_docker)
+        start_docker
         ;;
     stop)
         stop
@@ -275,11 +434,8 @@ case "${1:-help}" in
     test)
         test
         ;;
-    shell)
-        shell
-        ;;
-    redis)
-        redis
+    build)
+        build "$2"
         ;;
     help|--help|-h)
         help

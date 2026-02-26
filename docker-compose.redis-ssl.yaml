@@ -1,14 +1,33 @@
-# Docker Compose with SSL-enabled Redis for local development
-# Usage: docker-compose -f docker-compose.redis-ssl.yaml up -d
-
 services:
-  redis-ssl:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:password@localhost:5432/baliblissed}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in secrets/.env}
+      POSTGRES_DB: ${DB_NAME:-baliblissed}
+    env_file:
+      - ./secrets/.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - baliblissed-network
+
+  redis:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
       - "6380:6380" # SSL port
     volumes:
-      - redis_ssl_data:/data
+      - redis_data:/data
       - ./secrets/redis-certs:/certs:ro
     command: >
       redis-server
@@ -18,7 +37,7 @@ services:
       --tls-key-file /certs/redis-server-key.pem
       --tls-ca-cert-file /certs/ca-cert.pem
       --tls-protocols "TLSv1.2 TLSv1.3"
-      --requirepass dev-password
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in secrets/.env}
       --appendonly yes
     healthcheck:
       test:
@@ -29,7 +48,7 @@ services:
           "--cacert",
           "/certs/ca-cert.pem",
           "-a",
-          "dev-password",
+          "${REDIS_PASSWORD}",
           "ping",
         ]
       interval: 30s
@@ -38,33 +57,140 @@ services:
     networks:
       - baliblissed-network
 
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    networks:
+      - baliblissed-network
+
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:?GF_SECURITY_ADMIN_PASSWORD must be set in secrets/.env}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
+      - GF_AUTH_GITHUB_ENABLED=true
+      - GF_AUTH_GITHUB_CLIENT_ID=${GF_AUTH_GITHUB_CLIENT_ID:-}
+      - GF_AUTH_GITHUB_CLIENT_SECRET=${GF_AUTH_GITHUB_CLIENT_SECRET:-}
+      - GF_AUTH_GITHUB_ALLOWED_USERS=${GF_AUTH_GITHUB_ALLOWED_USER:-}
+    env_file:
+      - ./secrets/.env
+    networks:
+      - baliblissed-network
+    depends_on:
+      - prometheus
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:16686:16686"
+      - "4317:4317"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - baliblissed-network
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./monitoring/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    environment:
+      - JAEGER_ENDPOINT=jaeger:14250
+    networks:
+      - baliblissed-network
+    depends_on:
+      - jaeger
+    profiles:
+      - otel
+
+  migrate:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+      target: production
+    command: ["alembic", "upgrade", "head"]
+    env_file:
+      - ./secrets/.env
+    environment:
+      - DATABASE_URL=${DOCKER_DATABASE_URL:-${DATABASE_URL:-postgresql+asyncpg://postgres:password@localhost:5432/baliblissed}}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - baliblissed-network
+    restart: "no"
+
   backend:
     build:
       context: .
       dockerfile: ./Dockerfile
+      target: production
     ports:
       - "8000:8000"
     volumes:
       - ./secrets/token.json:/app/secrets/token.json:ro
       - ./secrets/client_secret.json:/app/secrets/client_secret.json:ro
       - ./secrets/redis-certs:/app/secrets/redis-certs:ro
+    env_file:
+      - ./secrets/.env
     environment:
-      - REDIS_HOST=redis-ssl
+      - OTEL_SERVICE_NAME=baliblissed-backend
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - DATABASE_URL=${DOCKER_DATABASE_URL:-${DATABASE_URL:-postgresql+asyncpg://postgres:password@localhost:5432/baliblissed}}
+      - REDIS_HOST=redis
       - REDIS_PORT=6380
-      - REDIS_PASSWORD=dev-password
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD must be set in secrets/.env}
       - REDIS_SSL=true
       - REDIS_SSL_CA_CERTS=/app/secrets/redis-certs/ca-cert.pem
-      # For mTLS (optional):
-      # - REDIS_SSL_CERTFILE=/app/secrets/redis-certs/redis-client-cert.pem
-      # - REDIS_SSL_KEYFILE=/app/secrets/redis-certs/redis-client-key.pem
     depends_on:
-      redis-ssl:
+      migrate:
+        condition: service_completed_successfully
+      redis:
         condition: service_healthy
     networks:
       - baliblissed-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 volumes:
-  redis_ssl_data:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
     driver: local
 
 networks:
