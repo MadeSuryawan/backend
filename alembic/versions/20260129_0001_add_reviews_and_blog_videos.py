@@ -81,4 +81,3 @@ def downgrade() -> None:
 
     # Drop videos_url column from blogs
     op.drop_column("blogs", "videos_url")
-
