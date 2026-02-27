@@ -42,7 +42,7 @@ RATE_LIMIT_REQUESTS = 100
 RATE_LIMIT_WINDOW = 3600  # 1 hour in seconds
 
 # AI Model Configuration
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 Harm = HarmCategory
 Block = HarmBlockThreshold
