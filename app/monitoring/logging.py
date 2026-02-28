@@ -40,13 +40,12 @@ from structlog.contextvars import (
     get_contextvars,
     merge_contextvars,
 )
-from structlog.dev import ConsoleRenderer, RichTracebackFormatter
+from structlog.dev import ConsoleRenderer, RichTracebackFormatter, plain_traceback
 from structlog.processors import (
     JSONRenderer,
     StackInfoRenderer,
     UnicodeDecoder,
     add_log_level,
-    format_exc_info,
 )
 from structlog.processors import (
     json as struct_json,
@@ -96,6 +95,16 @@ PII_PATTERNS: list[tuple[Pattern, str]] = [
 
 # Characters to sanitize to prevent log injection
 CONTROL_CHARS = str.maketrans({"\n": "\\n", "\r": "\\r", "\t": "\\t", "\x00": ""})
+
+# Modules to suppress in tracebacks for conciseness (boilerplate frameworks/libs)
+SUPPRESSED_LOG_MODULES: list[str] = [
+    "starlette",
+    "fastapi",
+    "uvicorn",
+    "anyio",
+    "asyncio",
+    "pydantic",
+]
 
 
 def sanitize_log_message(message: str) -> str:
@@ -260,7 +269,23 @@ def get_processors(*, colors: bool = True) -> list[Processor]:
                 ConsoleRenderer(
                     colors=colors,
                     pad_level=False,
-                    exception_formatter=RichTracebackFormatter(),
+                    exception_formatter=RichTracebackFormatter(
+                        # Force truecolor for terminal to ensure reliable coloring
+                        color_system="truecolor",
+                        # Disable locals and limit frames for high-signal, concise logs
+                        show_locals=False,
+                        max_frames=10,
+                        suppress=SUPPRESSED_LOG_MODULES,
+                    )
+                    if colors
+                    else RichTracebackFormatter(
+                        # Use 'auto' for files to safely disable colors (non-TTY)
+                        color_system="auto",
+                        show_locals=False,
+                        # Even stricter limit for file logs
+                        max_frames=5,
+                        suppress=SUPPRESSED_LOG_MODULES,
+                    ),
                 ),
             ],
         )
@@ -294,7 +319,6 @@ def configure_logging() -> None:
             add_log_level,
             PositionalArgumentsFormatter(),
             StackInfoRenderer(),
-            format_exc_info,
             UnicodeDecoder(),
             ProcessorFormatter.wrap_for_formatter,
         ],
