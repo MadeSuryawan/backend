@@ -67,9 +67,9 @@ from app.errors.upload import (
     InvalidImageError,
     UnsupportedImageTypeError,
 )
+from app.logging import get_logger
 from app.managers.rate_limiter import limiter
 from app.models import UserDB
-from app.logging import get_logger
 from app.schemas import (
     TestimonialUpdate,
     UserCreate,

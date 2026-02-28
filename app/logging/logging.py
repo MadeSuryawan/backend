@@ -40,7 +40,7 @@ from structlog.contextvars import (
     get_contextvars,
     merge_contextvars,
 )
-from structlog.dev import ConsoleRenderer, RichTracebackFormatter, plain_traceback
+from structlog.dev import ConsoleRenderer, RichTracebackFormatter
 from structlog.processors import (
     JSONRenderer,
     StackInfoRenderer,

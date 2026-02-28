@@ -11,8 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import ORJSONResponse
 
 from app.dependencies import AdminUserDep, CacheDep
-from app.managers.rate_limiter import get_identifier
 from app.logging import get_logger
+from app.managers.rate_limiter import get_identifier
 from app.schemas import LimiterHealthResponse, LimiterResetRequest, LimiterResetResponse
 
 logger = get_logger(__name__)

@@ -1,3 +1,9 @@
+from app.schemas.ai.email import (
+    AnalysisFormat,
+    ContactAnalysisResponse,
+    EmailInquiry,
+    EmailResponse,
+)
 from app.schemas.blog import BlogCreate, BlogListResponse, BlogResponse, BlogSchema, BlogUpdate
 from app.schemas.cache import (
     CacheClearResponse,
@@ -9,7 +15,6 @@ from app.schemas.cache import (
     HealthCheckResponse,
 )
 from app.schemas.datetime import DateTimeResponse
-from app.schemas.ai.email import AnalysisFormat, ContactAnalysisResponse, EmailInquiry, EmailResponse
 from app.schemas.items import Item, ItemUpdate
 from app.schemas.limiter import (
     LimiterHealthResponse,

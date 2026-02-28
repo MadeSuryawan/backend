@@ -1,6 +1,7 @@
 """Fixtures for managers tests."""
 
 from collections.abc import AsyncGenerator, Generator
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -8,14 +9,14 @@ import pytest
 from app.main import app
 
 
-async def mock_scan_iter(*args, **kwargs) -> AsyncGenerator[str, None]:
+async def mock_scan_iter(*args: tuple[Any, ...], **kwargs: dict[str, Any]) -> AsyncGenerator[str]:
     """Mock async generator for scan_iter."""
     yield "limits:test:1"
     yield "limits:test:2"
 
 
 @pytest.fixture(autouse=True)
-def setup_cache_manager() -> Generator[None, None, None]:
+def setup_cache_manager() -> Generator:
     """Set up cache_manager on app state for limiter tests."""
     mock_cache_manager = AsyncMock()
     mock_cache_manager.is_redis_available = True

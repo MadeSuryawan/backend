@@ -26,9 +26,9 @@ from app.errors.upload import (
     MediaLimitExceededError,
     UnsupportedImageTypeError,
 )
+from app.logging import get_logger
 from app.managers.rate_limiter import limiter
 from app.models.review import ReviewDB
-from app.logging import get_logger
 from app.schemas.review import (
     MediaUploadResponse,
     ReviewCreate,

@@ -41,8 +41,8 @@ from app.configs import settings
 from app.decorators.metrics import timed
 from app.dependencies import AuthServiceDep, CacheDep, OauthDep
 from app.errors.auth import OAuthError, OAuthStateError
-from app.managers.rate_limiter import limiter
 from app.logging import get_logger
+from app.managers.rate_limiter import limiter
 from app.schemas.auth import Token
 from app.services.auth import AuthService
 from app.services.geo_timezone import detect_timezone_by_ip

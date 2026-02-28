@@ -22,8 +22,8 @@ from httpx import RemoteProtocolError, TimeoutException
 from app.configs import settings
 from app.errors import AuthenticationError, ConfigurationError, SendingError
 from app.errors.email import NetworkError
-from app.managers.circuit_breaker import email_circuit_breaker
 from app.logging import get_logger
+from app.managers.circuit_breaker import email_circuit_breaker
 
 logger = get_logger(__name__)
 

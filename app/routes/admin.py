@@ -18,8 +18,8 @@ from starlette.status import HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
 from app.db import get_session
 from app.decorators.metrics import timed
 from app.dependencies import AdminUserDep, UserRepoDep
-from app.models import UserDB
 from app.logging import get_logger
+from app.models import UserDB
 from app.schemas.admin import (
     AdminUserListResponse,
     AdminUserResponse,

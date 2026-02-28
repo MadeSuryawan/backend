@@ -14,6 +14,7 @@ from app.errors.auth import (
     TokenRevokedError,
     UserNotFoundError,
 )
+from app.logging import get_logger
 from app.managers.login_attempt_tracker import LoginAttemptTracker
 from app.managers.password_manager import hash_password, verify_password
 from app.managers.token_blacklist import TokenBlacklist
@@ -27,7 +28,6 @@ from app.managers.token_manager import (
     get_token_jti,
 )
 from app.models import UserDB
-from app.logging import get_logger
 from app.repositories import UserRepository
 from app.schemas.auth import Token, VerificationTokenData
 from app.schemas.user import UserCreate

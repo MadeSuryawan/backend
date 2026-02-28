@@ -1,6 +1,5 @@
 # app/clients/ai_client.py
 
-from google.genai.types import GenerateContentResponse
 from re import search
 from typing import cast
 
@@ -11,6 +10,7 @@ from google.genai.types import (
     ContentListUnion,
     ContentListUnionDict,
     GenerateContentConfig,
+    GenerateContentResponse,
 )
 from httpx import RemoteProtocolError, TimeoutException
 
@@ -31,7 +31,13 @@ from app.errors import (
 from app.errors.ai import ContactAnalysisError, ItineraryGenerationError
 from app.logging import get_logger
 from app.managers.circuit_breaker import ai_circuit_breaker
-from app.schemas.ai import AnalysisFormat, ChatResponse, ContactAnalysisResponse, ItineraryMD, ItineraryTXT
+from app.schemas.ai import (
+    AnalysisFormat,
+    ChatResponse,
+    ContactAnalysisResponse,
+    ItineraryMD,
+    ItineraryTXT,
+)
 
 logger = get_logger(__name__)
 
@@ -196,7 +202,12 @@ class AiClient:
             raise AIGenerationError(detail=msg)
         return response.parsed
 
-    def _content_config(self, system_instruction: str, resp_type: RespType, temperature: float = 0.7) -> GenerateContentConfig:
+    def _content_config(
+        self,
+        system_instruction: str,
+        resp_type: RespType,
+        temperature: float = 0.7,
+    ) -> GenerateContentConfig:
         """
         Create a GenerateContentConfig object with the given parameters.
 
@@ -229,7 +240,10 @@ class AiClient:
             temperature=temperature,
         )
 
-    def _extract_sources(self, response: GenerateContentResponse) -> list[dict[str, str]] | None:
+    def _extract_sources(
+        self,
+        response: GenerateContentResponse,
+    ) -> list[dict[str, str | None]] | None:
         """
         Extract titles and links from grounding metadata from Google search tool.
 
@@ -241,18 +255,19 @@ class AiClient:
         """
         if not response.candidates:
             return
-            
+
         candidate = response.candidates[0]
-        
-        if not (metadata := getattr(candidate, "grounding_metadata")) or not metadata.grounding_chunks:
+        metadata = candidate.grounding_metadata
+
+        if not metadata or not metadata.grounding_chunks:
             return
-            
+
         return [
-            {"title": chunk.web.title, "url": chunk.web.uri}
+            {"title": chunk_web.title, "url": chunk_web.uri}
             for chunk in metadata.grounding_chunks
-            if chunk.web
+            if (chunk_web := chunk.web)
         ]
-    
+
     def _handle_exception(self, e: Exception) -> None:
         """Map generic exceptions to specific AiError with user-friendly messages."""
         error_msg = str(e)
@@ -271,9 +286,13 @@ class AiClient:
             # Try to extract retry delay (e.g., 'retryDelay': '22s' or '3.99s')
             if retry_match := search(r"retryDelay': '([\d\.]+)s'", error_msg):
                 seconds = retry_match.group(1)
-                detail = f"Our AI service is currently very busy. Please try again in {seconds} seconds."
+                detail = (
+                    f"Our AI service is currently very busy. Please try again in {seconds} seconds."
+                )
             else:
-                detail = "We've reached our AI service limit for now. Please try again in a few moments."
+                detail = (
+                    "We've reached our AI service limit for now. Please try again in a few moments."
+                )
             raise AiQuotaExceededError(detail=detail) from e
 
         elif "connection" in error_msg.lower() or "timeout" in error_msg.lower():

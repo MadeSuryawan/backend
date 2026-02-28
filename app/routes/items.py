@@ -32,8 +32,8 @@ from starlette.status import HTTP_404_NOT_FOUND
 
 from app.decorators.caching import cache_busting, cached, get_cache_manager
 from app.decorators.metrics import timed
-from app.managers.rate_limiter import limiter
 from app.logging import get_logger
+from app.managers.rate_limiter import limiter
 from app.schemas import Item, ItemUpdate
 
 logger = get_logger(__name__)
