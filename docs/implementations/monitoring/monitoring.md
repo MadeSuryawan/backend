@@ -201,7 +201,7 @@ The original `/health` endpoint is preserved for backward compatibility and incl
 The application uses structlog for structured JSON logging in production:
 
 ```python
-from app.monitoring import get_logger
+from app.logging import get_logger
 
 logger = get_logger(__name__)
 logger.info("User action", user_id="123", action="login")

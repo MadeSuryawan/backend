@@ -29,8 +29,8 @@ from app.errors import (
     AiQuotaExceededError,
 )
 from app.errors.ai import ContactAnalysisError, ItineraryGenerationError
+from app.logging import get_logger
 from app.managers.circuit_breaker import ai_circuit_breaker
-from app.monitoring import get_logger
 from app.schemas.ai import AnalysisFormat, ChatResponse, ContactAnalysisResponse, ItineraryMD, ItineraryTXT
 
 logger = get_logger(__name__)

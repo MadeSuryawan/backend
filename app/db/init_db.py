@@ -13,7 +13,7 @@ from asyncio import run as asyncio_run
 
 from app.db.database import init_db
 from app.errors.database import DatabaseInitializationError
-from app.monitoring import get_logger
+from app.logging import get_logger
 
 logger = get_logger(__name__)
 

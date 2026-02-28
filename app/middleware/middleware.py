@@ -45,12 +45,12 @@ from uvloop import Loop
 from app.clients.ai_client import AiClient
 from app.configs import settings
 from app.db import close_db, init_db
+from app.logging import bind_request_id, clear_context, get_logger
 from app.managers.cache_manager import CacheManager
 from app.managers.login_attempt_tracker import init_login_tracker
 from app.managers.rate_limiter import close_limiter
 from app.managers.token_blacklist import init_token_blacklist
-from app.monitoring import HealthChecker, get_logger
-from app.monitoring.logging import bind_request_id, clear_context
+from app.monitoring import HealthChecker
 from app.utils.helpers import host, time_taken
 from app.utils.timezone import format_logs
 

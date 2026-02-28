@@ -18,7 +18,7 @@ from app.clients.redis_client import RedisClient
 from app.configs import CacheConfig, settings
 from app.data import CacheStatistics
 from app.errors import BASE_EXCEPTION, CacheDeserializationError, CacheKeyError
-from app.monitoring import get_logger
+from app.logging import get_logger
 from app.schemas import CacheToggleResponse
 from app.schemas.cache import CacheStatisticsData
 from app.utils.cache_serializer import (

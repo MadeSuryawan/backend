@@ -19,7 +19,7 @@ from app.db import get_session
 from app.decorators.metrics import timed
 from app.dependencies import AdminUserDep, UserRepoDep
 from app.models import UserDB
-from app.monitoring import get_logger
+from app.logging import get_logger
 from app.schemas.admin import (
     AdminUserListResponse,
     AdminUserResponse,

@@ -69,7 +69,7 @@ from app.errors.upload import (
 )
 from app.managers.rate_limiter import limiter
 from app.models import UserDB
-from app.monitoring import get_logger
+from app.logging import get_logger
 from app.schemas import (
     TestimonialUpdate,
     UserCreate,

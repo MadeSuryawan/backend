@@ -43,8 +43,9 @@ from app.middleware import (
     configure_cors,
     lifespan,
 )
+from app.logging import configure_logging, get_logger
 from app.middleware.context import ContextMiddleware
-from app.monitoring import configure_logging, get_logger, setup_prometheus, setup_tracing
+from app.monitoring import setup_prometheus, setup_tracing
 from app.routes import (
     admin_router,
     ai_router,

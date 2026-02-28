@@ -68,7 +68,7 @@ from app.managers.token_manager import (
     decode_password_reset_token,
     decode_verification_token,
 )
-from app.monitoring import get_logger
+from app.logging import get_logger
 from app.schemas.auth import (
     EmailVerificationRequest,
     LogoutRequest,

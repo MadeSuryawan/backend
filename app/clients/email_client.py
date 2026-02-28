@@ -23,7 +23,7 @@ from app.configs import settings
 from app.errors import AuthenticationError, ConfigurationError, SendingError
 from app.errors.email import NetworkError
 from app.managers.circuit_breaker import email_circuit_breaker
-from app.monitoring import get_logger
+from app.logging import get_logger
 
 logger = get_logger(__name__)
 

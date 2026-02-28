@@ -13,7 +13,7 @@ from cloudinary.api import delete_resources_by_prefix, resource
 from cloudinary.uploader import destroy, upload
 
 from app.configs.settings import settings
-from app.monitoring import get_logger
+from app.logging import get_logger
 
 logger = get_logger(__name__)
 

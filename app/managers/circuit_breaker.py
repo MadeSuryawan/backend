@@ -23,7 +23,8 @@ from typing import Any, ParamSpec, TypeVar, cast
 from warnings import warn
 
 from app.errors import AiError, CircuitBreakerError, EmailServiceError
-from app.monitoring import get_logger, metrics
+from app.logging import get_logger
+from app.monitoring import metrics
 
 logger = get_logger(__name__)
 

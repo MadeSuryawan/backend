@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from threading import Lock
 
-from app.monitoring import get_logger
+from app.logging import get_logger
 from app.schemas.cache import CacheStatisticsData
 from app.utils.helpers import today_str
 

@@ -11,7 +11,7 @@ from slowapi.util import get_remote_address
 from starlette.status import HTTP_429_TOO_MANY_REQUESTS
 
 from app.configs import LimiterConfig
-from app.monitoring import get_logger
+from app.logging import get_logger
 
 logger = get_logger(__name__)
 

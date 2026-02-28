@@ -12,7 +12,7 @@ from mdformat import text as mdformat_text
 
 from app.clients.ai_client import AiClient
 from app.configs.settings import WHATSAPP_NUMBER
-from app.monitoring import get_logger
+from app.logging import get_logger
 from app.schemas.ai import (
     ItineraryMD,
     ItineraryRequestMD,

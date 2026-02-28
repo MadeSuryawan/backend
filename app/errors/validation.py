@@ -8,7 +8,7 @@ from fastapi.responses import ORJSONResponse
 from starlette.status import HTTP_422_UNPROCESSABLE_CONTENT
 
 from app.errors import BaseAppError
-from app.monitoring import get_logger
+from app.logging import get_logger
 from app.utils.helpers import host
 
 logger = get_logger(__name__)

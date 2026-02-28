@@ -16,7 +16,7 @@ from fastapi.responses import ORJSONResponse
 from app.decorators.metrics import timed
 from app.dependencies import AdminUserDep, CacheDep
 from app.managers.rate_limiter import limiter
-from app.monitoring import get_logger
+from app.logging import get_logger
 from app.schemas import (
     CacheClearResponse,
     CachePingResponse,

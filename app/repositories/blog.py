@@ -11,7 +11,7 @@ from sqlalchemy.sql.expression import ColumnElement
 
 from app.errors.database import DuplicateEntryError
 from app.models.blog import BlogDB
-from app.monitoring import get_logger
+from app.logging import get_logger
 from app.repositories.base import BaseRepository
 from app.schemas.blog import BlogSchema, BlogUpdate
 

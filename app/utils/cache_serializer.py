@@ -18,7 +18,7 @@ from app.errors import (
     CacheDeserializationError,
     CacheSerializationError,
 )
-from app.monitoring import get_logger
+from app.logging import get_logger
 
 # from app.schemas.items import Item
 

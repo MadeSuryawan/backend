@@ -1,6 +1,6 @@
 """Tests for monitoring logging module."""
 
-from app.monitoring.logging import (
+from app.logging.logging import (
     PII_PATTERNS,
     SENSITIVE_HEADERS,
     redact_pii,

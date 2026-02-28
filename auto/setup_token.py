@@ -9,7 +9,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 path.append(f"{Path(__file__).parent.parent}")
 
 from app.configs import settings
-from app.monitoring import get_logger
+from app.logging import get_logger
 
 logger = get_logger(__name__)
 

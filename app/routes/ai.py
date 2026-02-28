@@ -34,7 +34,7 @@ from app.dependencies import (
     get_authorized_user,
 )
 from app.managers.rate_limiter import limiter
-from app.monitoring import get_logger
+from app.logging import get_logger
 from app.schemas.ai import (
     ChatRequest,
     ChatResponse,

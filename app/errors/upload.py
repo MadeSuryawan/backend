@@ -13,7 +13,7 @@ from starlette.status import (
 )
 
 from app.errors.base import BaseAppError, create_exception_handler
-from app.monitoring import get_logger
+from app.logging import get_logger
 
 logger = get_logger(__name__)
 

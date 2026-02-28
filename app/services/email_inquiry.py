@@ -4,7 +4,7 @@ from fastapi import Request
 from pydantic import ValidationError
 
 from app.clients.ai_client import AiClient
-from app.monitoring import get_logger
+from app.logging import get_logger
 from app.schemas.ai import AnalysisFormat, ContactAnalysisResponse, EmailInquiry
 from app.utils.helpers import host
 

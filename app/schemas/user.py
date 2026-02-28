@@ -23,7 +23,7 @@ from pydantic_core import PydanticCustomError
 from pydantic_core.core_schema import ValidationInfo
 
 from app.models import UserDB
-from app.monitoring import get_logger
+from app.logging import get_logger
 from app.schemas.datetime import DateTimeResponse
 from app.utils.helpers import response_datetime
 

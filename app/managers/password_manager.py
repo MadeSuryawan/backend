@@ -15,7 +15,7 @@ from passlib.exc import InternalBackendError
 from app.configs import CONFIG_MAP, settings
 from app.decorators.with_retry import with_retry
 from app.errors import PasswordHashingError, PasswordRehashError
-from app.monitoring import get_logger
+from app.logging import get_logger
 
 executor = ThreadPoolExecutor(max_workers=4)
 logger = get_logger(__name__)

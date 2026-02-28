@@ -22,7 +22,7 @@ from typing import Any, Self
 from psutil import cpu_percent as get_cpu_percent
 from psutil import disk_usage, virtual_memory
 
-from app.monitoring import get_logger
+from app.logging import get_logger
 
 logger = get_logger(__name__)
 

@@ -27,7 +27,7 @@ from app.managers.token_manager import (
     get_token_jti,
 )
 from app.models import UserDB
-from app.monitoring import get_logger
+from app.logging import get_logger
 from app.repositories import UserRepository
 from app.schemas.auth import Token, VerificationTokenData
 from app.schemas.user import UserCreate

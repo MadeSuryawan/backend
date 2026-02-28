@@ -19,7 +19,7 @@ Sensitive fields are automatically redacted from logs:
 
 Examples
 --------
->>> from app.monitoring import get_logger
+>>> from app.logging import get_logger
 >>> logger = get_logger("my_module")
 >>> logger.info("User action", user_id="123", action="login")
 """

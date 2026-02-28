@@ -12,7 +12,7 @@ from fastapi.responses import ORJSONResponse
 
 from app.dependencies import AdminUserDep, CacheDep
 from app.managers.rate_limiter import get_identifier
-from app.monitoring import get_logger
+from app.logging import get_logger
 from app.schemas import LimiterHealthResponse, LimiterResetRequest, LimiterResetResponse
 
 logger = get_logger(__name__)

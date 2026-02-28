@@ -16,8 +16,9 @@ from redis.exceptions import RedisError
 from app.context import cache_manager_ctx
 from app.dependencies import get_cache_manager
 from app.errors import BASE_EXCEPTION, CacheKeyError
+from app.logging import get_logger
 from app.managers.cache_manager import CacheManager
-from app.monitoring import get_logger, metrics
+from app.monitoring import metrics
 
 logger = get_logger(__name__)
 

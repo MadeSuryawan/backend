@@ -11,7 +11,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from app.monitoring import get_logger
+from app.logging import get_logger
 
 logger = get_logger(__name__)
 
