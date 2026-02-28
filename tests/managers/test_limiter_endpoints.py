@@ -1,4 +1,3 @@
-from collections.abc import AsyncGenerator
 from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
@@ -74,10 +73,17 @@ async def test_limiter_status_forbidden_for_non_admin() -> None:
     )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        with patch(
-            "app.repositories.user.UserRepository.get_by_id",
-            new_callable=AsyncMock,
-        ) as mock_get_user:
+        with (
+            patch(
+                "app.clients.redis_client.RedisClient.ping",
+                new_callable=AsyncMock,
+            ) as mock_ping,
+            patch(
+                "app.repositories.user.UserRepository.get_by_id",
+                new_callable=AsyncMock,
+            ) as mock_get_user,
+        ):
+            mock_ping.return_value = True
             mock_get_user.return_value = regular_user
 
             response = await client.get(
@@ -92,9 +98,14 @@ async def test_limiter_status_forbidden_for_non_admin() -> None:
 async def test_limiter_status_unauthorized_without_token() -> None:
     """Test that limiter status endpoint returns 401 without authentication."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/limiter/status")
-        assert response.status_code == 401
-        assert "Not authenticated" in response.json()["detail"]
+        with patch(
+            "app.clients.redis_client.RedisClient.ping",
+            new_callable=AsyncMock,
+        ) as mock_ping:
+            mock_ping.return_value = True
+            response = await client.get("/limiter/status")
+            assert response.status_code == 401
+            assert "Not authenticated" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -118,7 +129,6 @@ async def test_limiter_reset_admin_only_success() -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         with (
             patch("app.clients.redis_client.RedisClient.ping", new_callable=AsyncMock) as mock_ping,
-            patch("app.clients.redis_client.RedisClient.scan_iter") as mock_scan,
             patch(
                 "app.clients.redis_client.RedisClient.delete",
                 new_callable=AsyncMock,
@@ -130,14 +140,6 @@ async def test_limiter_reset_admin_only_success() -> None:
         ):
             mock_ping.return_value = True
             mock_get_user.return_value = admin_user
-
-            # Mock scan_iter to yield some keys
-            async def scan_gen(pattern: str) -> AsyncGenerator[str]:
-                yield "limits:test:1"
-                yield "limits:test:2"
-
-            mock_scan.side_effect = scan_gen
-
             mock_delete.return_value = 1
 
             # Call with all_endpoints=True and admin token
@@ -172,10 +174,17 @@ async def test_limiter_reset_forbidden_remote() -> None:
     )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        with patch(
-            "app.repositories.user.UserRepository.get_by_id",
-            new_callable=AsyncMock,
-        ) as mock_get_user:
+        with (
+            patch(
+                "app.clients.redis_client.RedisClient.ping",
+                new_callable=AsyncMock,
+            ) as mock_ping,
+            patch(
+                "app.repositories.user.UserRepository.get_by_id",
+                new_callable=AsyncMock,
+            ) as mock_get_user,
+        ):
+            mock_ping.return_value = True
             mock_get_user.return_value = regular_user
 
             response = await client.post(

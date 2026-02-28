@@ -1,5 +1,9 @@
 """Tests for monitoring health module."""
 
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from fastapi import FastAPI
 
@@ -10,6 +14,15 @@ from app.monitoring.health import (
     HealthStatus,
     OverallStatus,
 )
+
+
+@asynccontextmanager
+async def mock_transaction() -> AsyncGenerator[AsyncMock]:
+    """Mock async context manager for database transactions."""
+    mock_session = AsyncMock()
+    mock_session.execute.return_value.scalar.return_value = 1
+    yield mock_session
+    await mock_session.commit()
 
 
 class TestComponentCheck:
@@ -112,28 +125,40 @@ class TestHealthChecker:
         """Test that readiness check returns a status."""
 
         checker = HealthChecker(app=FastAPI())
-        result = await checker.check_readiness()
-        assert result.status in (OverallStatus.READY, OverallStatus.NOT_READY)
-        assert "database" in result.checks
-        assert "redis" in result.checks
-        assert "disk" in result.checks
+        with patch(
+            "app.monitoring.health.transaction",
+            mock_transaction,
+        ):
+            result = await checker.check_readiness()
+            assert result.status in (OverallStatus.READY, OverallStatus.NOT_READY)
+            assert "database" in result.checks
+            assert "redis" in result.checks
+            assert "disk" in result.checks
 
     @pytest.mark.asyncio
     async def test_check_readiness_checks_have_status(self) -> None:
         """Test that all checks have a status field."""
 
         checker = HealthChecker(app=FastAPI())
-        result = await checker.check_readiness()
-        for _check_name, check in result.checks.items():
-            assert check.status in (CheckStatus.PASS, CheckStatus.FAIL, CheckStatus.WARN)
+        with patch(
+            "app.monitoring.health.transaction",
+            mock_transaction,
+        ):
+            result = await checker.check_readiness()
+            for _check_name, check in result.checks.items():
+                assert check.status in (CheckStatus.PASS, CheckStatus.FAIL, CheckStatus.WARN)
 
     @pytest.mark.asyncio
     async def test_check_combined_returns_status(self) -> None:
         """Test that combined check returns a status."""
 
         checker = HealthChecker(app=FastAPI())
-        result = await checker.check_combined()
-        assert isinstance(result.status, OverallStatus)
+        with patch(
+            "app.monitoring.health.transaction",
+            mock_transaction,
+        ):
+            result = await checker.check_combined()
+            assert isinstance(result.status, OverallStatus)
 
 
 class TestCheckStatus:

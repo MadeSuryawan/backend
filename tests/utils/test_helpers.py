@@ -54,11 +54,11 @@ class TestTimeTaken:
         assert "s" in result
 
     def test_format_pattern(self) -> None:
-        """Test the format is Xm Ys."""
+        """Test the format is Xm Y.ZZs."""
 
         start = perf_counter()
         result = time_taken(start)
-        pattern = r"^\d+m \d+s$"
+        pattern = r"^\d+m \d+\.\d{2}s$"
         assert re.match(pattern, result), f"Format mismatch: {result}"
 
     def test_elapsed_time_calculation(self) -> None:
@@ -67,7 +67,7 @@ class TestTimeTaken:
         start = perf_counter()
         sleep(0.1)  # Sleep for 100ms
         result = time_taken(start)
-        assert result == "0m 0s"
+        assert result.startswith("0m 0.1")
 
     def test_with_longer_duration(self) -> None:
         """Test with a mock start time that results in longer duration."""
@@ -75,7 +75,7 @@ class TestTimeTaken:
         # Mock a start time that was 65 seconds ago
         start = perf_counter() - 65
         result = time_taken(start)
-        assert result == "1m 5s"
+        assert result == "1m 5.00s"
 
     def test_with_hours_worth_of_time(self) -> None:
         """Test with duration exceeding 60 minutes."""
@@ -83,5 +83,5 @@ class TestTimeTaken:
         # 3665 seconds = 61 minutes and 5 seconds
         start = perf_counter() - 3665
         result = time_taken(start)
-        # divmod gives 61m 5s (not handling hours)
-        assert result == "61m 5s"
+        # divmod gives 61m 5.00s (not handling hours)
+        assert result == "61m 5.00s"
