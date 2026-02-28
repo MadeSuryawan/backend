@@ -1,5 +1,6 @@
 # app/clients/ai_client.py
 
+from re import search
 from typing import cast
 
 from google.genai import Client
@@ -29,8 +30,7 @@ from app.errors import (
 from app.errors.ai import ContactAnalysisError, ItineraryGenerationError
 from app.managers.circuit_breaker import ai_circuit_breaker
 from app.monitoring import get_logger
-from app.schemas.ai import ChatResponse, ItineraryMD, ItineraryTXT
-from app.schemas.email import AnalysisFormat, ContactAnalysisResponse
+from app.schemas.ai import AnalysisFormat, ChatResponse, ContactAnalysisResponse, ItineraryMD, ItineraryTXT
 
 logger = get_logger(__name__)
 
@@ -44,7 +44,6 @@ NETWORK_EXCEPTIONS = (
 
 RETRIABLE_EXCEPTIONS = (
     AiNetworkError,
-    AiQuotaExceededError,
     AIGenerationError,
     AiError,
     ContactAnalysisError,
@@ -88,8 +87,6 @@ class AiClient:
             logger.exception(
                 "Failed to initialize Gemini client, missing or invalid API key?",
             )
-            # msg = "Failed to initialize Gemini client"
-            # raise AIClientError(detail=msg) from e
             self._handle_exception(e)
 
         logger.info(f"AIClient initialized with model: {self._model}")
@@ -145,6 +142,39 @@ class AiClient:
             raise AIGenerationError(detail=msg)
         return response.parsed
 
+    def _content_config(self, system_instruction: str, resp_type: RespType, temperature: float = 0.7) -> GenerateContentConfig:
+        """
+        Create a GenerateContentConfig object with the given parameters.
+
+        Args:
+            system_instruction: The system instruction for the content generation.
+            resp_type: The type of the response.
+            temperature: The temperature for the content generation.
+
+        Returns:
+            A GenerateContentConfig object.
+        """
+        return GenerateContentConfig(
+            top_p=self._config.top_p,
+            top_k=self._config.top_k,
+            max_output_tokens=self._config.max_output_tokens,
+            safety_settings=self._config.safety_settings,
+            # if use tools, disable response_mime_type, return response.text and comment out isinstance check on _generate_content()
+            # Validate response scehema accordingly for every service(chatbot, itinerary, contact analysis)
+            # tools=self._config.tools,
+            response_mime_type="application/json",
+            system_instruction=system_instruction,
+            response_schema=resp_type,
+            # response_schema={
+            #     "type": "object",
+            #     "properties": {
+            #         "answer": {"type": "string"},
+            #     },
+            #     "required": ["answer"],
+            # },
+            temperature=temperature,
+        )
+
     async def do_service(
         self,
         contents: ContentListUnion | ContentListUnionDict,
@@ -171,24 +201,7 @@ class AiClient:
             CircuitBreakerError: If the circuit breaker is open.
             AIGenerationError: If content generation fails.
         """
-        config = GenerateContentConfig(
-            top_p=self._config.top_p,
-            top_k=self._config.top_k,
-            max_output_tokens=self._config.max_output_tokens,
-            safety_settings=self._config.safety_settings,
-            tools=self._config.tools,
-            response_mime_type="application/json",
-            system_instruction=system_instruction,
-            response_schema=resp_type,
-            # response_schema={
-            #     "type": "object",
-            #     "properties": {
-            #         "answer": {"type": "string"},
-            #     },
-            #     "required": ["answer"],
-            # },
-            temperature=temperature,
-        )
+        config = self._content_config(system_instruction, resp_type, temperature)
 
         try:
             if self._circuit_breaker:
@@ -208,7 +221,7 @@ class AiClient:
             detail = f"AI service temporarily unavailable: {error_msg}"
             raise AiNetworkError(detail=detail) from e
         except AiError:
-            # Already our custom error, just re-raise
+            # Already on custom error, just re-raise
             raise
         except Exception as e:
             # Convert unknown exceptions to AiError for proper handling
@@ -216,22 +229,38 @@ class AiClient:
             self._handle_exception(e)
 
     def _handle_exception(self, e: Exception) -> None:
-        """Map generic exceptions to specific AiError."""
+        """Map generic exceptions to specific AiError with user-friendly messages."""
         error_msg = str(e)
         logger.exception(f"AI Error: {error_msg}", exc_info=True)
 
         # Check for specific Google API errors
         if "401" in error_msg or "unauthenticated" in error_msg.lower():
-            detail = f"Authentication failed: {error_msg}"
+            # Hide technical details from user
+            detail = (
+                "Our AI service is temporarily unavailable while we perform some maintenance. "
+                "Please try again in a few minutes."
+            )
             raise AiAuthenticationError(detail=detail) from e
+
         elif "429" in error_msg or "quota" in error_msg.lower():
-            detail = f"Quota exceeded: {error_msg}"
+            # Try to extract retry delay (e.g., 'retryDelay': '22s' or '3.99s')
+            if retry_match := search(r"retryDelay': '([\d\.]+)s'", error_msg):
+                seconds = retry_match.group(1)
+                detail = f"Our AI service is currently very busy. Please try again in {seconds} seconds."
+            else:
+                detail = "We've reached our AI service limit for now. Please try again in a few moments."
             raise AiQuotaExceededError(detail=detail) from e
-        elif "connection" in error_msg.lower():
-            detail = f"Network error: {error_msg}"
+
+        elif "connection" in error_msg.lower() or "timeout" in error_msg.lower():
+            detail = (
+                "We're having trouble reaching our AI service. "
+                "Please check your internet connection or try again in a moment."
+            )
             raise AiNetworkError(detail=detail) from e
+
         else:
-            detail = f"An unexpected error occurred: {error_msg}"
+            # For unexpected errors, provide a generic but helpful message
+            detail = "We're experiencing an unexpected issue with our AI service. Please try again later."
             raise AiError(detail=detail) from e
 
     async def close(self) -> None:
