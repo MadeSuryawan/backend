@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.email import DISPOSABLE_DOMAINS, EmailInquiry, EmailResponse
+from app.schemas.ai.email import DISPOSABLE_DOMAINS, EmailInquiry, EmailResponse
 
 
 class TestEmailRequest:

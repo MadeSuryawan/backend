@@ -42,8 +42,9 @@ from app.schemas.ai import (
     ItineraryRequestMD,
     ItineraryRequestTXT,
     ItineraryTXT,
+    ContactAnalysisResponse,
+    EmailInquiry,
 )
-from app.schemas.email import ContactAnalysisResponse, EmailInquiry
 from app.services.chatbot import chat_with_ai
 from app.services.email_inquiry import analyze_contact, confirmation_message
 from app.services.itinerary import ai_convert_txt, generate_itinerary

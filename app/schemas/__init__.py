@@ -9,7 +9,7 @@ from app.schemas.cache import (
     HealthCheckResponse,
 )
 from app.schemas.datetime import DateTimeResponse
-from app.schemas.email import AnalysisFormat, ContactAnalysisResponse, EmailInquiry, EmailResponse
+from app.schemas.ai.email import AnalysisFormat, ContactAnalysisResponse, EmailInquiry, EmailResponse
 from app.schemas.items import Item, ItemUpdate
 from app.schemas.limiter import (
     LimiterHealthResponse,
