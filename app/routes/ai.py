@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import ORJSONResponse
 from starlette.responses import Response
 
@@ -58,10 +58,15 @@ class AiDepOps:
     """Dependencies for AI operations."""
 
     ai_client: AiDep
-    user_id: UUID
     repo: UserRepoDep
     current_user: UserDBDep
     verified_user: VerifiedUserDep
+    user_id: Annotated[
+        UUID | None,
+        Query(
+            description="The user ID to act on. Required for regular users but optional for admins (defaults to admin's own ID)."
+        ),
+    ] = None
 
 
 def itinerary_md_key(itinerary_req: ItineraryRequestMD) -> str:
@@ -158,7 +163,16 @@ async def chat_bot(
       "answer": str
     }
     """
-    await get_authorized_user(deps.repo, deps.user_id, deps.current_user, "chat")
+    target_user_id = deps.user_id
+    if not target_user_id:
+        if deps.current_user.role != "admin":
+            raise HTTPException(
+                status_code=400,
+                detail="user_id query parameter is required for non-admin users.",
+            )
+        target_user_id = deps.current_user.uuid
+
+    await get_authorized_user(deps.repo, target_user_id, deps.current_user, "chat")
     answer = await chat_with_ai(chat, deps.ai_client)
     return ORJSONResponse(answer.model_dump())
 
@@ -347,7 +361,16 @@ async def itinerary(
     }
     """
 
-    await get_authorized_user(deps.repo, deps.user_id, deps.current_user, "itinerary_generate")
+    target_user_id = deps.user_id
+    if not target_user_id:
+        if deps.current_user.role != "admin":
+            raise HTTPException(
+                status_code=400,
+                detail="user_id query parameter is required for non-admin users.",
+            )
+        target_user_id = deps.current_user.uuid
+
+    await get_authorized_user(deps.repo, target_user_id, deps.current_user, "itinerary_generate")
     return await generate_itinerary(request, itinerary_req, deps.ai_client)
 
 
@@ -439,5 +462,14 @@ async def itinerary_txt(
       "text_content": str
     }
     """
-    await get_authorized_user(deps.repo, deps.user_id, deps.current_user, "itinerary_generate")
+    target_user_id = deps.user_id
+    if not target_user_id:
+        if deps.current_user.role != "admin":
+            raise HTTPException(
+                status_code=400,
+                detail="user_id query parameter is required for non-admin users.",
+            )
+        target_user_id = deps.current_user.uuid
+
+    await get_authorized_user(deps.repo, target_user_id, deps.current_user, "itinerary_generate")
     return await ai_convert_txt(request, itinerary_md, deps.ai_client)
