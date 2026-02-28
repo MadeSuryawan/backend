@@ -63,12 +63,12 @@ from app.errors.auth import (
     ResetTokenUsedError,
     VerificationTokenUsedError,
 )
+from app.logging import get_logger
 from app.managers.rate_limiter import limiter
 from app.managers.token_manager import (
     decode_password_reset_token,
     decode_verification_token,
 )
-from app.logging import get_logger
 from app.schemas.auth import (
     EmailVerificationRequest,
     LogoutRequest,
@@ -1008,6 +1008,24 @@ async def change_password(
         },
     },
     operation_id="auth_register",
+    openapi_extra={
+        "parameters": [
+            {
+                "name": "Idempotency-Key",
+                "in": "header",
+                "required": True,
+                "schema": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "550e8400-e29b-41d4-a716-446655440000",
+                },
+                "description": (
+                    "UUID v4 idempotency key. Repeated requests with the same key "
+                    "and identical body return the original response without re-registering."
+                ),
+            },
+        ],
+    },
 )
 @timed("/auth/register")
 @limiter.limit("5/hour")

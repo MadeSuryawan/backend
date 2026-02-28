@@ -2,8 +2,6 @@
 
 """BaliBlissed Backend - Seamless caching integration with Redis for FastAPI."""
 
-from app.configs import settings
-
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.gzip import GZipMiddleware
@@ -13,6 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
+from app.configs import settings
 from app.errors import (
     AiError,
     CacheExceptionError,
@@ -30,15 +29,16 @@ from app.errors import (
     password_hashing_exception_handler,
     validation_exception_handler,
 )
+from app.logging import configure_logging, get_logger
 from app.managers.rate_limiter import rate_limit_exceeded_handler
 from app.middleware import (
+    IdempotencyMiddleware,
     LoggingMiddleware,
     SecurityHeadersMiddleware,
     TimezoneMiddleware,
     configure_cors,
     lifespan,
 )
-from app.logging import configure_logging, get_logger
 from app.middleware.context import ContextMiddleware
 from app.monitoring import setup_prometheus, setup_tracing
 from app.routes import (
@@ -87,6 +87,9 @@ configure_cors(app)
 app.add_middleware(TimezoneMiddleware)
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+# Idempotency middleware — store is lazily resolved from app.state after lifespan.
+# Must run after authentication context is available (inner middleware runs first).
+app.add_middleware(IdempotencyMiddleware)
 app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Middleware to tell FastAPI it is behind a proxy (Zuplo) or Render

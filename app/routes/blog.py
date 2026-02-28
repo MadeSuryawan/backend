@@ -67,9 +67,9 @@ from app.errors.upload import (
     UnsupportedVideoTypeError,
     VideoTooLargeError,
 )
+from app.logging import get_logger
 from app.managers.rate_limiter import limiter
 from app.models import BlogDB
-from app.logging import get_logger
 from app.schemas import BlogCreate, BlogListResponse, BlogResponse, BlogSchema, BlogUpdate
 from app.schemas.review import MediaUploadResponse
 from app.services import MediaService
@@ -455,6 +455,24 @@ async def delete_cache_keys(
         },
     },
     operation_id="blogs_create",
+    openapi_extra={
+        "parameters": [
+            {
+                "name": "Idempotency-Key",
+                "in": "header",
+                "required": True,
+                "schema": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "550e8400-e29b-41d4-a716-446655440000",
+                },
+                "description": (
+                    "UUID v4 idempotency key. Repeated requests with the same key "
+                    "and identical body return the original response without creating a duplicate post."
+                ),
+            },
+        ],
+    },
 )
 @timed("/blogs/create")
 @limiter.limit(lambda key: "10/minute" if "apikey" in key else "2/minute")

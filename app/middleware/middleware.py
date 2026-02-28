@@ -51,6 +51,7 @@ from app.managers.login_attempt_tracker import init_login_tracker
 from app.managers.rate_limiter import close_limiter
 from app.managers.token_blacklist import init_token_blacklist
 from app.monitoring import HealthChecker
+from app.stores.idempotency import RedisIdempotencyStore
 from app.utils.helpers import host, time_taken
 from app.utils.timezone import format_logs
 
@@ -139,7 +140,7 @@ async def _init_services(app: FastAPI) -> CacheManager:
 
 
 def _blacklist_and_tracker_init(app: FastAPI, cache_manager: CacheManager) -> None:
-    """Initialize token blacklist and login tracker if Redis is available."""
+    """Initialize token blacklist, login tracker, and idempotency store if Redis is available."""
     if cache_manager.is_redis_available:
         redis_client = cache_manager.redis_client
         token_blacklist = init_token_blacklist(redis_client)
@@ -148,6 +149,10 @@ def _blacklist_and_tracker_init(app: FastAPI, cache_manager: CacheManager) -> No
         logger.info("Login attempt tracker initialized")
         app.state.token_blacklist = token_blacklist
         app.state.login_tracker = login_tracker
+
+        # Idempotency store — backed by the same Redis connection.
+        app.state.idempotency_store = RedisIdempotencyStore(redis_client.client)
+        logger.info("Idempotency store initialized")
 
 
 def _show_links() -> None:

@@ -1,4 +1,4 @@
-from app.middleware.idempotency import IdempotencyMiddleware
+from app.middleware.idempotency import IdempotencyMiddleware, InitContext
 from app.middleware.middleware import (
     LoggingMiddleware,
     SecurityHeadersMiddleware,
@@ -9,6 +9,7 @@ from app.middleware.timezone import TimezoneMiddleware
 
 __all__ = [
     "IdempotencyMiddleware",
+    "InitContext",
     "LoggingMiddleware",
     "SecurityHeadersMiddleware",
     "configure_cors",

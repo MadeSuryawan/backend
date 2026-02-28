@@ -33,17 +33,17 @@ from app.dependencies import (
     VerifiedUserDep,
     get_authorized_user,
 )
-from app.managers.rate_limiter import limiter
 from app.logging import get_logger
+from app.managers.rate_limiter import limiter
 from app.schemas.ai import (
     ChatRequest,
     ChatResponse,
+    ContactAnalysisResponse,
+    EmailInquiry,
     ItineraryMD,
     ItineraryRequestMD,
     ItineraryRequestTXT,
     ItineraryTXT,
-    ContactAnalysisResponse,
-    EmailInquiry,
 )
 from app.services.chatbot import chat_with_ai
 from app.services.email_inquiry import analyze_contact, confirmation_message
@@ -65,7 +65,7 @@ class AiDepOps:
     user_id: Annotated[
         UUID | None,
         Query(
-            description="The user ID to act on. Required for regular users but optional for admins (defaults to admin's own ID)."
+            description="The user ID to act on. Required for regular users but optional for admins (defaults to admin's own ID).",
         ),
     ] = None
 
@@ -102,6 +102,17 @@ def itinerary_txt_key(itinerary_req: ItineraryRequestTXT) -> str:
         },
     },
     operation_id="ai_chat",
+    openapi_extra={
+        "parameters": [
+            {
+                "name": "Idempotency-Key",
+                "in": "header",
+                "required": True,
+                "schema": {"type": "string", "format": "uuid", "example": "550e8400-e29b-41d4-a716-446655440000"},
+                "description": "UUID v4 idempotency key. Repeated requests with the same key and body replay the original response.",
+            },
+        ],
+    },
 )
 @timed("/ai/chat")
 @limiter.limit("10/minute")
@@ -197,6 +208,17 @@ async def chat_bot(
         },
     },
     operation_id="ai_email_inquiry",
+    openapi_extra={
+        "parameters": [
+            {
+                "name": "Idempotency-Key",
+                "in": "header",
+                "required": True,
+                "schema": {"type": "string", "format": "uuid", "example": "550e8400-e29b-41d4-a716-446655440000"},
+                "description": "UUID v4 idempotency key. Repeated requests with the same key and body replay the original response without re-sending the email.",
+            },
+        ],
+    },
 )
 @timed("/ai/email-inquiry")
 @limiter.limit("5/hour")
@@ -294,6 +316,17 @@ async def email_inquiry_confirmation_message(
         },
     },
     operation_id="ai_itinerary_md",
+    openapi_extra={
+        "parameters": [
+            {
+                "name": "Idempotency-Key",
+                "in": "header",
+                "required": True,
+                "schema": {"type": "string", "format": "uuid", "example": "550e8400-e29b-41d4-a716-446655440000"},
+                "description": "UUID v4 idempotency key. Repeated requests with the same key and body replay the cached itinerary.",
+            },
+        ],
+    },
 )
 @timed("/ai/itinerary-md")
 @limiter.limit("5/hour")
@@ -396,6 +429,17 @@ async def itinerary(
         },
     },
     operation_id="ai_itinerary_txt",
+    openapi_extra={
+        "parameters": [
+            {
+                "name": "Idempotency-Key",
+                "in": "header",
+                "required": True,
+                "schema": {"type": "string", "format": "uuid", "example": "550e8400-e29b-41d4-a716-446655440000"},
+                "description": "UUID v4 idempotency key. Repeated requests with the same key and body replay the cached text itinerary.",
+            },
+        ],
+    },
 )
 @timed("/ai/itinerary-txt")
 @limiter.limit("5/hour")

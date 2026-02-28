@@ -49,7 +49,11 @@ async def test_register_user_triggers_verification(
     }
 
     try:
-        response = await client.post("/auth/register", json=payload)
+        response = await client.post(
+            "/auth/register",
+            json=payload,
+            headers={"Idempotency-Key": str(uuid4())},
+        )
 
         assert response.status_code == 201, f"Response: {response.text}"
         mock_auth_service.send_verification_email.assert_called_once_with(mock_user)
