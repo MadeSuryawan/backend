@@ -5,6 +5,7 @@ This module contains application settings, constants, and configuration
 values for the BaliBlissed backend application.
 """
 
+from os import environ
 from pathlib import Path
 from ssl import CERT_NONE, CERT_OPTIONAL, CERT_REQUIRED
 from typing import Any, Literal
@@ -439,6 +440,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Set timezone for consistent datetime handling
+environ["TZ"] = settings.TZ
 
 # Update SAFETY_SETTINGS after settings initialization
 SAFETY_SETTINGS = get_safety_settings(settings.AI_SAFETY_THRESHOLD)

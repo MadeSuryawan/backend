@@ -2,12 +2,7 @@
 
 """BaliBlissed Backend - Seamless caching integration with Redis for FastAPI."""
 
-from os import environ
-
 from app.configs import settings
-
-# Set timezone for consistent datetime handling
-environ["TZ"] = settings.TZ
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
