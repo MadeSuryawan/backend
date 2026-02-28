@@ -1,5 +1,6 @@
 # app/clients/ai_client.py
 
+from google.genai.types import GenerateContentResponse
 from re import search
 from typing import cast
 
@@ -96,6 +97,59 @@ class AiClient:
         """Get the AI client instance."""
         return self._client
 
+    async def do_service(
+        self,
+        contents: ContentListUnion | ContentListUnionDict,
+        system_instruction: str,
+        resp_type: RespType,
+        temperature: float = 0.7,
+    ) -> object:
+        """
+        Generate content with AI using circuit breaker protection.
+
+        This is the main method for interacting with the AI model.
+        It includes circuit breaker protection to prevent cascading failures.
+
+        Args:
+            contents: The contents to send to the model.
+            system_instruction: The system instruction for the content generation.
+            resp_type: The type of the response.
+            temperature: The temperature for the content generation.
+
+        Returns:
+            The response object matching resp_type.
+
+        Raises:
+            CircuitBreakerError: If the circuit breaker is open.
+            AIGenerationError: If content generation fails.
+        """
+        config = self._content_config(system_instruction, resp_type, temperature)
+
+        try:
+            if self._circuit_breaker:
+                result = await self._circuit_breaker.call(
+                    self._generate_content,
+                    contents,
+                    config,
+                )
+            else:
+                result = await self._generate_content(contents, config)
+
+            return cast(resp_type, result)
+        except NETWORK_EXCEPTIONS as e:
+            # Convert network errors to AiNetworkError for proper handling
+            error_msg = str(e)
+            logger.exception(f"AI network error: {error_msg}")
+            detail = f"AI service temporarily unavailable: {error_msg}"
+            raise AiNetworkError(detail=detail) from e
+        except AiError:
+            # Already on custom error, just re-raise
+            raise
+        except Exception as e:
+            # Convert unknown exceptions to AiError for proper handling
+            logger.exception("AI content generation failed")
+            self._handle_exception(e)
+
     @with_retry(
         max_retries=settings.AI_MAX_RETRIES,
         base_delay=settings.AI_RETRY_DELAY,
@@ -175,59 +229,30 @@ class AiClient:
             temperature=temperature,
         )
 
-    async def do_service(
-        self,
-        contents: ContentListUnion | ContentListUnionDict,
-        system_instruction: str,
-        resp_type: RespType,
-        temperature: float = 0.7,
-    ) -> object:
+    def _extract_sources(self, response: GenerateContentResponse) -> list[dict[str, str]] | None:
         """
-        Generate content with AI using circuit breaker protection.
-
-        This is the main method for interacting with the AI model.
-        It includes circuit breaker protection to prevent cascading failures.
+        Extract titles and links from grounding metadata from Google search tool.
 
         Args:
-            contents: The contents to send to the model.
-            system_instruction: The system instruction for the content generation.
-            resp_type: The type of the response.
-            temperature: The temperature for the content generation.
+            response: The response from the model.
 
         Returns:
-            The response object matching resp_type.
-
-        Raises:
-            CircuitBreakerError: If the circuit breaker is open.
-            AIGenerationError: If content generation fails.
+            A list of dictionaries containing the title and URL of each source.
         """
-        config = self._content_config(system_instruction, resp_type, temperature)
-
-        try:
-            if self._circuit_breaker:
-                result = await self._circuit_breaker.call(
-                    self._generate_content,
-                    contents,
-                    config,
-                )
-            else:
-                result = await self._generate_content(contents, config)
-
-            return cast(resp_type, result)
-        except NETWORK_EXCEPTIONS as e:
-            # Convert network errors to AiNetworkError for proper handling
-            error_msg = str(e)
-            logger.exception(f"AI network error: {error_msg}")
-            detail = f"AI service temporarily unavailable: {error_msg}"
-            raise AiNetworkError(detail=detail) from e
-        except AiError:
-            # Already on custom error, just re-raise
-            raise
-        except Exception as e:
-            # Convert unknown exceptions to AiError for proper handling
-            logger.exception("AI content generation failed")
-            self._handle_exception(e)
-
+        if not response.candidates:
+            return
+            
+        candidate = response.candidates[0]
+        
+        if not (metadata := getattr(candidate, "grounding_metadata")) or not metadata.grounding_chunks:
+            return
+            
+        return [
+            {"title": chunk.web.title, "url": chunk.web.uri}
+            for chunk in metadata.grounding_chunks
+            if chunk.web
+        ]
+    
     def _handle_exception(self, e: Exception) -> None:
         """Map generic exceptions to specific AiError with user-friendly messages."""
         error_msg = str(e)
