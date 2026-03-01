@@ -1,0 +1,248 @@
+# =============================================================================
+# CI Pipeline — BaliBlissed Backend
+#
+# Triggers : push to main | pull_request to main | manual dispatch
+# Jobs     : quality → test → security (parallel) → build-and-scan
+#
+# Security model:
+#   - Workflow-level permission is `contents: read` (most restrictive).
+#   - build-and-scan elevates to `packages: write` and `security-events: write`
+#     for GHCR push and SARIF upload respectively.
+#   - GITHUB_TOKEN is used for GHCR auth (OIDC-based, no long-lived secret).
+# =============================================================================
+
+name: CI Pipeline
+
+# CURRENT STATUS: MANUAL ONLY
+# Uncomment the push/pull_request blocks below when ready to enable auto-run.
+on:
+    workflow_dispatch:
+
+    # push:
+    #     branches: ["main"]
+    # pull_request:
+    #     branches: ["main"]
+
+# Workflow-level: least-privilege default; overridden per job where needed.
+permissions:
+    contents: read
+
+# Cancel redundant in-progress runs on the same branch/PR.
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+env:
+    # Registry and image config — shared across jobs via env context.
+    REGISTRY: ghcr.io
+    IMAGE_NAME: ${{ github.repository_owner }}/baliblissed-backend
+
+jobs:
+    # ---------------------------------------------------------------------------
+    # Job 1: quality
+    # Fast static analysis: linting, formatting, type checking.
+    # Runs in parallel with `test` and `security`.
+    # ---------------------------------------------------------------------------
+    quality:
+        name: Code Quality (lint + type-check)
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Set up uv
+              uses: astral-sh/setup-uv@v5
+              with:
+                  enable-cache: true
+                  cache-dependency-glob: "uv.lock"
+
+            - name: Install Python 3.13
+              run: uv python install 3.13
+
+            - name: Install project with all dependencies
+              run: uv sync --frozen --dev
+
+            - name: Lint — ruff check
+              run: uv run ruff check . --output-format=github
+
+            - name: Format — ruff format (check only)
+              run: uv run ruff format --check .
+
+            - name: Type check — pyrefly
+              run: uv run pyrefly check
+
+    # ---------------------------------------------------------------------------
+    # Job 2: test
+    # Full pytest suite with a real PostgreSQL via testcontainers.
+    # Requires Docker (available on ubuntu-latest runners).
+    # Runs in parallel with `quality` and `security`.
+    # ---------------------------------------------------------------------------
+    test:
+        name: Tests (pytest + testcontainers)
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+
+        env:
+            # conftest.py starts a testcontainers PostgreSQL and overrides DATABASE_URL
+            # before any app import, so this value is a safe placeholder only.
+            DATABASE_URL: "postgresql+asyncpg://placeholder:placeholder@localhost:5432/placeholder"
+            # Disable Redis in CI; app uses IN_MEMORY_FALLBACK_ENABLED=true.
+            REDIS_ENABLED: "false"
+            # Keep environment non-production so validators use dev-safe defaults.
+            ENVIRONMENT: "test"
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Set up uv
+              uses: astral-sh/setup-uv@v5
+              with:
+                  enable-cache: true
+                  cache-dependency-glob: "uv.lock"
+
+            - name: Install Python 3.13
+              run: uv python install 3.13
+
+            - name: Install project with all dependencies
+              run: uv sync --frozen --dev
+
+            - name: Run pytest with coverage
+              run: uv run pytest --cov=app --cov-fail-under=80 --cov-report=xml --cov-report=html
+
+            - name: Upload coverage HTML report
+              uses: actions/upload-artifact@v4
+              if: always()
+              with:
+                  name: coverage-report-${{ github.sha }}
+                  path: htmlcov/
+                  retention-days: 14
+
+            - name: Upload coverage XML (for downstream tools)
+              uses: actions/upload-artifact@v4
+              if: always()
+              with:
+                  name: coverage-xml-${{ github.sha }}
+                  path: coverage.xml
+                  retention-days: 14
+
+    # ---------------------------------------------------------------------------
+    # Job 3: security
+    # Dependency vulnerability scan via pip-audit (PyPA tool, free, no account).
+    # Runs in parallel with `quality` and `test`.
+    # ---------------------------------------------------------------------------
+    security:
+        name: Security Audit (pip-audit)
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Set up uv
+              uses: astral-sh/setup-uv@v5
+              with:
+                  enable-cache: true
+                  cache-dependency-glob: "uv.lock"
+
+            - name: Install Python 3.13
+              run: uv python install 3.13
+
+            - name: Export production requirements
+              run: uv export --no-dev --format requirements-txt -o requirements-audit.txt
+
+            - name: Run pip-audit (dependency CVE scan)
+              # uvx runs pip-audit in an isolated environment — no installation needed.
+              run: uvx pip-audit -r requirements-audit.txt --progress-spinner off
+
+    # ---------------------------------------------------------------------------
+    # Job 4: build-and-scan
+    # Builds the production Docker image, pushes to GHCR (main only), then
+    # scans with Trivy for OS-level and Python package CVEs.
+    #
+    # Push policy:
+    #   - push to main  → image is pushed to ghcr.io (tags: :sha + :latest)
+    #   - pull_request  → image is built and loaded locally only (no push)
+    #
+    # Authentication: GITHUB_TOKEN with packages:write (OIDC — no stored secret).
+    # ---------------------------------------------------------------------------
+    build-and-scan:
+        name: Build & Scan Docker Image
+        runs-on: ubuntu-latest
+        needs: [quality, test, security]
+        permissions:
+            contents: read
+            packages: write # Push to GHCR
+            security-events: write # Upload Trivy SARIF to GitHub Security tab
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            # Login to GHCR using the auto-generated GITHUB_TOKEN.
+            # No long-lived credentials are required.
+            - name: Log in to GitHub Container Registry
+              uses: docker/login-action@v3
+              with:
+                  registry: ${{ env.REGISTRY }}
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            # Generate OCI-compliant image tags and labels.
+            - name: Extract Docker metadata
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+                  tags: |
+                      # :sha tag on every run
+                      type=sha,prefix=,format=long
+                      # :latest only on push to main (not on PRs)
+                      type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+            # Build the production stage.
+            # On push to main: push to GHCR.
+            # On PRs: load into local Docker daemon for Trivy scan.
+            - name: Build and push Docker image
+              id: build
+              uses: docker/build-push-action@v6
+              with:
+                  context: .
+                  target: production
+                  push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+                  load: ${{ github.event_name == 'pull_request' }}
+                  tags: ${{ steps.meta.outputs.tags }}
+                  labels: ${{ steps.meta.outputs.labels }}
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max
+
+            # Trivy scans for CRITICAL and HIGH CVEs only.
+            # Image ref is identical for both push (GHCR) and PR (local daemon):
+            #   ghcr.io/<owner>/baliblissed-backend:<full-git-sha>
+            # On push: Trivy pulls from GHCR (already logged in above).
+            # On PR:   Trivy uses the locally loaded image (no pull needed).
+            - name: Run Trivy container vulnerability scan
+              uses: aquasecurity/trivy-action@0.30.0
+              with:
+                  image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+                  format: sarif
+                  output: trivy-results.sarif
+                  severity: CRITICAL,HIGH
+                  exit-code: "1"
+                  ignore-unfixed: true
+
+            - name: Upload Trivy SARIF to GitHub Security tab
+              uses: github/codeql-action/upload-sarif@v3
+              if: always()
+              with:
+                  sarif_file: trivy-results.sarif
+                  category: trivy-container

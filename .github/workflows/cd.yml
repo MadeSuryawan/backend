@@ -1,0 +1,174 @@
+# =============================================================================
+# CD Pipeline — BaliBlissed Backend
+#
+# Trigger : workflow_run on "CI Pipeline" completion (success only) on `main`.
+#
+# This workflow is intentionally separate from ci.yml so that:
+#   1. CI runs on both pushes and PRs; CD runs only after a push to main.
+#   2. Deployment configuration, secrets, and approval gates are isolated.
+#   3. The `production` GitHub Environment can enforce required reviewers.
+#
+# Required GitHub Secrets (repository or environment level):
+#   RENDER_API_KEY      — Render personal API token
+#   RENDER_SERVICE_ID   — Render service ID for the backend (e.g. srv-xxxx)
+#
+# Required GitHub Environment:
+#   Name: production
+#   (optional) Protection rules: required reviewers, wait timer, etc.
+#
+# Database migrations:
+#   Handled by Render's pre-deploy command (`alembic upgrade head`) configured
+#   in the Render dashboard — NOT from this workflow. This ensures migrations
+#   run in the production environment with the correct DATABASE_URL.
+# =============================================================================
+
+name: CD Pipeline
+
+# CURRENT STATUS: MANUAL ONLY
+# Uncomment the workflow_run block below when ready to enable auto-deploy.
+on:
+    # workflow_run:
+    #   workflows: ["CI Pipeline"]
+    #   types: [completed]
+    #   branches: ["main"]
+
+    # Allow manual deploys at any time.
+    workflow_dispatch:
+        inputs:
+            reason:
+                description: "Reason for manual deploy"
+                required: false
+                default: "Manual deploy triggered from GitHub Actions UI"
+
+# Least-privilege: deployment only needs to read repo contents.
+permissions:
+    contents: read
+
+jobs:
+    # ---------------------------------------------------------------------------
+    # Job: deploy
+    # Triggers a new Render deployment via the Render REST API.
+    # Only runs if the upstream CI workflow completed successfully on `main`,
+    # OR if manually dispatched.
+    # ---------------------------------------------------------------------------
+    deploy:
+        name: Deploy to Render (Production)
+        runs-on: ubuntu-latest
+        # Guard: skip if triggered by workflow_run and CI did not succeed.
+        if: >
+            github.event_name == 'workflow_dispatch' ||
+            (github.event_name == 'workflow_run' &&
+             github.event.workflow_run.conclusion == 'success' &&
+             github.event.workflow_run.head_branch == 'main')
+
+        # `production` environment enables GitHub's deployment protection rules
+        # (required reviewers, wait timers, etc.) when configured.
+        environment:
+            name: production
+            url: ${{ steps.deploy.outputs.deploy_url }}
+
+        permissions:
+            contents: read
+
+        steps:
+            - name: Log deployment context
+              run: |
+                  echo "=== Deployment Context ==="
+                  if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+                    echo "Trigger  : Manual"
+                    echo "Reason   : ${{ inputs.reason }}"
+                    echo "Actor    : ${{ github.actor }}"
+                  else
+                    echo "Trigger  : CI Pipeline completion"
+                    echo "CI Run   : ${{ github.event.workflow_run.html_url }}"
+                    echo "CI SHA   : ${{ github.event.workflow_run.head_sha }}"
+                    echo "Actor    : ${{ github.event.workflow_run.triggering_actor.login }}"
+                  fi
+                  echo "=========================="
+
+            # Trigger a new deployment on Render via the REST API.
+            # The deploy uses whatever code is currently connected to the Render
+            # service (i.e. the latest commit on the configured branch).
+            - name: Trigger Render deployment
+              id: deploy
+              env:
+                  RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+                  RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+              run: |
+                  echo "Triggering Render deployment for service: ${RENDER_SERVICE_ID}"
+
+                  RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+                    "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys" \
+                    -H "Authorization: Bearer ${RENDER_API_KEY}" \
+                    -H "Content-Type: application/json" \
+                    -d '{"clearCache": "do_not_clear"}')
+
+                  HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+                  BODY=$(echo "$RESPONSE" | head -n -1)
+
+                  echo "HTTP Status : ${HTTP_STATUS}"
+                  echo "Response    : ${BODY}"
+
+                  if [[ "$HTTP_STATUS" != "201" ]]; then
+                    echo "::error::Render deploy API returned status ${HTTP_STATUS}"
+                    exit 1
+                  fi
+
+                  DEPLOY_ID=$(echo "$BODY" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+                  DEPLOY_URL="https://dashboard.render.com/web/${RENDER_SERVICE_ID}/deploys/${DEPLOY_ID}"
+
+                  echo "Deploy ID  : ${DEPLOY_ID}"
+                  echo "Deploy URL : ${DEPLOY_URL}"
+                  echo "deploy_url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
+                  echo "deploy_id=${DEPLOY_ID}" >> "$GITHUB_OUTPUT"
+
+            # Poll Render until the deployment reaches a terminal state.
+            # Times out after 15 minutes (900s) — adjust for your service cold-start.
+            - name: Wait for Render deployment to complete
+              env:
+                  RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+                  RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+                  DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
+              run: |
+                  echo "Polling deployment status (timeout: 15 min)..."
+                  TIMEOUT=900
+                  ELAPSED=0
+                  INTERVAL=15
+
+                  while [[ $ELAPSED -lt $TIMEOUT ]]; do
+                    STATUS=$(curl -s \
+                      "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys/${DEPLOY_ID}" \
+                      -H "Authorization: Bearer ${RENDER_API_KEY}" \
+                      | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+                    echo "[${ELAPSED}s] Deploy status: ${STATUS}"
+
+                    case "$STATUS" in
+                      live)
+                        echo "::notice::Deployment succeeded! Service is live."
+                        exit 0
+                        ;;
+                      failed|cancelled|timed_out)
+                        echo "::error::Deployment ended with status: ${STATUS}"
+                        exit 1
+                        ;;
+                    esac
+
+                    sleep $INTERVAL
+                    ELAPSED=$((ELAPSED + INTERVAL))
+                  done
+
+                  echo "::error::Deployment polling timed out after ${TIMEOUT}s."
+                  exit 1
+
+            - name: Summarize deployment
+              if: success()
+              run: |
+                  echo "## Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
+                  echo "" >> "$GITHUB_STEP_SUMMARY"
+                  echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+                  echo "| :--- | :--- |" >> "$GITHUB_STEP_SUMMARY"
+                  echo "| **Status** | ✅ Live |" >> "$GITHUB_STEP_SUMMARY"
+                  echo "| **Service** | \`${{ secrets.RENDER_SERVICE_ID }}\` |" >> "$GITHUB_STEP_SUMMARY"
+                  echo "| **Deploy URL** | ${{ steps.deploy.outputs.deploy_url }} |" >> "$GITHUB_STEP_SUMMARY"
+                  echo "| **Triggered by** | ${{ github.actor }} |" >> "$GITHUB_STEP_SUMMARY"
