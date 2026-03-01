@@ -11,7 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from app.configs import settings
+from app.configs.settings import settings
 from app.errors import (
     AiError,
     CacheExceptionError,

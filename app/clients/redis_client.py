@@ -10,7 +10,7 @@ from redis.asyncio import ConnectionPool, Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import RedisError
 
-from app.configs import pool_kwargs
+from app.configs.redis import pool_kwargs
 from app.decorators.with_retry import RETRIABLE_EXCEPTIONS, with_retry
 from app.logging import get_logger
 

@@ -12,7 +12,8 @@ from contextvars import ContextVar
 from passlib.context import CryptContext
 from passlib.exc import InternalBackendError
 
-from app.configs import CONFIG_MAP, settings
+from app.configs.security import CONFIG_MAP
+from app.configs.settings import settings
 from app.decorators.with_retry import with_retry
 from app.errors import PasswordHashingError, PasswordRehashError
 from app.logging import get_logger

@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 
 from jose import JWTError, jwt
 
-from app.configs import settings
+from app.configs.settings import settings
 from app.schemas.auth import (
     PasswordResetTokenData,
     TokenData,

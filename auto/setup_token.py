@@ -8,7 +8,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 # Add the project root to sys.path to allow importing 'app'
 path.append(f"{Path(__file__).parent.parent}")
 
-from app.configs import settings
+from app.configs.settings import settings
 from app.logging import get_logger
 
 logger = get_logger(__name__)

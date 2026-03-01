@@ -3,7 +3,7 @@
 from redis.exceptions import RedisError
 
 from app.clients.redis_client import RedisClient
-from app.configs import settings
+from app.configs.settings import settings
 from app.logging import get_logger
 
 logger = get_logger(__name__)

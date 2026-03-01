@@ -13,11 +13,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.configs.settings import (
-    MAX_INTERESTS_COUNT,
-    MAX_TRIP_DURATION,
-    MIN_TRIP_DURATION,
-)
+MIN_TRIP_DURATION = 1
+MAX_TRIP_DURATION = 30
+MAX_INTERESTS_COUNT = 4
 
 # --- Budget Validation Constants ---
 # Minimum budget allowed (matching frontend constraint)

@@ -428,7 +428,7 @@ uv run pytest tests/auth/test_oauth.py -v
 
 ```bash
 # Check if credentials are loaded
-uv run python -c "from app.configs import settings; print('Google:', bool(settings.GOOGLE_CLIENT_ID))"
+uv run python -c "from app.configs.settings import settings; print('Google:', bool(settings.GOOGLE_CLIENT_ID))"
 
 # Test OAuth endpoint
 curl -v http://localhost:8000/auth/login/google

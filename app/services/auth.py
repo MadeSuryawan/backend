@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from app.clients.email_client import EmailClient
 from app.clients.redis_client import RedisClient
-from app.configs import settings
+from app.configs.settings import settings
 from app.errors.auth import (
     AccountLockedError,
     InvalidCredentialsError,

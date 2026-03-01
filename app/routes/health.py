@@ -25,7 +25,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, JSONResponse, ORJSONResponse, Response
 
-from app.configs import settings
+from app.configs.settings import settings
 from app.decorators.caching import get_cache_manager
 from app.dependencies import EmailDep, HealthCheckerDep
 from app.errors import EmailServiceError

@@ -2,7 +2,7 @@
 
 from typing import cast
 
-from app.configs import settings
+from app.configs.settings import settings
 
 
 class EmailTemplateBuilder:

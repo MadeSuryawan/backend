@@ -37,7 +37,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import ORJSONResponse
 from starlette.responses import RedirectResponse, Response
 
-from app.configs import settings
+from app.configs.settings import settings
 from app.decorators.metrics import timed
 from app.dependencies import AuthServiceDep, CacheDep, OauthDep
 from app.errors.auth import OAuthError, OAuthStateError

@@ -34,7 +34,7 @@ from prometheus_client import (
 )
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from app.configs import settings
+from app.configs.settings import settings
 
 # Cardinality protection - NEVER use these as labels
 HIGH_CARDINALITY_LABELS: frozenset[str] = frozenset(

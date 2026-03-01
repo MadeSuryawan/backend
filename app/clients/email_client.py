@@ -19,7 +19,7 @@ from googleapiclient.discovery import Resource, build
 from googleapiclient.errors import HttpError
 from httpx import RemoteProtocolError, TimeoutException
 
-from app.configs import settings
+from app.configs.settings import settings
 from app.errors import AuthenticationError, ConfigurationError, SendingError
 from app.errors.email import NetworkError
 from app.logging import get_logger

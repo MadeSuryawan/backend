@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlmodel import SQLModel
 
 from alembic import context
-from app.configs import settings
+from app.configs.settings import settings
 
 # Import all models to register them with SQLModel.metadata
 # This is required for autogenerate to detect model changes

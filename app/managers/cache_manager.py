@@ -14,7 +14,8 @@ from starlette import status
 
 from app.clients.memory_client import MemoryClient
 from app.clients.redis_client import RedisClient
-from app.configs import CacheConfig, settings
+from app.configs.cache import CacheConfig
+from app.configs.settings import settings
 from app.data import CacheStatistics
 from app.errors import BASE_EXCEPTION, CacheDeserializationError, CacheKeyError
 from app.interfaces import CacheClientProtocol

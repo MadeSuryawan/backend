@@ -1,20 +1,6 @@
-# from app.configs.logger import file_logger
-from app.configs.settings import (
-    CONFIG_MAP,
-    CacheConfig,
-    LimiterConfig,
-    RedisConfig,
-    # file_logger,
-    pool_kwargs,
-    settings,
-)
+"""
+Application configurations package.
 
-__all__ = [
-    "CacheConfig",
-    "LimiterConfig",
-    "RedisConfig",
-    # "file_logger",
-    "pool_kwargs",
-    "settings",
-    "CONFIG_MAP",
-]
+This package provides modular configuration management for the BaliBlissed backend,
+including AI, Redis, cache, rate limiting, and security configurations.
+"""

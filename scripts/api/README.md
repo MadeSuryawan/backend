@@ -612,7 +612,7 @@ http GET http://localhost:8000/auth/me \
 
 ```bash
 # Check if OAuth credentials are loaded
-uv run python -c "from app.configs import settings; print('Google Client ID:', bool(settings.GOOGLE_CLIENT_ID))"
+uv run python -c "from app.configs.settings import settings; print('Google Client ID:', bool(settings.GOOGLE_CLIENT_ID))"
 
 # Test OAuth login endpoint
 curl -v http://localhost:8000/auth/login/google
@@ -632,7 +632,7 @@ tail -f logs/app.log
 ```bash
 # 1. Check environment variables are loaded
 uv run python -c "
-from app.configs import settings
+from app.configs.settings import settings
 print('Google OAuth configured:', bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET))
 print('State TTL:', settings.OAUTH_STATE_EXPIRE_SECONDS, 'seconds')
 "

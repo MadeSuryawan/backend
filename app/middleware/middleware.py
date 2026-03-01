@@ -43,7 +43,7 @@ from starlette.routing import BaseRoute, Match, Route
 from uvloop import Loop
 
 from app.clients.ai_client import AiClient
-from app.configs import settings
+from app.configs.settings import settings
 from app.db import close_db, init_db
 from app.logging import bind_request_id, clear_context, get_logger
 from app.managers.cache_manager import CacheManager

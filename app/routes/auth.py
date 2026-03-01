@@ -46,7 +46,7 @@ from starlette.status import (
     HTTP_429_TOO_MANY_REQUESTS,
 )
 
-from app.configs import settings
+from app.configs.settings import settings
 from app.decorators.caching import get_cache_manager
 from app.decorators.metrics import timed
 from app.dependencies import (

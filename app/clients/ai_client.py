@@ -14,12 +14,12 @@ from google.genai.types import (
 )
 from httpx import RemoteProtocolError, TimeoutException
 
-from app.configs.settings import (
+from app.configs.ai import (
     GEMINI_MODEL,
     GENERATION_CONFIG,
     SAFETY_SETTINGS,
-    settings,
 )
+from app.configs.settings import settings
 from app.decorators.with_retry import with_retry
 from app.errors import (
     AiAuthenticationError,

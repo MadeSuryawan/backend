@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
-from app.configs import settings
+from app.configs.settings import settings
 from app.logging.logging import get_logger
 
 logger = get_logger(__name__)
