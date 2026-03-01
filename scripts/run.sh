@@ -50,7 +50,7 @@ load_env() {
 
         # Dynamically select compose file based on environment or Redis SSL setting
         if [ "$ENVIRONMENT" = "production" ] || [ "$REDIS_SSL" = "true" ]; then
-            COMPOSE_FILE="docker-compose.redis-ssl.yaml"
+            COMPOSE_FILE="docker-compose.prod.yaml"
             log_info "Using production compose file: $COMPOSE_FILE"
         else
             COMPOSE_FILE="docker-compose.yaml"

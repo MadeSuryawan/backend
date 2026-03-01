@@ -53,7 +53,7 @@ REDIS_SSL_CA_CERTS=secrets/redis-certs/ca-cert.pem
 ### 3. Run with Docker Compose
 
 ```bash
-docker-compose -f docker-compose.redis-ssl.yaml up -d
+docker-compose -f docker-compose.prod.yaml up -d
 ```
 
 ## Configuration Options
@@ -220,7 +220,7 @@ REDIS_SSL=true
 
 ### Basic Redis with SSL
 
-Create `docker-compose.redis-ssl.yaml`:
+Create `docker-compose.prod.yaml`:
 
 ```yaml
 services:
@@ -270,7 +270,7 @@ volumes:
 Run:
 
 ```bash
-docker-compose -f docker-compose.redis-ssl.yaml up -d
+docker-compose -f docker-compose.prod.yaml up -d
 ```
 
 ### Redis with ACL (User Authentication)
