@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from app.clients.protocols import CacheClientProtocol, is_debug_enabled
+from app.interfaces import CacheClientProtocol, is_debug_enabled
 
 
 class TestIsDebugEnabled:

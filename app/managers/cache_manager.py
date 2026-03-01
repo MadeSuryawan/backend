@@ -13,11 +13,11 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from starlette import status
 
 from app.clients.memory_client import MemoryClient
-from app.clients.protocols import CacheClientProtocol
 from app.clients.redis_client import RedisClient
 from app.configs import CacheConfig, settings
 from app.data import CacheStatistics
 from app.errors import BASE_EXCEPTION, CacheDeserializationError, CacheKeyError
+from app.interfaces import CacheClientProtocol
 from app.logging import get_logger
 from app.schemas import CacheToggleResponse
 from app.schemas.cache import CacheStatisticsData
