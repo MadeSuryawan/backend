@@ -9,8 +9,8 @@ from app.errors.upload import (
     UnsupportedImageTypeError,
     UnsupportedVideoTypeError,
 )
+from app.media import StorageService
 from app.services.media import MediaService
-from app.services.storage.base import StorageService
 
 
 def _jpeg_bytes() -> bytes:

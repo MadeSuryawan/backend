@@ -21,7 +21,7 @@ from app.errors.upload import (
     UnsupportedVideoTypeError,
     VideoTooLargeError,
 )
-from app.services.storage import StorageService, get_storage_service
+from app.media import StorageService, get_storage_service
 
 
 class MediaService:

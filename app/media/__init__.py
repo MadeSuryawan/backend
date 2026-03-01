@@ -6,9 +6,9 @@ with support for local filesystem and Cloudinary.
 """
 
 from app.configs.settings import settings
-from app.services.storage.base import StorageService
-from app.services.storage.cloudinary_storage import CloudinaryStorage
-from app.services.storage.local import LocalStorage
+from app.interfaces import StorageService
+from app.media.cloudinary import CloudinaryStorage
+from app.media.local import LocalStorage
 
 
 def get_storage_service() -> StorageService:

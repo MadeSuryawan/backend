@@ -223,7 +223,7 @@ from app.errors.upload import (
     MediaLimitExceededError,
     UnsupportedImageTypeError,
 )
-from app.services.storage import get_storage_service
+from app.media import get_storage_service
 
 
 class MediaService:

@@ -8,8 +8,8 @@ from uuid import uuid4
 import pytest
 from PIL import Image
 
+from app.media import StorageService
 from app.services.profile_picture import ProfilePictureService
-from app.services.storage.base import StorageService
 
 
 @pytest.fixture

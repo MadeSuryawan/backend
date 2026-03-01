@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 from PIL import Image
 
-from app.services.storage.local import LocalStorage
+from app.media import LocalStorage
 
 
 class TestLocalStorage:
@@ -25,7 +25,7 @@ class TestLocalStorage:
     @pytest.fixture
     def local_storage(self, temp_uploads_dir: Path) -> LocalStorage:
         """Create a LocalStorage instance with temp directory."""
-        with patch("app.services.storage.local.settings") as mock_settings:
+        with patch("app.media.local.settings") as mock_settings:
             mock_settings.UPLOADS_DIR = temp_uploads_dir
             storage = LocalStorage()
             # Override base_path to use temp directory

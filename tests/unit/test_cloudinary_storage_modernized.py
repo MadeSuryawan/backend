@@ -3,18 +3,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.services.storage.cloudinary_storage import CloudinaryStorage
+from app.media.cloudinary import CloudinaryStorage
 
 
 class TestCloudinaryStorageModernized:
     @pytest.fixture
     def storage(self) -> CloudinaryStorage:
-        with patch("app.services.storage.cloudinary_storage.config"):
+        with patch("app.media.cloudinary.config"):
             return CloudinaryStorage()
 
     @pytest.mark.asyncio
-    @patch("app.services.storage.cloudinary_storage.upload")
-    @patch("app.services.storage.cloudinary_storage.get_event_loop")
+    @patch("app.media.cloudinary.upload")
+    @patch("app.media.cloudinary.get_event_loop")
     async def test_upload_profile_picture_transformations(
         self,
         mock_get_loop: MagicMock,
@@ -48,8 +48,8 @@ class TestCloudinaryStorageModernized:
         assert transformations[2] == {"fetch_format": "auto"}
 
     @pytest.mark.asyncio
-    @patch("app.services.storage.cloudinary_storage.upload")
-    @patch("app.services.storage.cloudinary_storage.get_event_loop")
+    @patch("app.media.cloudinary.upload")
+    @patch("app.media.cloudinary.get_event_loop")
     async def test_upload_media_transformations(
         self,
         mock_get_loop: MagicMock,

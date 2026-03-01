@@ -18,7 +18,7 @@ from app.errors.upload import (
     InvalidImageError,
     UnsupportedImageTypeError,
 )
-from app.services.storage import StorageService, get_storage_service
+from app.media import StorageService, get_storage_service
 
 
 class ProfilePictureService:
