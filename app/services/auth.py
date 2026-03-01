@@ -31,7 +31,7 @@ from app.models import UserDB
 from app.repositories import UserRepository
 from app.schemas.auth import Token, VerificationTokenData
 from app.schemas.user import UserCreate
-from app.services.email_template_builder import EmailTemplateBuilder
+from app.services.email_template import EmailTemplate
 
 logger = get_logger(__name__)
 
@@ -67,7 +67,7 @@ class AuthService:
         self._login_tracker = login_tracker
         self._redis = redis_client
         self._email = email_client
-        self._email_builder = EmailTemplateBuilder()
+        self._email_builder = EmailTemplate()
 
     async def _check_lockout(self, identifier: str) -> None:
         """Check if user is locked out and raise if so."""

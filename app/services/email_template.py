@@ -5,7 +5,7 @@ from typing import cast
 from app.configs.settings import settings
 
 
-class EmailTemplateBuilder:
+class EmailTemplate:
     """
     Builder for creating professional HTML email templates.
 
