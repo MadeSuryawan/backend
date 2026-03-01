@@ -25,8 +25,12 @@ from typing import ClassVar
 from fastapi import Request
 from jose.exceptions import JWTError
 from redis.exceptions import RedisError
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import JSONResponse, Response, StreamingResponse
+from starlette.middleware.base import (
+    AsyncContentStream,
+    BaseHTTPMiddleware,
+    RequestResponseEndpoint,
+)
+from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 from app.interfaces.idempotency_store import CompletionRecord, IdempotencyStore
@@ -104,14 +108,30 @@ def _ensure_bytes(data: bytes | str | memoryview | None) -> bytes:
 
 
 async def _capture_response_body(response: Response) -> bytes:
-    """Drain the response body into a single bytes object."""
-    # Handle streaming responses
-    if isinstance(response, StreamingResponse):
+    """
+    Drain the response body into a single bytes object.
+
+    Notes
+    -----
+    Starlette's ``BaseHTTPMiddleware.call_next`` returns an internal
+    ``_StreamingResponse`` (defined in ``starlette.middleware.base``) that is
+    **not** an instance of the public ``starlette.responses.StreamingResponse``.
+    It exposes the body via ``body_iterator`` but never sets a ``.body``
+    attribute.
+    """
+    # getattr returns Any, but the explicit annotation narrows it to
+    # AsyncContentStream | None so the type checker can follow the None-guard
+    body_iterator: AsyncContentStream | None = getattr(response, "body_iterator", None)
+    if body_iterator is not None:
+        # AsyncContentStream = AsyncIterable[str | bytes | memoryview | MutableMapping]
+        # MutableMapping chunks are ASGI control messages (e.g. http.response.pathsend),
+        # not body bytes — skip them.
         body_parts: list[bytes] = []
-        async for chunk in response.body_iterator:
-            body_parts.append(_ensure_bytes(chunk))
+        async for chunk in body_iterator:
+            if isinstance(chunk, bytes | memoryview | str):
+                body_parts.append(_ensure_bytes(chunk))
         return b"".join(body_parts)
-    # Handle regular responses with body attribute
+    # Handle regular responses with a pre-rendered body attribute.
     if hasattr(response, "body"):
         return _ensure_bytes(response.body)
     return b""
