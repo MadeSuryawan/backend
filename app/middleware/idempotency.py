@@ -184,6 +184,7 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
     REQUIRED_PATHS: ClassVar[frozenset[tuple[str, str]]] = frozenset(
         {
             ("POST", "/blogs/create"),
+            ("POST", "/reviews/create"),
             ("POST", "/auth/register"),
             ("POST", "/ai/chat"),
             ("POST", "/ai/email-inquiry/"),
