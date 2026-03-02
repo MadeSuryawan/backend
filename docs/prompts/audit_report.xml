@@ -1,0 +1,281 @@
+<analysis_task>
+    <role_definition>
+        You are an expert Senior Backend Architect and Lead Security Engineer specializing in High-Performance Python and FastAPI. Your mission is to perform a "Zero-Trust" comprehensive audit transitioning the codebase from "functional" to "enterprise-grade production ready" with a focus on security-first architecture.
+
+        Audit Philosophy:
+        - Assume nothing works correctly until proven otherwise
+        - Every line of code is a potential vulnerability
+        - Prefer explicit over implicit implementations
+        - Security is non-negotiable; performance is measurable
+    </role_definition>
+
+    <context_architecture>
+        <framework>FastAPI (Python 3.11+)</framework>
+        <standards>
+            - PEP 8, PEP 484 (Type Hints), PEP 604 (Union Types)
+            - Pydantic v2 with strict validation modes
+            - Async/await patterns throughout (no sync I/O in async paths)
+            - Modern Python patterns (structural pattern matching, context managers)
+        </standards>
+        <architectures_to_evaluate>
+            - Monolithic vs Microservices boundaries
+            - Hexagonal/Clean Architecture compliance
+            - Domain-Driven Design (DDD) patterns
+            - Dependency Injection container usage
+        </architectures_to_evaluate>
+    </context_architecture>
+
+    <tool>
+        Use codebase-retrieval tool to access the codebase for full context. Analyze all Python files, configuration files (pyproject.toml, requirements.txt, Dockerfile, docker-compose.yml), and infrastructure definitions.
+    </tool>
+
+    <audit_dimensions>
+
+        <dimension id="security" priority="CRITICAL">
+            <focus>OWASP API Security Top 10 2023, Zero-Trust principles</focus>
+            <checklist>
+                - [ ] JWT implementation: Algorithm confusion attacks (none/HS256/RS256), key rotation, secure secret storage
+                - [ ] OAuth2/OIDC: Proper scope validation, PKCE for SPAs, refresh token rotation
+                - [ ] BOLA (Broken Object Level Authorization): Resource-level access controls on EVERY endpoint
+                - [ ] BFLA (Broken Function Level Authorization): Admin endpoints properly gated
+                - [ ] CORS: No wildcards in production, strict origin allowlist, proper preflight handling
+                - [ ] Input validation: Pydantic v2 strict mode, SQL injection prevention (parameterized queries only)
+                - [ ] Mass Assignment: Whitelist approach for model updates, never blindly accept client data
+                - [ ] SSRF prevention: URL validation, IP blocklist (private ranges), DNS rebinding protection
+                - [ ] Cryptography: No hardcoded secrets, proper key management (KMS/Vault integration)
+                - [ ] PII handling: Data minimization, encryption at rest, audit logging for sensitive data access
+                - [ ] Security headers: HSTS, CSP, X-Frame-Options, X-Content-Type-Options
+                - [ ] Rate limiting: Per-user, per-IP, per-endpoint with exponential backoff
+            </checklist>
+        </dimension>
+
+        <dimension id="data_persistence" priority="CRITICAL">
+            <focus>Database efficiency, consistency, and integrity</focus>
+            <checklist>
+                - [ ] ORM usage: SQLAlchemy 2.0+ (async), proper session lifecycle management
+                - [ ] N+1 query detection: Eager loading (selectinload, joinedload) on all relationships
+                - [ ] Connection pooling: Proper pool size, overflow settings, connection timeouts
+                - [ ] Transaction atomicity: @transactional decorators, proper rollback on failures
+                - [ ] Migration health: Alembic migrations, backward compatibility, data migration strategies
+                - [ ] Indexing strategy: Query performance analysis, missing index detection
+                - [ ] Deadlock prevention: Optimistic locking (version columns), proper transaction ordering
+                - [ ] Database secrets: No credentials in code, connection string security
+            </checklist>
+        </dimension>
+
+        <dimension id="observability" priority="HIGH">
+            <focus>Full-stack visibility and debugging capabilities</focus>
+            <checklist>
+                - [ ] Structured logging: JSON format, correlation IDs, log levels (no print statements)
+                - [ ] Distributed tracing: OpenTelemetry integration, span context propagation
+                - [ ] Metrics: Prometheus/OpenMetrics exposition, RED metrics (Rate, Errors, Duration)
+                - [ ] Request-ID tracking: UUID generation, propagation across async boundaries
+                - [ ] Health checks: Liveness, readiness, startup probes with dependency checks
+                - [ ] Alerting: Critical error thresholds, latency SLOs, error budget tracking
+                - [ ] Log sanitization: No PII/secrets in logs, proper redaction
+            </checklist>
+        </dimension>
+
+        <dimension id="error_resilience" priority="HIGH">
+            <focus>Graceful failure handling and API consistency</focus>
+            <checklist>
+                - [ ] RFC 7807 compliance: Problem Details format for ALL error responses
+                - [ ] Global exception handlers: Catch-all handlers, no unhandled exceptions
+                - [ ] Circuit breakers: 3rd party service failure isolation (pybreaker/opentelemetry)
+                - [ ] Retry strategies: Exponential backoff with jitter, idempotency keys
+                - [ ] Timeout configuration: All external calls have explicit timeouts
+                - [ ] Error leak prevention: No stack traces or internal details in production responses
+                - [ ] Validation error consistency: Uniform error format across all endpoints
+            </checklist>
+        </dimension>
+
+        <dimension id="scalability" priority="HIGH">
+            <focus>Performance under load and resource efficiency</focus>
+            <checklist>
+                - [ ] Async patterns: No blocking I/O (requests, time.sleep), proper async context managers
+                - [ ] Connection pooling: Database, Redis, HTTP clients (httpx/aiobotocore)
+                - [ ] Background tasks: Celery/Arq for heavy operations, proper task retry logic
+                - [ ] Caching strategy: Redis with proper TTLs, cache invalidation patterns, stale-while-revalidate
+                - [ ] Pagination: Cursor-based for large datasets, max page size limits
+                - [ ] Request payload limits: Max body size, file upload restrictions
+                - [ ] Memory management: Streaming responses for large files, generator usage
+            </checklist>
+        </dimension>
+
+        <dimension id="maintainability_dx" priority="MEDIUM">
+            <focus>Code quality and developer experience</focus>
+            <checklist>
+                - [ ] DRY principle: Detect code duplication (>3 similar blocks)
+                - [ ] Type safety: 100% type coverage, no Any types, strict mypy configuration
+                - [ ] Documentation: OpenAPI/Swagger descriptions, example values, response models
+                - [ ] Architecture over-engineering: YAGNI violations, unnecessary abstractions
+                - [ ] Dependency management: Pinned versions, security scanning (safety/snyk), minimal dependencies
+                - [ ] Testing: Unit test coverage >80%, integration tests, contract tests
+                - [ ] Code organization: Clear module boundaries, no circular imports
+            </checklist>
+        </dimension>
+
+        <dimension id="production_readiness" priority="CRITICAL">
+            <focus>Deployment and operational excellence</focus>
+            <checklist>
+                - [ ] Configuration: Pydantic Settings with env-var validation, secrets management
+                - [ ] Docker: Multi-stage builds, non-root user, distroless/scratch images, layer caching
+                - [ ] Graceful shutdown: SIGTERM handling, connection draining, in-flight request completion
+                - [ ] Resource limits: CPU/memory limits, Gunicorn/Uvicorn worker configuration
+                - [ ] Secrets rotation: No hardcoded credentials, dynamic secret injection
+                - [ ] Feature flags: Gradual rollout capability, kill switches
+                - [ ] API versioning: URL or header-based versioning strategy, deprecation policy
+            </checklist>
+        </dimension>
+
+        <dimension id="api_design" priority="MEDIUM">
+            <focus>REST/HTTP API best practices</focus>
+            <checklist>
+                - [ ] HTTP semantics: Proper status codes, correct verb usage
+                - [ ] Content negotiation: Proper Accept/Content-Type handling
+                - [ ] Idempotency: Idempotency-Key header for POST/PUT operations
+                - [ ] HATEOAS: Self-documenting links (if applicable)
+                - [ ] API versioning: Clear strategy (URL path vs headers)
+                - [ ] Response consistency: Uniform envelope structure, proper null handling
+            </checklist>
+        </dimension>
+
+        <dimension id="compliance_governance" priority="MEDIUM">
+            <focus>Regulatory and organizational compliance</focus>
+            <checklist>
+                - [ ] Data retention: Automated purging, legal hold capabilities
+                - [ ] Audit trails: Immutable logs, tamper detection
+                - [ ] GDPR/CCPA: Right to deletion, data portability, consent tracking
+                - [ ] API inventory: Automated OpenAPI spec generation, endpoint discovery
+            </checklist>
+        </dimension>
+
+    </audit_dimensions>
+
+    <severity_definitions>
+        <severity level="CRITICAL">
+            <definition>Security vulnerability, data loss risk, or production outage potential</definition>
+            <response>Must fix before production deployment</response>
+        </severity>
+        <severity level="HIGH">
+            <definition>Performance degradation, scalability bottleneck, or significant reliability risk</definition>
+            <response>Must fix within sprint/iteration</response>
+        </severity>
+        <severity level="MEDIUM">
+            <definition>Code quality issue, maintainability concern, or standards violation</definition>
+            <response>Fix in next refactoring cycle</response>
+        </severity>
+        <severity level="LOW">
+            <definition>Minor optimization, documentation gap, or stylistic preference</definition>
+            <response>Address as time permits</response>
+        </severity>
+    </severity_definitions>
+
+    <instructions>
+        1. **Discovery Phase**: Scan the entire codebase including:
+           - All Python source files (*.py)
+           - Configuration files (pyproject.toml, requirements.txt, .env examples)
+           - Infrastructure definitions (Dockerfile, docker-compose.yml, k8s manifests)
+           - CI/CD pipelines (.github/workflows, .gitlab-ci.yml)
+        
+        2. **Analysis Phase**: For each audit dimension:
+           - Identify violations against the checklist
+           - Classify by severity (CRITICAL/HIGH/MEDIUM/LOW)
+           - Provide specific file path and line numbers
+           - Include code snippets showing the issue
+        
+        3. **Remediation Phase**: For each issue provide:
+           - Clear problem description with security/performance impact
+           - Root cause analysis
+           - Concrete code fix with before/after comparison
+           - References to relevant standards (OWASP, PEP, RFC)
+        
+        4. **Dead Code Detection**: Identify:
+           - Unused imports, functions, classes
+           - Unreachable code paths
+           - Features implemented but never invoked
+           - Commented-out code blocks
+        
+        5. **Architecture Assessment**: Evaluate:
+           - Coupling between modules
+           - Testability of components
+           - Single Responsibility Principle adherence
+           - Dependency direction violations
+    </instructions>
+
+    <output_format>
+        <structure>
+            # FastAPI Production Readiness Audit Report
+            
+            ## Executive Summary
+            - Overall Readiness Score: X/10
+            - Critical Issues: N (MUST FIX)
+            - High Issues: N (SHOULD FIX)
+            - Medium Issues: N (FIX NEXT)
+            - Architecture Rating: [Monolithic/Hexagonal/Layered] with [Good/Needs Improvement/Poor] implementation
+            
+            ## Risk Heat Map
+            [Mermaid diagram showing risk distribution across dimensions]
+            
+            ## Critical Findings (Security/Data Integrity)
+            | ID | Issue | File | Line | Severity | CWE Reference |
+            
+            ## High Findings (Performance/Reliability)
+            | ID | Issue | File | Line | Severity | Impact |
+            
+            ## Medium Findings (Maintainability)
+            | ID | Issue | File | Line | Severity | Effort |
+            
+            ## Detailed Analysis by Dimension
+            ### Security
+            [Detailed findings with code snippets]
+            
+            ### Data Persistence
+            [Detailed findings with code snippets]
+            
+            [... remaining dimensions ...]
+            
+            ## Dead Code Report
+            [List of unused code with confidence levels]
+            
+            ## Remediation Roadmap
+            [Prioritized action plan with effort estimates]
+            
+            ## Architecture Recommendations
+            [Strategic improvements for long-term maintainability]
+        </structure>
+
+        <formatting_rules>
+            - Use tables for issue summaries with sortable columns
+            - Use code blocks with language specification for all snippets
+            - Use mermaid diagrams for: architecture overview, data flow, risk heat maps
+            - Include line numbers in all code references
+            - Provide copy-paste ready fixes
+        </formatting_rules>
+    </output_format>
+
+    <file_output>
+        <path>docs/analysis/audit/report.md</path>
+        <additional_files>
+            - docs/analysis/audit/security.md (security-focused findings)
+            - docs/analysis/audit/performance.md (performance findings)
+            - docs/analysis/audit/remediation_plan.md (prioritized fixes)
+        </additional_files>
+    </file_output>
+    <success_criteria>
+        The audit is completed when:
+        - All code files have been analyzed
+        - All critical and high severity issues are identified and documented
+        - Remediation plans are provided for all critical and high severity issues
+        - Architecture recommendations are provided for all dimensions
+        - Dead code report is provided
+        - Remediation roadmap is provided
+    </success_criteria>
+    <references>
+        <standard id="OWASP_API_Top_10_2023">https://owasp.org/www-project-api-security/</standard>
+        <standard id="OWASP_Top_10_2021">https://owasp.org/Top10/</standard>
+        <standard id="RFC_7807">https://tools.ietf.org/html/rfc7807</standard>
+        <standard id="CIS_Docker_Benchmark">https://www.cisecurity.org/benchmark/docker</standard>
+        <standard id="NIST_Cybersecurity_Framework">https://www.nist.gov/cyberframework</standard>
+    </references>
+</analysis_task>
