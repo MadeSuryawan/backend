@@ -25,6 +25,7 @@ class TestTokenBlacklist:
 
         assert result is True
         mock_redis_client.set.assert_called_once()
+        mock_redis_client.zadd.assert_called_once()
 
     @mark.asyncio
     async def test_add_expired_token_skipped(
@@ -40,6 +41,7 @@ class TestTokenBlacklist:
 
         assert result is True
         mock_redis_client.set.assert_not_called()
+        mock_redis_client.zadd.assert_not_called()
 
     @mark.asyncio
     async def test_is_blacklisted_returns_false_when_not_found(
@@ -82,6 +84,22 @@ class TestTokenBlacklist:
 
         assert result is True
         mock_redis_client.delete.assert_called_once()
+        mock_redis_client.zrem.assert_called_once_with("token:blacklist:index", jti)
+
+    @mark.asyncio
+    async def test_get_blacklist_count_uses_sorted_set_index(
+        self,
+        token_blacklist: TokenBlacklist,
+        mock_redis_client: MagicMock,
+    ) -> None:
+        """Test blacklist count uses the indexed sorted-set path."""
+        mock_redis_client.zcard = AsyncMock(return_value=3)
+
+        result = await token_blacklist.get_blacklist_count()
+
+        assert result == 3
+        mock_redis_client.zremrangebyscore.assert_called_once()
+        mock_redis_client.zcard.assert_called_once_with("token:blacklist:index")
 
     @mark.asyncio
     async def test_key_prefix_is_correct(

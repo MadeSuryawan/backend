@@ -102,10 +102,16 @@ class Settings(BaseSettings):
     DATABASE_ECHO: bool = False  # Set to True to log SQL queries
 
     # Database connection pool settings
-    POOL_SIZE: int = 5
-    MAX_OVERFLOW: int = 10
-    POOL_TIMEOUT: int = 30
-    POOL_RECYCLE: int = 3600  # Recycle connections after 1 hour
+    # POOL_SIZE: base connections kept open per process.  Set to 10 so each of
+    # the 4 production workers has headroom without exhausting the pool under
+    # moderate concurrency.
+    # MAX_OVERFLOW: extra connections allowed above POOL_SIZE during bursts.
+    # POOL_TIMEOUT: seconds to wait for a connection before raising; kept low
+    # so callers get a fast, explicit error rather than hanging for 30 s.
+    POOL_SIZE: int = 10
+    MAX_OVERFLOW: int = 5
+    POOL_TIMEOUT: int = 10
+    POOL_RECYCLE: int = 1800  # Recycle connections after 30 minutes
 
     # Security settings (SECRET_KEY validated to be secure in production)
     SECRET_KEY: str = "dev-only-insecure-key-replace-in-prod"

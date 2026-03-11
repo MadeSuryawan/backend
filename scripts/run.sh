@@ -238,8 +238,10 @@ start() {
     # Start basic infrastructure services
     # redis-commander is excluded in production compose for security
     local infra_services="db redis prometheus grafana jaeger otel-collector"
+    local compose_profiles=(--profile otel)
     if docker compose -f "$COMPOSE_FILE" config --services | grep -q "redis-commander"; then
         infra_services="$infra_services redis-commander"
+        compose_profiles+=(--profile dev)
     fi
     
     # Check for port conflicts before starting the DB
@@ -248,7 +250,7 @@ start() {
     fi
     
     log_info "Starting infrastructure services..."
-    docker compose -f "$COMPOSE_FILE" --profile otel up -d $infra_services
+    docker compose -f "$COMPOSE_FILE" "${compose_profiles[@]}" up -d $infra_services
     
     if ! is_neon_postgres; then
         log_info "Waiting for database to be healthy..."
@@ -302,7 +304,11 @@ start_docker() {
     # ask_recreate_db
 
     log_info "Starting all remaining services via Docker Compose..."
-    docker compose -f "$COMPOSE_FILE" --profile otel up -d
+    local compose_profiles=(--profile otel)
+    if docker compose -f "$COMPOSE_FILE" config --services | grep -q "redis-commander"; then
+        compose_profiles+=(--profile dev)
+    fi
+    docker compose -f "$COMPOSE_FILE" "${compose_profiles[@]}" up -d
     log_success "Environment is running in Docker!"
     log_info "You can view logs with: ./scripts/run.sh logs backend"
 }
@@ -313,7 +319,11 @@ stop() {
     load_env
     # Stop services including those in the otel profile
     # -v is NOT used here to ensure data persistence
-    docker compose -f "$COMPOSE_FILE" --profile otel down
+    local compose_profiles=(--profile otel)
+    if docker compose -f "$COMPOSE_FILE" config --services | grep -q "redis-commander"; then
+        compose_profiles+=(--profile dev)
+    fi
+    docker compose -f "$COMPOSE_FILE" "${compose_profiles[@]}" down
     
     log_success "Development environment stopped successfully!"
 }
@@ -337,7 +347,11 @@ restart() {
 clean() {
     log_info "Wiping BaliBlissed development environment (deleting volumes)..."
     load_env
-    docker compose -f "$COMPOSE_FILE" --profile otel down -v
+    local compose_profiles=(--profile otel)
+    if docker compose -f "$COMPOSE_FILE" config --services | grep -q "redis-commander"; then
+        compose_profiles+=(--profile dev)
+    fi
+    docker compose -f "$COMPOSE_FILE" "${compose_profiles[@]}" down -v
     log_success "Environment wiped and volumes removed!"
 }
 

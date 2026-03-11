@@ -8,12 +8,11 @@ The detected timezone is stored in request.state.user_timezone
 for use in response formatting.
 """
 
-from fastapi import Request
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import Response
+from starlette.datastructures import Headers
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 
-class TimezoneMiddleware(BaseHTTPMiddleware):
+class TimezoneMiddleware:
     """
     Middleware for detecting user's timezone from request headers.
 
@@ -29,24 +28,32 @@ class TimezoneMiddleware(BaseHTTPMiddleware):
 
     """
 
-    async def dispatch(
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+
+    async def __call__(
         self,
-        request: Request,
-        call_next: RequestResponseEndpoint,
-    ) -> Response:
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
         """
         Extract timezone from header and store in request state.
 
         Args:
-            request: Current HTTP request.
-            call_next: Next middleware/endpoint in chain.
-
-        Returns:
-            HTTP response from downstream handlers.
+            scope: Current ASGI connection scope.
+            receive: ASGI receive callable.
+            send: ASGI send callable.
 
         """
-        request.state.user_timezone = request.headers.get(
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+
+        state = scope.setdefault("state", {})
+        headers = Headers(scope=scope)
+        state["user_timezone"] = headers.get(
             "X-Client-Timezone",
             "UTC",
         )
-        return await call_next(request)
+        await self._app(scope, receive, send)

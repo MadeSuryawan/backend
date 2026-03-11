@@ -133,7 +133,34 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT: BaseModel, UpdateSchemaT: 
         Returns:
             list[ModelT]: List of records
         """
-        statement = select(self.model).offset(skip).limit(limit)
+        return await self.get_many(limit=limit, offset=skip)
+
+    async def get_many(
+        self,
+        *,
+        load_options: list[Any] | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[ModelT]:
+        """
+        Get multiple records with optional eager-loading and pagination.
+
+        Args:
+            load_options: SQLAlchemy loader options such as ``selectinload``.
+            limit: Maximum number of records to return.
+            offset: Number of records to skip.
+
+        Returns:
+            list[ModelT]: List of records
+        """
+        statement = select(self.model)
+        if load_options:
+            for option in load_options:
+                statement = statement.options(option)
+        if offset:
+            statement = statement.offset(offset)
+        if limit is not None:
+            statement = statement.limit(limit)
         result = await self.session.execute(statement)
         return list(result.scalars().all())
 

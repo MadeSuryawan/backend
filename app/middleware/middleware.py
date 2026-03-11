@@ -25,7 +25,7 @@ Examples
 >>> configure_cors(app)
 """
 
-from asyncio import get_event_loop
+from asyncio import get_running_loop
 from collections.abc import AsyncGenerator, MutableMapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -34,12 +34,13 @@ from typing import Any
 from uuid import uuid4
 
 from anyio import Path as AsyncPath
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
 from rich.traceback import install
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.datastructures import MutableHeaders
 from starlette.routing import BaseRoute, Match, Route
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from uvloop import Loop
 
 from app.clients.ai_client import AiClient
@@ -128,7 +129,7 @@ async def _init_services(app: FastAPI) -> CacheManager:
 
     _blacklist_and_tracker_init(app, cache_manager)
 
-    logger.info(f"is uvloop: {type(get_event_loop()) is Loop}")
+    logger.info(f"is uvloop: {type(get_running_loop()) is Loop}")
 
     if ai_client := AiClient():
         app.state.ai_client = ai_client
@@ -169,7 +170,7 @@ def _show_links() -> None:
     logger.info("  - Grafana: http://localhost:3000")
     logger.info("  - Prometheus: http://localhost:9090")
     logger.info("  - Jaeger UI: http://localhost:16686")
-    logger.info("  - Redis Commander: http://localhost:8081")
+    logger.info("  - Redis Commander (dev profile): http://localhost:8081")
 
 
 async def _cleanup_services(app: FastAPI, cache_manager: CacheManager) -> None:
@@ -219,7 +220,7 @@ def configure_cors(app: FastAPI) -> None:
     )
 
 
-class LoggingMiddleware(BaseHTTPMiddleware):
+class LoggingMiddleware:
     """
     Middleware for logging request and response information.
 
@@ -234,11 +235,15 @@ class LoggingMiddleware(BaseHTTPMiddleware):
     >>> app.add_middleware(LoggingMiddleware)
     """
 
-    async def dispatch(
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+
+    async def __call__(
         self,
-        request: Request,
-        call_next: RequestResponseEndpoint,
-    ) -> Response:
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
         """
         Log request summary and timing information.
 
@@ -248,20 +253,19 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
         Parameters
         ----------
-        request : Request
-            The incoming HTTP request.
-        call_next : RequestResponseEndpoint
-            The next middleware or endpoint in the chain.
-
-        Returns
-        -------
-        Response
-            The HTTP response from the downstream handler.
-
-        Examples
-        --------
-        >>> response = await middleware.dispatch(request, call_next)
+        scope : Scope
+            The incoming ASGI connection scope.
+        receive : Receive
+            ASGI receive callable.
+        send : Send
+            ASGI send callable.
         """
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+
+        request = Request(scope, receive=receive)
+
         # Generate and bind request ID for log correlation
         request_id = str(uuid4())[:8]
         bind_request_id(request_id)
@@ -281,22 +285,26 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                 bali_time=bali_time,
             )
 
-        response = await call_next(request)
-        duration = time_taken(start_time)
-        # Add request ID to response headers
-        response.headers["X-Request-ID"] = request_id
+        async def patched_send(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                headers["X-Request-ID"] = request_id
 
-        if should_log:
-            logger.info(
-                "Request completed",
-                path=request.url.path,
-                status_code=response.status_code,
-                duration=duration,
-            )
+                if should_log:
+                    logger.info(
+                        "Request completed",
+                        path=request.url.path,
+                        status_code=message["status"],
+                        duration=time_taken(start_time),
+                    )
 
-        # Clear context after request
-        clear_context()
-        return response
+            await send(message)
+
+        try:
+            await self._app(scope, receive, patched_send)
+        finally:
+            # Clear context after request
+            clear_context()
 
     def _get_kwargs(self, request: Request) -> tuple[str | None, str, str]:
         """Extract kwargs from request."""
@@ -329,16 +337,17 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         return summary
 
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+class SecurityHeadersMiddleware:
     """
-    Middleware for adding security headers to responses.
+    Pure-ASGI middleware that injects security headers into every response.
 
-    Adds security-related HTTP headers to all responses including
-    XSS protection, content type options, frame options, and
-    strict transport security.
+    Unlike ``BaseHTTPMiddleware``, this implementation operates directly on
+    the ASGI send-callable, so it never buffers the response body.  This
+    makes it safe for streaming endpoints and eliminates the per-request
+    overhead that ``BaseHTTPMiddleware`` incurs when wrapping the body.
 
-    Headers Added
-    -------------
+    Headers injected
+    ----------------
     - X-Content-Type-Options: nosniff
     - X-Frame-Options: DENY
     - X-XSS-Protection: 1; mode=block
@@ -352,38 +361,32 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     >>> app.add_middleware(SecurityHeadersMiddleware)
     """
 
-    async def dispatch(
+    _SECURITY_HEADERS: tuple[tuple[bytes, bytes], ...] = (
+        (b"x-content-type-options", b"nosniff"),
+        (b"x-frame-options", b"DENY"),
+        (b"x-xss-protection", b"1; mode=block"),
+        (b"strict-transport-security", b"max-age=31536000; includeSubDomains"),
+        (b"referrer-policy", b"strict-origin-when-cross-origin"),
+    )
+
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+
+    async def __call__(
         self,
-        request: Request,
-        call_next: RequestResponseEndpoint,
-    ) -> Response:
-        """
-        Add security headers to all responses.
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
 
-        Processes the request and adds security headers to the
-        response before returning it to the client.
+        async def patched_send(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.extend(self._SECURITY_HEADERS)
+                message = {**message, "headers": headers}
+            await send(message)
 
-        Parameters
-        ----------
-        request : Request
-            The incoming HTTP request.
-        call_next : RequestResponseEndpoint
-            The next middleware or endpoint in the chain.
-
-        Returns
-        -------
-        Response
-            The HTTP response with security headers added.
-
-        Examples
-        --------
-        >>> response = await middleware.dispatch(request, call_next)
-        """
-
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        return response
+        await self._app(scope, receive, patched_send)

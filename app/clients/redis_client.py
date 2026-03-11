@@ -149,6 +149,57 @@ class RedisClient:
             mssg = f"Cache incr operation failed for key {key}: {e}"
             raise RedisConnectionError(mssg) from e
 
+    @with_retry(max_retries=3, base_delay=0.1)
+    async def zadd(self, key: str, mapping: dict[str, float | int]) -> int:
+        """Add members to a sorted set with automatic retry."""
+        try:
+            return await self.client.zadd(key, mapping)
+        except RedisError as e:
+            if logger.isEnabledFor(DEBUG):
+                logger.debug("Failed to zadd into key %s: %s", key, e)
+            mssg = f"Cache zadd operation failed for key {key}: {e}"
+            raise RedisConnectionError(mssg) from e
+
+    @with_retry(max_retries=3, base_delay=0.1)
+    async def zrem(self, key: str, *members: str) -> int:
+        """Remove members from a sorted set with automatic retry."""
+        if not members:
+            return 0
+        try:
+            return await self.client.zrem(key, *members)
+        except RedisError as e:
+            if logger.isEnabledFor(DEBUG):
+                logger.debug("Failed to zrem from key %s: %s", key, e)
+            mssg = f"Cache zrem operation failed for key {key}: {e}"
+            raise RedisConnectionError(mssg) from e
+
+    @with_retry(max_retries=3, base_delay=0.1)
+    async def zcard(self, key: str) -> int:
+        """Count sorted-set members with automatic retry."""
+        try:
+            return await self.client.zcard(key)
+        except RedisError as e:
+            if logger.isEnabledFor(DEBUG):
+                logger.debug("Failed to zcard key %s: %s", key, e)
+            mssg = f"Cache zcard operation failed for key {key}: {e}"
+            raise RedisConnectionError(mssg) from e
+
+    @with_retry(max_retries=3, base_delay=0.1)
+    async def zremrangebyscore(
+        self,
+        key: str,
+        min_score: float | int,
+        max_score: float | int,
+    ) -> int:
+        """Remove sorted-set members by score range with automatic retry."""
+        try:
+            return await self.client.zremrangebyscore(key, min_score, max_score)
+        except RedisError as e:
+            if logger.isEnabledFor(DEBUG):
+                logger.debug("Failed to prune sorted set %s: %s", key, e)
+            mssg = f"Cache zremrangebyscore operation failed for key {key}: {e}"
+            raise RedisConnectionError(mssg) from e
+
     async def flush_db(self) -> bool:
         """Flush current database."""
         try:

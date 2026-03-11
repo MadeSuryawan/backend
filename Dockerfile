@@ -59,10 +59,12 @@ COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/app ./app
 COPY --from=builder /app/alembic ./alembic
 COPY --from=builder /app/alembic.ini ./
+COPY scripts/start-prod.sh ./scripts/start-prod.sh
 
 # Create non-root user and set ownership
 RUN adduser -u 5678 --disabled-password --gecos "" appuser \
     && mkdir -p /app/logs /app/uploads \
+    && chmod +x /app/scripts/start-prod.sh \
     && chown -R appuser:appuser /app
 
 USER appuser
@@ -75,7 +77,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Migrations are handled by the dedicated `migrate` service in docker-compose.
 # This CMD only starts the application server.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--loop", "uvloop", "--http", "httptools", "--log-level", "info"]
+CMD ["/app/scripts/start-prod.sh"]
 
 
 # =============================================================================

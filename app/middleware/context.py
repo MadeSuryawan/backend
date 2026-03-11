@@ -7,15 +7,13 @@ so that decorators and other code can access them without requiring
 Request parameters in function signatures.
 """
 
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.requests import Request
-from starlette.responses import Response
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.context import cache_manager_ctx
 from app.managers.cache_manager import CacheManager
 
 
-class ContextMiddleware(BaseHTTPMiddleware):
+class ContextMiddleware:
     """
     Middleware to set context variables for request lifecycle.
 
@@ -28,29 +26,34 @@ class ContextMiddleware(BaseHTTPMiddleware):
     >>> app.add_middleware(ContextMiddleware)
     """
 
-    async def dispatch(
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+
+    async def __call__(
         self,
-        request: Request,
-        call_next: RequestResponseEndpoint,
-    ) -> Response:
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
         """
         Set context and process request.
 
         Parameters
         ----------
-        request : Request
-            The incoming HTTP request.
-        call_next : RequestResponseEndpoint
-            The next middleware/endpoint in the chain.
-
-        Returns
-        -------
-        Response
-            The HTTP response from the downstream handler.
+        scope : Scope
+            The incoming ASGI connection scope.
+        receive : Receive
+            ASGI receive callable.
+        send : Send
+            ASGI send callable.
         """
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+
         # Get cache manager from app state
         cache_manager: CacheManager | None = getattr(
-            request.app.state,
+            scope["app"].state,
             "cache_manager",
             None,
         )
@@ -59,9 +62,7 @@ class ContextMiddleware(BaseHTTPMiddleware):
         token = cache_manager_ctx.set(cache_manager)
 
         try:
-            response = await call_next(request)
+            await self._app(scope, receive, send)
         finally:
             # Always reset context to prevent leakage between requests
             cache_manager_ctx.reset(token)
-
-        return response

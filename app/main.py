@@ -84,9 +84,9 @@ setup_tracing(app)
 configure_cors(app)
 
 # Timezone detection middleware (must be early to set request.state.user_timezone)
-app.add_middleware(TimezoneMiddleware)
-app.add_middleware(LoggingMiddleware)
-app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(TimezoneMiddleware)  # type: ignore[arg-type]  # pure-ASGI stub limitation
+app.add_middleware(LoggingMiddleware)  # type: ignore[arg-type]  # pure-ASGI stub limitation
+app.add_middleware(SecurityHeadersMiddleware)  # type: ignore[arg-type]  # pure-ASGI stub limitation
 # Idempotency middleware — store is lazily resolved from app.state after lifespan.
 # Must run after authentication context is available (inner middleware runs first).
 app.add_middleware(IdempotencyMiddleware)
@@ -97,7 +97,7 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.trusted_hosts_
 # Trusted Host middleware to validate Host headers
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts_list)
 # Middleware to set context variables for decorators
-app.add_middleware(ContextMiddleware)
+app.add_middleware(ContextMiddleware)  # type: ignore[arg-type]  # pure-ASGI stub limitation
 
 
 routes = (

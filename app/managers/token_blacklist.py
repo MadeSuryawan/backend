@@ -11,6 +11,7 @@ logger = get_logger(__name__)
 
 # Key prefix for blacklisted tokens
 BLACKLIST_PREFIX = "token:blacklist:"
+BLACKLIST_INDEX_KEY = "token:blacklist:index"
 
 
 class TokenBlacklist:
@@ -72,6 +73,8 @@ class TokenBlacklist:
 
             # Store with TTL so it auto-expires
             result = await self._redis.set(key, "1", ex=ttl_seconds)
+            if result:
+                await self._redis.zadd(BLACKLIST_INDEX_KEY, {jti: exp.timestamp()})
             logger.debug("Token %s blacklisted with TTL %d seconds", jti, ttl_seconds)
             return result
         except RedisError:
@@ -110,6 +113,8 @@ class TokenBlacklist:
         try:
             key = self._get_key(jti)
             deleted = await self._redis.delete(key)
+            if deleted > 0:
+                await self._redis.zrem(BLACKLIST_INDEX_KEY, jti)
             return deleted > 0
         except RedisError:
             logger.exception("Failed to remove token %s from blacklist", jti)
@@ -123,10 +128,12 @@ class TokenBlacklist:
             int: Number of blacklisted tokens
         """
         try:
-            count = 0
-            async for _ in self._redis.scan_iter(f"{BLACKLIST_PREFIX}*"):
-                count += 1
-            return count
+            await self._redis.zremrangebyscore(
+                BLACKLIST_INDEX_KEY,
+                0,
+                datetime.now(UTC).timestamp(),
+            )
+            return await self._redis.zcard(BLACKLIST_INDEX_KEY)
         except RedisError:
             logger.exception("Failed to count blacklisted tokens")
             return -1

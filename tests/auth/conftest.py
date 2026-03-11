@@ -26,6 +26,10 @@ def mock_redis_client() -> MagicMock:
     mock.delete = AsyncMock(return_value=1)
     mock.exists = AsyncMock(return_value=0)
     mock.ttl = AsyncMock(return_value=-2)
+    mock.zadd = AsyncMock(return_value=1)
+    mock.zrem = AsyncMock(return_value=1)
+    mock.zcard = AsyncMock(return_value=0)
+    mock.zremrangebyscore = AsyncMock(return_value=0)
     mock.scan_iter = AsyncMock(return_value=iter([]))
     return mock
 
