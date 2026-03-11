@@ -53,7 +53,7 @@ class SecurityHeadersMiddleware:
 
 **PERF-002 — MEDIUM | `get_event_loop()` Deprecated in Python 3.10+**
 
-`app/middleware/middleware.py` imports `from asyncio import get_event_loop` and `app/managers/password_manager.py` likely uses it too. `get_event_loop()` is deprecated in Python 3.12+ and will raise a `DeprecationWarning` in some contexts when called from non-main threads.
+`app/middleware/middleware.py` imports `from asyncio import get_event_loop`. `get_event_loop()` is deprecated in Python 3.12+ and will raise a `DeprecationWarning` in some contexts when called from non-main threads.
 
 - **Fix:** Replace with `asyncio.get_running_loop()` inside async functions:
 
@@ -86,12 +86,12 @@ result = await asyncio.get_running_loop().run_in_executor(executor, func, arg)
 
 ### ⚠️ WEAKNESSES
 
-#### **PERF-003 — HIGH | Connection Pool Too Small for Production (Default 5+10)**
+#### **PERF-003 — HIGH | Connection Pool Defaults May Be Undersized for Production (Default 5+10)**
 
-Default `POOL_SIZE=5`, `MAX_OVERFLOW=10` gives a maximum of 15 concurrent DB connections. With `--workers 4` in the Dockerfile CMD, each uvicorn worker has its own pool: **4 × 15 = 60 total connections**. For a heavily loaded API, this may be insufficient, but more importantly, the per-worker pool is too small.
+Default `POOL_SIZE=5`, `MAX_OVERFLOW=10` gives a maximum of 15 concurrent DB connections per worker. With `--workers 4` in the Dockerfile CMD, each uvicorn worker has its own pool: **4 × 15 = 60 total connections**. Whether that is too small depends on workload and database limits, but the current defaults are a production-tuning risk rather than a clearly load-tested configuration.
 
 - **File:** `app/configs/settings.py` lines 105–107
-- **Impact:** Connection starvation under load → `QueuePool limit of size 5 overflow 10 reached` errors
+- **Impact:** Connection pressure under load → potential `QueuePool limit of size 5 overflow 10 reached` errors
 - **Fix:** Tune pool per worker count:
 
 ```python
@@ -110,11 +110,11 @@ engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
 
 ---
 
-**PERF-004 — HIGH | N+1 Query Risk in `UserRepository.do_password_verify`**
+#### **PERF-004 — MEDIUM | No Eager-Loading Convention (Latent N+1 Risk)**
 
-`do_password_verify` calls `get_by_username` then separately accesses `db_user.password_hash`. While this is a single object lookup, the broader pattern across repositories does not enforce `selectinload` or `joinedload` for relationships. If `UserDB` gains relationships (future), N+1 will silently appear.
+`do_password_verify` is not itself a demonstrated N+1 bug, but the broader repository pattern does not establish a default `selectinload` / `joinedload` convention for relationship-heavy queries. As models and list endpoints grow, N+1 problems can appear silently.
 
-- **File:** `app/repositories/user.py` lines 182–203
+- **Files:** `app/repositories/base.py`, `app/repositories/user.py`
 - **Impact:** N+1 queries in listing endpoints (blogs with authors, reviews with users)
 - **Fix (Defensive):** Add a convention to the `BaseRepository.get_many` method that uses `selectinload` by default:
 
@@ -165,37 +165,12 @@ async def get_blacklist_count(self) -> int:
 | Redis-backed cache with TTL configuration | ✅ Pass | `CACHE_TTL_ITINERARY=86400`, `CACHE_TTL_QUERY=3600` |
 | `ENABLE_RESPONSE_CACHING` feature flag | ✅ Pass | Can be toggled without deploy |
 | `CacheManager` as central abstraction | ✅ Pass | Single responsibility |
+| Request coalescing / thundering-herd protection | ✅ Pass | Per-key async locks in `CacheManager.get_or_set()` |
 | `Idempotency-Key` for mutation caching | ✅ Pass | Proper idempotency implementation |
 
 ### ⚠️ WEAKNESSES
 
-#### **PERF-006 — MEDIUM | No Cache Stampede Protection (Thundering Herd)**
-
-When a cached item expires, multiple concurrent requests will simultaneously miss the cache and hit the database. There is no "lock-then-populate" (probabilistic early expiration or Lua-based locking) to prevent this.
-
-- **Impact:** Burst of DB queries on cache expiry under load
-- **Fix:** Implement probabilistic early expiration (XFetch algorithm) or a Redis Lua lock on cache miss:
-
-```python
-async def get_or_set_with_lock(self, key: str, factory, ttl: int):
-    value = await self.get(key)
-    if value is not None:
-        return value
-    
-    lock_key = f"{key}:lock"
-    acquired = await self._redis.set(lock_key, "1", nx=True, ex=5)
-    if acquired:
-        try:
-            value = await factory()
-            await self.set(key, value, ttl=ttl)
-            return value
-        finally:
-            await self._redis.delete(lock_key)
-    else:
-        # Wait and retry
-        await asyncio.sleep(0.1)
-        return await self.get(key)
-```
+No additional cache weakness was retained here because the current `CacheManager` already implements request coalescing for cache fills.
 
 ---
 
@@ -236,9 +211,9 @@ async def get_paginated(
 
 #### **PERF-008 — MEDIUM | No Celery / Background Worker for Heavy AI Operations**
 
-AI itinerary generation (`google-genai`) runs synchronously within the request lifecycle even though it can take 5–30 seconds. This keeps an async worker thread occupied and depletes connection pools.
+AI itinerary generation (`google-genai`) runs synchronously within the request lifecycle even though it can take 5–30 seconds. This keeps a request worker occupied and increases long-tail latency risk.
 
-- **File:** `app/routes/ai.py` (inferred from route structure)
+- **File:** `app/routes/ai.py`
 - **Impact:** Long-tail latency; timeout risks with `AI_REQUEST_TIMEOUT: int = 60`
 - **Fix (Long-term):** Move AI requests to an async task queue (Celery + Redis or `arq`), return a `202 Accepted` with a task ID, and poll for results:
 
@@ -263,11 +238,7 @@ async def create_itinerary(body: ItineraryRequest) -> dict:
 
 ### ⚠️ WEAKNESSES
 
-#### **PERF-009 — MEDIUM | No Streaming for Large File Downloads**
-
-`StaticFiles` mount serves uploaded files but there's no streaming response for large media downloads. Large files are loaded into memory before being streamed.
-
-- **Fix:** Use `FileResponse` with range request support for large media files.
+No additional memory/resource issue was retained here because the current repository evidence did not support the prior large-file streaming claim.
 
 ---
 
@@ -299,9 +270,9 @@ CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers $(py
 
 ---
 
-#### **PERF-011 — MEDIUM | `redis-commander` Included in Production Compose**
+#### **PERF-011 — MEDIUM | `redis-commander` Present in Main Compose File**
 
-`docker-compose.yaml` includes `redis-commander` (web-based Redis admin UI) on port `8081`. This is a development-only tool and should not be present in production deployments.
+`docker-compose.yaml` includes `redis-commander` (web-based Redis admin UI) on port `8081`. The validated nuance is that it is present in the main compose file and not clearly isolated to a dev-only profile; it was not found in `docker-compose.prod.yaml`.
 
 - **File:** `docker-compose.yaml` lines 41–52
 - **Impact:** Redis admin UI exposed — can browse/modify all cache data
@@ -335,13 +306,11 @@ backend:
 | ---- | ------ | -------- | -------- |
 | PERF-001 | `BaseHTTPMiddleware` overhead (5× layers) | HIGH | +5–15% latency |
 | PERF-002 | Deprecated `get_event_loop()` | MEDIUM | DeprecationWarning in 3.12+ |
-| PERF-003 | Pool too small for 4-worker production | HIGH | Connection starvation |
-| PERF-004 | N+1 query risk without eager loading | HIGH | Relationship queries unbounded |
+| PERF-003 | Pool defaults may be undersized for 4-worker production | HIGH | Connection pressure |
+| PERF-004 | Latent N+1 risk without eager loading convention | MEDIUM | Relationship queries can degrade as models grow |
 | PERF-005 | `scan_iter` for blacklist count is O(N) | MEDIUM | Redis latency spikes |
-| PERF-006 | No cache stampede protection | MEDIUM | DB thundering herd on expiry |
 | PERF-007 | Offset pagination on large datasets | MEDIUM | Slow deep pages |
 | PERF-008 | AI requests block request lifecycle | MEDIUM | Long-tail latency |
-| PERF-009 | No streaming for large file downloads | MEDIUM | Memory pressure |
 | PERF-010 | Hardcoded `--workers 4` | HIGH | CPU resource mismatch |
-| PERF-011 | `redis-commander` in production compose | MEDIUM | Redis admin exposed |
+| PERF-011 | `redis-commander` in main compose | MEDIUM | Admin UI exposure risk |
 | PERF-012 | No container resource limits | MEDIUM | Runaway memory consumption |

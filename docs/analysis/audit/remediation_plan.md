@@ -10,11 +10,11 @@
 
 | Sprint | Priority | Effort | Issues |
 | ----- | -------- | ------ | ------ |  
-| **Sprint 1** (This week) | CRITICAL + HIGH Security | Small–Medium | SEC-012, SEC-005, SEC-010, SEC-013 |
+| **Sprint 1** (This week) | HIGH Security + Quick Wins | Small–Medium | SEC-003, SEC-005, SEC-010, SEC-013 |
 | **Sprint 2** | HIGH Performance | Medium | PERF-001, PERF-003, PERF-010 |
-| **Sprint 3** | MEDIUM Security + Performance | Medium | SEC-001, SEC-002, SEC-007, SEC-008, PERF-004, PERF-006 |
-| **Sprint 4** | MEDIUM Maintainability | Large | SEC-003, SEC-006, SEC-009, PERF-007, PERF-008 |
-| **Backlog** | LOW | Small | SEC-011, PERF-005, PERF-009, PERF-011, PERF-012 |
+| **Sprint 3** | MEDIUM Security + Performance | Medium | SEC-001, SEC-007, SEC-008, SEC-009, PERF-004, PERF-005 |
+| **Sprint 4** | Strategic Architecture | Large | SEC-002, PERF-007, PERF-008 |
+| **Backlog** | LOW + Strategic | Small–Large | SEC-011, SEC-012, PERF-011, PERF-012 |
 
 ---
 
@@ -45,7 +45,7 @@ def validate_secret_key(cls, v: str, info: ValidationInfo) -> str:
 
 ---
 
-### REM-02 — Restrict Health/Metrics Endpoints to Admins
+### REM-02 — Restrict Public Health / Metrics Exposure
 
 **Addresses:** SEC-005 | **Effort:** 30 minutes
 
@@ -66,7 +66,7 @@ async def legacy_metrics(
     ...
 ```
 
-> **Note:** `/health/live` and `/health/ready` remain public for Kubernetes probes.
+> **Note:** `/health/live` and `/health/ready` remain public for Kubernetes probes. This keeps the validated nuance intact: not every health endpoint must be gated, but the broader system-state views should not remain broadly public.
 
 ---
 
@@ -105,47 +105,43 @@ Also ensure `request.state.user_id` is populated by `get_current_user` dependenc
 
 ```python
 # app/middleware/middleware.py — LoggingMiddleware.dispatch
-from urllib.parse import urlparse
-
-def _get_safe_path(url_str: str) -> str:
-    """Return path only, stripping query params that may contain tokens/emails."""
-    return urlparse(url_str).path
-
-# In dispatch()
-safe_path = _get_safe_path(str(request.url))
 logger.info(
     "Request started",
-    path=safe_path,          # NOT request.url.path (includes query string)
+    path=request.url.path,
     method=request.method,
     client_ip=_mask_ip(client_ip),  # Mask last octet for GDPR
 )
 ```
 
 ```python
-def _mask_ip(ip: str) -> str:
-    """Mask last IP octet: 192.168.1.42 → 192.168.1.xxx"""
-    parts = ip.rsplit(".", 1)
-    return f"{parts[0]}.xxx" if len(parts) == 2 else ip
+# app/services/email_inquiry.py — avoid logging caller-provided name verbatim
+logger.info(
+    "Email inquiry submitted",
+    client_ip=_mask_ip(client_ip),
+    name_present=bool(name),
+)
 ```
 
 ---
 
-### REM-05 — Migrate from `python-jose` to `PyJWT`
+### REM-05 — Standardize on One JWT Library
 
 **Addresses:** SEC-001 | **Effort:** 1 hour
+
+Keep the currently used library or migrate deliberately, but remove the duplicate dependency so the runtime and dependency set match.
 
 ```diff
 # pyproject.toml
   dependencies = [
-    "PyJWT>=2.9.0",
--   "python-jose[cryptography]>=3.5.0",
+-   "PyJWT>=2.9.0",
+    "python-jose[cryptography]>=3.5.0",
 ```
 
 **Verification:**
 
-1. Update `app/managers/token_manager.py`: `import jwt`, replace `jose` calls.
-2. Update `app/middleware/idempotency.py`: replace `jose.exceptions.JWTError`.
-3. Run `uv sync` to rebuild lock file.
+1. Confirm the intended JWT library for long-term use.
+2. Remove the unused duplicate dependency.
+3. If a later migration is desired, handle that as a separate change set.
 
 ---
 
@@ -320,38 +316,24 @@ async def get_many(
 
 ---
 
-### REM-13 — Cache Stampede Protection with Redis Lock
+### REM-13 — Replace `scan_iter` Blacklist Count with Constant-Time Counter
 
-**Addresses:** PERF-006 | **Effort:** 3 hours
+**Addresses:** PERF-005 | **Effort:** 1 hour
 
 ```python
-# app/managers/cache_manager.py — add get_or_set_locked method
-async def get_or_set(
-    self,
-    key: str,
-    factory: Callable[[], Awaitable[T]],
-    ttl: int,
-    lock_ttl: int = 10,
-) -> T:
-    """Get from cache or populate with lock to prevent stampede."""
-    cached = await self.get(key)
-    if cached is not None:
-        return cached
+# app/managers/token_blacklist.py
+BLACKLIST_COUNT_KEY = "token_blacklist:count"
 
-    lock_key = f"{key}:__lock__"
-    acquired = await self._redis.set(lock_key, "1", nx=True, ex=lock_ttl)
-    
-    if acquired:
-        try:
-            value = await factory()
-            await self.set(key, value, ttl=ttl)
-            return value
-        finally:
-            await self._redis.delete(lock_key)
-    else:
-        # Another worker is populating — brief wait then retry
-        await asyncio.sleep(0.05)
-        return await self.get_or_set(key, factory, ttl, lock_ttl)
+async def blacklist_token(...):
+    ...
+    pipe = self.redis.pipeline()
+    pipe.setex(token_key, ttl_seconds, value)
+    pipe.incr(BLACKLIST_COUNT_KEY)
+    await pipe.execute()
+
+async def get_blacklist_count(self) -> int:
+    raw = await self.redis.get(BLACKLIST_COUNT_KEY)
+    return int(raw or 0)
 ```
 
 ---
@@ -423,9 +405,27 @@ async def get_itinerary_result(job_id: str, request: Request) -> dict:
 
 ---
 
+### REM-16 — Introduce Secret Rotation Strategy
+
+**Addresses:** SEC-012 | **Effort:** 1–2 days
+
+Move from static environment-file secrets toward a runtime-injected secret source so key rotation is operationally possible without editing the repository-managed `.env` workflow.
+
+```python
+# app/configs/settings.py
+SECRET_KEY: str = Field(...)
+
+# deployment/runtime
+# export SECRET_KEY from a secret manager or orchestration secret store
+```
+
+At minimum, document rotation ownership, rotation cadence, and how applications reload updated values.
+
+---
+
 ## Backlog Items
 
-### REM-16 — Move `redis-commander` to Dev Profile
+### REM-17 — Move `redis-commander` to Dev Profile
 
 **Addresses:** PERF-011 | **Effort:** 15 minutes
 
@@ -439,7 +439,7 @@ redis-commander:
 
 ---
 
-### REM-17 — Add Container Resource Limits
+### REM-18 — Add Container Resource Limits
 
 **Addresses:** PERF-012 | **Effort:** 30 minutes
 
@@ -458,11 +458,11 @@ backend:
 
 ---
 
-### REM-18 — Replace Atomic Counter for Blacklist Count
+### REM-19 — Keep `rich.print` Out of Production Config Paths
 
-**Addresses:** PERF-005 | **Effort:** 1 hour
+**Addresses:** SEC-011 | **Effort:** 15 minutes
 
-See PERF-005 fix in performance.md for implementation details.
+Remove the `rich.print` import from configuration/security modules unless it is strictly required for local debugging.
 
 ---
 
@@ -473,6 +473,8 @@ See PERF-005 fix in performance.md for implementation details.
 Convert all 5 `BaseHTTPMiddleware` subclasses to pure ASGI callables to eliminate 5× middleware overhead. Timeline: 1 sprint per middleware, starting with the highest-frequency ones.
 
 ### 2. Introduce a Secrets Manager Integration
+
+**Addresses:** SEC-012
 
 Current: `secrets/.env` (git-crypt). Recommended: AWS Secrets Manager or HashiCorp Vault with dynamic secret injection at startup. This enables rotation without redeployment.
 
@@ -489,6 +491,8 @@ v1_router.include_router(user_router)
 ```
 
 ### 4. Cursor-Based Pagination for Production Dataset Growth
+
+**Addresses:** PERF-007
 
 Implement before the database grows beyond 50K rows in any primary table.
 
@@ -508,8 +512,8 @@ if settings.SENTRY_DSN:
 
 | Sprint | Issues Fixed | Total Effort | Priority |
 | ----- | ------ | ------ | ------ |
-| Sprint 1 | REM-01 to REM-05 | ~6 hours | 🚨 CRITICAL |
+| Sprint 1 | REM-01 to REM-05 | ~6 hours | 🚨 HIGH |
 | Sprint 2 | REM-06 to REM-08 | ~6 hours | ⚠️ HIGH |
 | Sprint 3 | REM-09 to REM-13 | ~8 hours | 🔔 MEDIUM |
-| Sprint 4 | REM-14 to REM-15 | ~4 days | 🔵 STRATEGIC |
-| Backlog | REM-16 to REM-18 | ~2 hours | ℹ️ LOW |
+| Sprint 4 | REM-14 to REM-16 | ~5 days | 🔵 STRATEGIC |
+| Backlog | REM-17 to REM-19 | ~1 hour | ℹ️ LOW |
