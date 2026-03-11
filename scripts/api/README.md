@@ -174,7 +174,7 @@ sequenceDiagram
 4. **Verify the server is running:**
 
    ```bash
-   curl http://localhost:8000/health
+   curl http://localhost:8000/health/live
    ```
 
 ---
@@ -416,7 +416,8 @@ done
 
 1. Select **3. Utilities** > **Health Check**
 2. Click **Send**
-3. Expected: `200 OK` with system health status
+3. Use an admin bearer token when calling the legacy `/health` endpoint
+4. Expected: `200 OK` with detailed system health status
 
 **Get Current User:**
 
@@ -541,24 +542,26 @@ http GET http://localhost:8000/auth/callback/google \
 
 ---
 
-### 3. Health Check
+### 3. Public Health Check
 
 ```http
-GET /health
+GET /health/live
 ```
 
-Returns system health status including OAuth configuration.
+Returns a lightweight liveness response for public probing.
+
+For detailed operational status, use `GET /health` with an authenticated admin bearer token.
 
 **Responses:**
 
 | Status | Description |
 | ------ | ----------- |
-| `200` | System healthy |
+| `200` | Application is live |
 
 **Example:**
 
 ```bash
-http GET http://localhost:8000/health
+http GET http://localhost:8000/health/live
 ```
 
 ---
@@ -618,7 +621,7 @@ uv run python -c "from app.configs.settings import settings; print('Google Clien
 curl -v http://localhost:8000/auth/login/google
 
 # Check backend health
-curl http://localhost:8000/health | jq
+curl http://localhost:8000/health/live | jq
 
 # Check Redis connectivity (for state storage)
 redis-cli ping
@@ -667,7 +670,7 @@ The state parameter has these constraints:
 If states are not working:
 
 1. Check Redis is running: `redis-cli ping`
-2. Verify cache health: `curl http://localhost:8000/health | jq '.cache'`
+2. Verify admin operational health: `curl -H 'Authorization: Bearer <admin-token>' http://localhost:8000/health | jq '.cache'`
 3. Check state TTL configuration: `OAUTH_STATE_EXPIRE_SECONDS`
 
 ---

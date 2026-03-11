@@ -46,7 +46,8 @@ venv.bak/
 *.swo
 *~
 
-scripts/
+scripts/*
+!scripts/start-prod.sh
 
 # OS files
 .DS_Store

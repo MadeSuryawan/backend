@@ -1,4 +1,4 @@
-import uuid
+from uuid import uuid4
 
 from httpx import AsyncClient
 from pytest import mark
@@ -56,8 +56,15 @@ async def test_health_check(client: AsyncClient) -> None:
 
 
 @mark.asyncio
+async def test_health_check_requires_admin(unauthenticated_client: AsyncClient) -> None:
+    """Legacy health endpoint should require admin authentication."""
+    response = await unauthenticated_client.get("/health")
+    assert response.status_code == 401
+
+
+@mark.asyncio
 async def test_metrics_rate_limit(client: AsyncClient) -> None:
-    unique_key = str(uuid.uuid4())
+    unique_key = str(uuid4())
     headers = {"X-API-Key": unique_key}
 
     # Hit the endpoint 5 times (allowed)
@@ -69,3 +76,13 @@ async def test_metrics_rate_limit(client: AsyncClient) -> None:
     response = await client.get("/metrics/legacy", headers=headers)
     assert response.status_code == 429
     assert "Rate limit exceeded" in response.text
+
+
+@mark.asyncio
+async def test_metrics_legacy_requires_admin(unauthenticated_client: AsyncClient) -> None:
+    """Legacy metrics endpoint should require admin authentication."""
+    response = await unauthenticated_client.get(
+        "/metrics/legacy",
+        headers={"X-API-Key": str(uuid4())},
+    )
+    assert response.status_code == 401

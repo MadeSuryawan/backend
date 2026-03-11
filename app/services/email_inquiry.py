@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from app.clients.ai_client import AiClient
 from app.logging import get_logger
 from app.schemas.ai import AnalysisFormat, ContactAnalysisResponse, EmailInquiry
-from app.utils.helpers import host
+from app.utils.helpers import host, mask_ip_address
 
 logger = get_logger(__name__)
 
@@ -72,7 +72,10 @@ async def analyze_contact(
         AI-generated analysis of the contact inquiry.
 
     """
-    logger.info(f"Analyzing email inquiry for {email_inquiry.name} from ip {host(request)}")
+    logger.info(
+        "Analyzing email inquiry",
+        client_ip=mask_ip_address(host(request)),
+    )
     content = contact_analysis_prompt(email_inquiry.name, email_inquiry.message)
     system_prompt = "You are a travel assistant for Bali travel service company."
     response = await ai_client.do_service(content, system_prompt, AnalysisFormat)

@@ -1,7 +1,6 @@
 from pathlib import Path
 from sys import exit as sys_exit
 from sys import path
-from typing import cast
 
 from google_auth_oauthlib.flow import InstalledAppFlow
 
@@ -37,17 +36,11 @@ def generate_token() -> None:
     logger.info("Starting OAuth flow. Your browser should open shortly...")
 
     try:
-        # We use cast() here to force the type checker to recognize this
-        # as an InstalledAppFlow, not a generic Flow.
-        flow = cast(
-            InstalledAppFlow,
-            InstalledAppFlow.from_client_secrets_file(
-                str(settings.GMAIL_CLIENT_SECRET_FILE),
-                scopes=settings.GMAIL_SCOPES,
-            ),
+        flow = InstalledAppFlow.from_client_secrets_file(
+            str(settings.GMAIL_CLIENT_SECRET_FILE),
+            scopes=settings.GMAIL_SCOPES,
         )
 
-        # Now Pyrefly knows 'flow' has this method
         creds = flow.run_local_server(port=0)
 
         with open(settings.GMAIL_TOKEN_FILE, "w") as token:

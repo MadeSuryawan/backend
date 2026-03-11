@@ -30,7 +30,7 @@ from app.managers.token_manager import decode_access_token
 from app.models import UserDB
 from app.monitoring import HealthChecker
 from app.repositories import BlogRepository, ReviewRepository, UserRepository
-from app.schemas.user import UserResponse
+from app.schemas.user import UserResponse, validate_user_response
 from app.services import AuthService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -193,6 +193,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    request.state.user_id = str(token_data.user_id)
     return user
 
 
@@ -213,8 +214,37 @@ def get_user_repository(session: Annotated[AsyncSession, Depends(get_session)]) 
     return UserRepository(session)
 
 
+async def get_current_user_response(
+    request: Request,
+    token: Annotated[str, Depends(oauth2_scheme)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> UserResponse:
+    """
+    Get current authenticated user as a response DTO (without sensitive data).
+
+    This dependency should be used for routes that return user data to ensure
+    password_hash and other sensitive fields are not exposed in the response.
+
+    Parameters
+    ----------
+    request : Request
+        Current request context.
+    token : str
+        Bearer token.
+    session : AsyncSession
+        Database session.
+
+    Returns
+    -------
+    UserResponse
+        Current authenticated user as a safe response model.
+    """
+    user_db = await get_current_user(request, token, session)
+    return validate_user_response(user_db)
+
+
 UserDBDep = Annotated[UserDB, Depends(get_current_user)]
-UserRespDep = Annotated[UserResponse, Depends(get_current_user)]
+UserRespDep = Annotated[UserResponse, Depends(get_current_user_response)]
 UserRepoDep = Annotated[UserRepository, Depends(get_user_repository)]
 
 

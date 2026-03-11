@@ -53,10 +53,20 @@ from app.managers.rate_limiter import close_limiter
 from app.managers.token_blacklist import init_token_blacklist
 from app.monitoring import HealthChecker
 from app.stores.idempotency import RedisIdempotencyStore
-from app.utils.helpers import host, time_taken
+from app.utils.helpers import host, mask_ip_address, time_taken
 from app.utils.timezone import format_logs
 
 logger = get_logger(__name__)
+
+_CORS_ALLOWED_HEADERS = [
+    "Accept",
+    "Authorization",
+    "Content-Type",
+    "Idempotency-Key",
+    "X-API-Key",
+    "X-Client-Timezone",
+    "X-Request-ID",
+]
 
 # Install rich tracebacks for better error display
 install()
@@ -162,7 +172,7 @@ def _show_links() -> None:
     logger.info("  - Backend API: http://localhost:8000")
     logger.info("  - API Documentation: http://localhost:8000/docs")
     logger.info("  - API Documentation (ReDoc): http://localhost:8000/redoc")
-    logger.info("  - Health Check: http://localhost:8000/health")
+    logger.info("  - Admin Health Check: http://localhost:8000/health")
     logger.info("  - Health Live: http://localhost:8000/health/live")
     logger.info("  - Health Ready: http://localhost:8000/health/ready")
     logger.info("  - Metrics: http://localhost:8000/metrics")
@@ -214,8 +224,8 @@ def configure_cors(app: FastAPI) -> None:
         CORSMiddleware,
         allow_origins=allowed_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=_CORS_ALLOWED_HEADERS,
         expose_headers=["X-Request-ID"],
     )
 
@@ -312,7 +322,7 @@ class LoggingMiddleware:
         # Log in Bali timezone for server/admin visibility
         bali_time = format_logs(datetime.now(UTC), settings.TZ)
         route_info = self._get_summary(request) or f"{request.method} {request.url.path}"
-        client_ip = host(request)
+        client_ip = mask_ip_address(host(request))
 
         return bali_time, route_info, client_ip
 
@@ -353,6 +363,9 @@ class SecurityHeadersMiddleware:
     - X-XSS-Protection: 1; mode=block
     - Strict-Transport-Security: max-age=31536000; includeSubDomains
     - Referrer-Policy: strict-origin-when-cross-origin
+    - Content-Security-Policy
+    - Permissions-Policy
+    - X-DNS-Prefetch-Control: off
 
     Examples
     --------
@@ -367,6 +380,12 @@ class SecurityHeadersMiddleware:
         (b"x-xss-protection", b"1; mode=block"),
         (b"strict-transport-security", b"max-age=31536000; includeSubDomains"),
         (b"referrer-policy", b"strict-origin-when-cross-origin"),
+        (
+            b"content-security-policy",
+            b"default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' https:; connect-src 'self' https:; font-src 'self' data: https:",
+        ),
+        (b"permissions-policy", b"geolocation=(), microphone=(), camera=()"),
+        (b"x-dns-prefetch-control", b"off"),
     )
 
     def __init__(self, app: ASGIApp) -> None:

@@ -21,14 +21,25 @@ class TestGetIdentifier:
     def test_returns_api_key_when_present(self) -> None:
         """Test that API key is used when present in headers."""
         request = MagicMock()
+        request.state.user_id = None
         request.headers.get.return_value = "test-api-key-123"
 
         result = get_identifier(request)
         assert result == "apikey:test-api-key-123"
 
+    def test_returns_authenticated_user_id_when_present(self) -> None:
+        """Test that authenticated user ID takes precedence over API key."""
+        request = MagicMock()
+        request.state.user_id = "user-123"
+        request.headers.get.return_value = "test-api-key-123"
+
+        result = get_identifier(request)
+        assert result == "user:user-123"
+
     def test_returns_ip_when_no_api_key(self) -> None:
         """Test that IP address is used when no API key is present."""
         request = MagicMock()
+        request.state.user_id = None
         request.headers.get.return_value = None
         request.client.host = "192.168.1.100"
 
@@ -42,6 +53,7 @@ class TestGetIdentifier:
     def test_returns_ip_with_none_client(self) -> None:
         """Test handling when client is None."""
         request = MagicMock()
+        request.state.user_id = None
         request.headers.get.return_value = None
         request.client = None
 

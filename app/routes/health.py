@@ -2,14 +2,15 @@
 """
 Health and System Routes.
 
-Provides Kubernetes-compatible health endpoints, legacy health checks,
-metrics, and utility endpoints for the BaliBlissed Backend.
+Provides Kubernetes-compatible health endpoints, admin-only legacy
+operational endpoints, metrics, and utility endpoints for the
+BaliBlissed Backend.
 
 Endpoints
 ---------
 - /health/live : Liveness probe for Kubernetes
 - /health/ready : Readiness probe for Kubernetes
-- /health : Legacy health check with comprehensive status
+- /health : Admin-only legacy health check with comprehensive status
 - /favicon.ico : Serve favicon
 - /metrics/legacy : Legacy metrics format
 - / : Root welcome endpoint
@@ -27,7 +28,7 @@ from fastapi.responses import FileResponse, JSONResponse, ORJSONResponse, Respon
 
 from app.configs.settings import settings
 from app.decorators.caching import get_cache_manager
-from app.dependencies import EmailDep, HealthCheckerDep
+from app.dependencies import AdminUserDep, EmailDep, HealthCheckerDep
 from app.errors import EmailServiceError
 from app.managers.circuit_breaker import ai_circuit_breaker, email_circuit_breaker
 from app.managers.metrics import get_system_metrics, metrics_manager
@@ -178,7 +179,7 @@ health_check_router = APIRouter()
 @health_check_router.get(
     settings.HEALTH_CHECK_ENDPOINT,
     tags=["🩺 Health"],
-    summary="Health check endpoint (legacy)",
+    summary="Admin health check endpoint (legacy)",
     response_model=dict,
     response_class=ORJSONResponse,
     include_in_schema=settings.DOCS_ENABLED,
@@ -205,14 +206,16 @@ health_check_router = APIRouter()
 @limiter.exempt
 async def health_check(
     request: Request,
+    _admin_user: AdminUserDep,
     email_client: EmailDep,
     health_checker: HealthCheckerDep,
 ) -> ORJSONResponse:
     """
-    Health check endpoint with comprehensive status (legacy format).
+    Admin-only health check endpoint with comprehensive status (legacy format).
 
-    This endpoint is kept for backward compatibility. New deployments
-    should use /health/live and /health/ready instead.
+    This endpoint is kept for backward compatibility and operational
+    administration. New deployments should use /health/live and
+    /health/ready for public probe traffic instead.
 
     Parameters
     ----------
@@ -302,8 +305,8 @@ async def get_favicon() -> FileResponse:
     "/metrics/legacy",
     tags=["📈 Metrics"],
     response_class=ORJSONResponse,
-    summary="Get legacy metrics format",
-    description="Get API performance metrics in legacy JSON format.",
+    summary="Get legacy metrics format (admin)",
+    description="Get API performance metrics in legacy JSON format for admin use.",
     include_in_schema=settings.DOCS_ENABLED,
     responses={
         200: {
@@ -321,12 +324,17 @@ async def get_favicon() -> FileResponse:
     operation_id="get_metrics_legacy",
 )
 @limiter.limit("5/minute")
-async def get_metrics_legacy(request: Request, response: Response) -> ORJSONResponse:
+async def get_metrics_legacy(
+    request: Request,
+    response: Response,
+    _admin_user: AdminUserDep,
+) -> ORJSONResponse:
     """
-    Get API performance metrics in legacy format.
+    Get API performance metrics in legacy format for admins.
 
-    This endpoint is kept for backward compatibility.
-    The new /metrics endpoint provides Prometheus format.
+    This endpoint is kept for backward compatibility and operational
+    administration. The new /metrics endpoint provides Prometheus
+    format.
 
     Parameters
     ----------

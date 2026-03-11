@@ -1,10 +1,10 @@
 # tests/utils/test_helpers.py
 """Tests for app/utils/helpers.py module."""
 
-import re
+from re import match as re_match
 from time import perf_counter, sleep
 
-from app.utils.helpers import time_taken, today_str
+from app.utils.helpers import mask_ip_address, time_taken, today_str
 
 
 class TestTodayStr:
@@ -19,7 +19,7 @@ class TestTodayStr:
         """Test that the date format matches YYYY-MM-DD HH:MM:SS."""
         result = today_str()
         pattern = r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$"
-        assert re.match(pattern, result), f"Date format mismatch: {result}"
+        assert re_match(pattern, result), f"Date format mismatch: {result}"
 
     def test_contains_valid_date_components(self) -> None:
         """Test that the date components are valid."""
@@ -59,7 +59,7 @@ class TestTimeTaken:
         start = perf_counter()
         result = time_taken(start)
         pattern = r"^\d+m \d+\.\d{2}s$"
-        assert re.match(pattern, result), f"Format mismatch: {result}"
+        assert re_match(pattern, result), f"Format mismatch: {result}"
 
     def test_elapsed_time_calculation(self) -> None:
         """Test that elapsed time is calculated correctly."""
@@ -85,3 +85,17 @@ class TestTimeTaken:
         result = time_taken(start)
         # divmod gives 61m 5.00s (not handling hours)
         assert result == "61m 5.00s"
+
+
+class TestMaskIpAddress:
+    """Tests for mask_ip_address helper."""
+
+    def test_masks_ipv4_address(self) -> None:
+        assert mask_ip_address("192.168.1.42") == "192.168.1.0"
+
+    def test_masks_ipv6_address(self) -> None:
+        assert mask_ip_address("2001:db8:85a3::8a2e:370:7334") == "2001:0db8:85a3:0000::"
+
+    def test_returns_unknown_for_invalid_or_missing_ip(self) -> None:
+        assert mask_ip_address("not-an-ip") == "unknown"
+        assert mask_ip_address(None) == "unknown"

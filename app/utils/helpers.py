@@ -1,4 +1,5 @@
 from datetime import datetime
+from ipaddress import ip_address
 from time import perf_counter
 from typing import Any
 
@@ -20,6 +21,24 @@ def today_str() -> str:
 def host(request: Request) -> str:
     """Return the host IP address."""
     return request.client.host if request.client else "unknown"
+
+
+def mask_ip_address(ip: str | None) -> str:
+    """Return a masked IP string suitable for logs."""
+    if not ip or ip == "unknown":
+        return "unknown"
+
+    try:
+        parsed = ip_address(ip)
+    except ValueError:
+        return "unknown"
+
+    if parsed.version == 4:
+        octets = str(parsed).split(".")
+        return ".".join([*octets[:3], "0"])
+
+    segments = parsed.exploded.split(":")
+    return ":".join(segments[:4]) + "::"
 
 
 def time_taken(start_time: float) -> str:

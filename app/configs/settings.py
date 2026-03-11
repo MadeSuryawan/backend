@@ -268,7 +268,11 @@ class Settings(BaseSettings):
     @classmethod
     def validate_secret_key(cls, v: str, info: ValidationInfo) -> str:
         """Ensure SECRET_KEY is set and secure."""
-        if not v or v == "your-secret-key-change-this-in-production":
+        insecure_defaults = {
+            "your-secret-key-change-this-in-production",
+            "dev-only-insecure-key-replace-in-prod",
+        }
+        if not v or v in insecure_defaults:
             env = info.data.get("ENVIRONMENT", "development")
             if env == "production":
                 msg = "SECRET_KEY must be set to a secure value in production!"

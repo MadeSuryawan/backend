@@ -78,7 +78,7 @@ docker-compose --profile otel up -d
 
 - **Prometheus targets**: <http://localhost:9090/targets>
 - **Metrics endpoint**: <http://localhost:8000/metrics>
-- **Health check**: <http://localhost:8000/health>
+- **Operational health (admin)**: <http://localhost:8000/health>
 - **Liveness probe**: <http://localhost:8000/health/live>
 - **Readiness probe**: <http://localhost:8000/health/ready>
 
@@ -192,7 +192,7 @@ Checks all external dependencies. Returns HTTP 503 if any check fails.
 
 ### Legacy Health Endpoint
 
-The original `/health` endpoint is preserved for backward compatibility and includes additional service information.
+The original `/health` endpoint is preserved as an authenticated admin-only operational endpoint and includes additional service information.
 
 ## Logging
 

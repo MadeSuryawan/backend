@@ -7,7 +7,6 @@ level management for different environments.
 
 from passlib.context import CryptContext
 from pydantic import BaseModel
-from rich import print as rprint
 
 
 class SecurityInfo(BaseModel):
@@ -80,6 +79,8 @@ def get_context(level: str) -> CryptContext:
 
 def print_config_info() -> None:
     """Print detailed information about all security levels."""
+    from rich import print as rprint  # noqa: PLC0415
+
     yellow = "[yellow]=[yellow]" * 80
     rprint("\n" + yellow)
     rprint("[b i blue]Password Hashing Configuration Guide[b i blue]")

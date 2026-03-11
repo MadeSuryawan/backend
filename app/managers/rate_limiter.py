@@ -20,7 +20,8 @@ def get_identifier(request: Request) -> str:
     """
     Get unique identifier for rate limiting.
 
-    Uses API key from header if available, otherwise falls back to IP address.
+    Uses verified user ID when available, otherwise falls back to API key
+    and finally the client IP address.
 
     Args:
         request: FastAPI request object.
@@ -28,6 +29,10 @@ def get_identifier(request: Request) -> str:
     Returns:
         Unique identifier string.
     """
+    user_id = getattr(getattr(request, "state", None), "user_id", None)
+    if isinstance(user_id, str) and user_id:
+        return f"user:{user_id}"
+
     api_key = request.headers.get("X-API-Key")
     if api_key:
         return f"apikey:{api_key}"

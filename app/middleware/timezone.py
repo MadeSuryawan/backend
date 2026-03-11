@@ -2,14 +2,18 @@
 Timezone detection middleware for FastAPI.
 
 Detects the user's timezone from the X-Client-Timezone header.
-Falls back to UTC if the header is not present.
+Falls back to UTC if the header is missing or invalid.
 
 The detected timezone is stored in request.state.user_timezone
 for use in response formatting.
 """
 
+from zoneinfo import available_timezones
+
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Receive, Scope, Send
+
+_VALID_TIMEZONES = available_timezones()
 
 
 class TimezoneMiddleware:
@@ -52,8 +56,9 @@ class TimezoneMiddleware:
 
         state = scope.setdefault("state", {})
         headers = Headers(scope=scope)
-        state["user_timezone"] = headers.get(
+        timezone = headers.get(
             "X-Client-Timezone",
             "UTC",
         )
+        state["user_timezone"] = timezone if timezone in _VALID_TIMEZONES else "UTC"
         await self._app(scope, receive, send)
