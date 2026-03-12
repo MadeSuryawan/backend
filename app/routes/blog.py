@@ -988,7 +988,7 @@ async def search_blogs_by_tags(
 @timed("/blogs/update")
 @limiter.limit(lambda key: "20/minute" if "apikey" in key else "5/minute")
 @cache_busting(
-    key_builder=lambda blog_id, blog_update, deps, **kw: [
+    key_builder=lambda deps, **kw: [
         blogs_list_key(BlogListQuery(skip=0, limit=10)),
     ],
     namespace="blogs",

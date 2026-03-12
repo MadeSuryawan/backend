@@ -13,11 +13,14 @@ from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
+from starlette.requests import Request
 
 from app.dependencies import get_cache_manager
 from app.dependencies.dependencies import get_auth_service, oauth
+from app.errors.auth import OAuthError
 from app.main import app
 from app.models import UserDB
+from app.routes.oauth import _exchange_oauth_token, _get_user_info, _process_oauth_user
 
 
 def setup_mock_cache() -> MagicMock:
@@ -42,6 +45,22 @@ def teardown_test_cache() -> None:
         delattr(app.state, "cache_manager")
     if get_cache_manager in app.dependency_overrides:
         del app.dependency_overrides[get_cache_manager]
+
+
+def make_oauth_request(user_timezone: str = "Asia/Makassar") -> Request:
+    """Create a minimal Starlette request for direct OAuth helper tests."""
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/auth/callback/google",
+            "headers": [],
+            "query_string": b"",
+            "client": ("127.0.0.1", 12345),
+        },
+    )
+    request.state.user_timezone = user_timezone
+    return request
 
 
 class TestOAuthLogin:
@@ -81,7 +100,7 @@ class TestOAuthLogin:
                     ),
                     patch("app.dependencies.dependencies.settings.OAUTH_STATE_EXPIRE_SECONDS", 600),
                 ):
-                    _ = await client.get("/auth/login/google")
+                    await client.get("/auth/login/google")
 
                     # Verify state was stored in cache
                     mock_cache.set.assert_called_once()
@@ -297,6 +316,59 @@ class TestOAuthSecurityFeatures:
                         assert stored_data["provider"] == "google"
         finally:
             teardown_test_cache()
+
+
+class TestOAuthHelpers:
+    """Focused helper coverage for OAuth route internals."""
+
+    async def test_exchange_oauth_token_wraps_provider_failure(self) -> None:
+        """OAuth token exchange failures should be normalized to OAuthError."""
+        mock_client = MagicMock()
+        mock_client.authorize_access_token = AsyncMock(side_effect=RuntimeError("boom"))
+
+        with pytest.raises(OAuthError):
+            await _exchange_oauth_token(mock_client, make_oauth_request(), "google")
+
+    async def test_get_user_info_fetches_fallback_when_missing_from_token(self) -> None:
+        """User info should be fetched from the provider when absent in token."""
+        mock_client = MagicMock()
+        mock_client.userinfo = AsyncMock(return_value={"sub": "123", "email": "user@test.dev"})
+
+        user_info = await _get_user_info(mock_client, {"access_token": "token"})
+
+        assert user_info == {"sub": "123", "email": "user@test.dev"}
+        mock_client.userinfo.assert_awaited_once_with(token={"access_token": "token"})
+
+    async def test_process_oauth_user_wraps_unexpected_user_processing_failure(self) -> None:
+        """Unexpected helper failures should become OAuthError for the route layer."""
+        mock_client = MagicMock()
+        mock_auth_service = MagicMock()
+        mock_client.userinfo = AsyncMock(return_value={"sub": "123", "email": "user@test.dev"})
+        mock_auth_service.get_or_create_oauth_user = AsyncMock(side_effect=RuntimeError("db down"))
+
+        with pytest.raises(OAuthError):
+            await _process_oauth_user(
+                mock_client,
+                {"access_token": "token"},
+                "google",
+                make_oauth_request(),
+                mock_auth_service,
+            )
+
+    async def test_process_oauth_user_reraises_existing_oauth_error(self) -> None:
+        """Existing OAuthError instances should propagate without being rewrapped."""
+        mock_client = MagicMock()
+        mock_auth_service = MagicMock()
+        mock_client.userinfo = AsyncMock(side_effect=OAuthError("provider failed"))
+
+        with pytest.raises(OAuthError):
+            await _process_oauth_user(
+                mock_client,
+                {"access_token": "token"},
+                "google",
+                make_oauth_request(),
+                mock_auth_service,
+            )
 
     async def test_csrf_protection_enforced(self, client: AsyncClient) -> None:
         """Test that CSRF protection is enforced via state validation."""

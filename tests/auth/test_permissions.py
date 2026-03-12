@@ -2,11 +2,30 @@
 
 from uuid import uuid4
 
+import pytest
+from fastapi import HTTPException
+
 from app.models import UserDB
 from app.rabc import (
     ROLE_HIERARCHY,
+    Permission,
+    has_permission,
     has_role_or_higher,
+    require_permission,
+    require_role,
+    require_role_or_higher,
 )
+
+
+def _make_user(role: str) -> UserDB:
+    """Create a minimal user for RBAC tests."""
+    return UserDB(
+        uuid=uuid4(),
+        username=f"{role}user",
+        email=f"{role}@example.com",
+        role=role,
+        is_verified=True,
+    )
 
 
 class TestRoleHierarchy:
@@ -84,3 +103,93 @@ class TestUserRoleField:
         )
 
         assert user.role == "moderator"
+
+
+class TestHasPermission:
+    """Test permission resolution for different roles."""
+
+    def test_regular_user_has_only_basic_blog_permissions(self) -> None:
+        """Regular users should keep blog access but not admin access."""
+        user = _make_user("user")
+
+        assert has_permission(user, Permission.READ_BLOGS) is True
+        assert has_permission(user, Permission.READ_ADMIN) is False
+
+    def test_moderator_has_elevated_blog_permissions_but_not_admin(self) -> None:
+        """Moderators should gain moderation powers without admin access."""
+        moderator = _make_user("moderator")
+
+        assert has_permission(moderator, Permission.DELETE_BLOGS) is True
+        assert has_permission(moderator, Permission.READ_ADMIN) is False
+
+    def test_unknown_role_has_no_permissions(self) -> None:
+        """Unknown roles should not inherit permissions by accident."""
+        unknown = _make_user("unknown")
+
+        assert has_permission(unknown, Permission.READ_BLOGS) is False
+
+
+class TestPermissionDependencies:
+    """Test RBAC dependency factories directly."""
+
+    @pytest.mark.asyncio
+    async def test_require_role_allows_listed_role(self) -> None:
+        """Allowed roles should pass through unchanged."""
+        moderator = _make_user("moderator")
+        role_checker = require_role(["moderator", "admin"])
+
+        assert await role_checker(user=moderator) is moderator
+
+    @pytest.mark.asyncio
+    async def test_require_role_rejects_unlisted_role(self) -> None:
+        """Unlisted roles should receive a 403 with helpful detail."""
+        user = _make_user("user")
+        role_checker = require_role(["admin"])
+
+        with pytest.raises(HTTPException) as exc_info:
+            await role_checker(user=user)
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail == "Insufficient permissions. Required role: admin"
+
+    @pytest.mark.asyncio
+    async def test_require_role_or_higher_allows_admin(self) -> None:
+        """Higher roles should satisfy lower minimum-role requirements."""
+        admin = _make_user("admin")
+        role_checker = require_role_or_higher("moderator")
+
+        assert await role_checker(user=admin) is admin
+
+    @pytest.mark.asyncio
+    async def test_require_role_or_higher_rejects_lower_role(self) -> None:
+        """Lower roles should be rejected by hierarchy-based requirements."""
+        user = _make_user("user")
+        role_checker = require_role_or_higher("moderator")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await role_checker(user=user)
+
+        assert exc_info.value.status_code == 403
+        assert (
+            exc_info.value.detail == "Insufficient permissions. Required role: moderator or higher"
+        )
+
+    @pytest.mark.asyncio
+    async def test_require_permission_allows_admin_permission(self) -> None:
+        """Users with the required permission should pass dependency checks."""
+        admin = _make_user("admin")
+        permission_checker = require_permission(Permission.READ_ADMIN)
+
+        assert await permission_checker(user=admin) is admin
+
+    @pytest.mark.asyncio
+    async def test_require_permission_rejects_missing_permission(self) -> None:
+        """Missing permissions should return the expected 403 detail."""
+        moderator = _make_user("moderator")
+        permission_checker = require_permission(Permission.READ_ADMIN)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await permission_checker(user=moderator)
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail == "Insufficient permissions. Required: read:admin"

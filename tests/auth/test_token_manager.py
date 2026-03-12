@@ -1,16 +1,39 @@
 """Tests for the enhanced JWT token manager."""
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from jose import jwt
+
+from app.configs.settings import settings
 from app.managers.token_manager import (
     create_access_token,
+    create_password_reset_token,
     create_refresh_token,
+    create_verification_token,
     decode_access_token,
+    decode_password_reset_token,
     decode_refresh_token,
+    decode_verification_token,
     get_token_expiry,
     get_token_jti,
 )
+
+
+def _encode_custom_token(claims: dict[str, object]) -> str:
+    """Create a JWT with project settings for negative-path tests."""
+    now = datetime.now(UTC)
+    payload = {
+        "sub": str(uuid4()),
+        "user_id": str(uuid4()),
+        "jti": str(uuid4()),
+        "iat": now,
+        "exp": now + timedelta(minutes=5),
+        "iss": settings.JWT_ISSUER,
+        "aud": settings.JWT_AUDIENCE,
+        **claims,
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 class TestCreateAccessToken:
@@ -167,6 +190,66 @@ class TestDecodeRefreshToken:
         result = decode_refresh_token(access_token)
 
         assert result is None
+
+
+class TestVerificationTokens:
+    """Test cases for email verification tokens."""
+
+    def test_verification_token_round_trip(self) -> None:
+        """Verification tokens should round-trip with bound email and JTI."""
+        user_id = uuid4()
+        email = "verify@example.com"
+
+        token = create_verification_token(user_id=user_id, email=email)
+        token_data = decode_verification_token(token)
+
+        assert token_data is not None
+        assert token_data.user_id == user_id
+        assert token_data.email == email
+        assert token_data.jti is not None
+
+    def test_verification_token_rejects_wrong_token_type(self) -> None:
+        """Verification decoder should reject regular access tokens."""
+        user_id = uuid4()
+        access_token = create_access_token(user_id=user_id, username="testuser")
+
+        assert decode_verification_token(access_token) is None
+
+    def test_verification_token_rejects_missing_email_claim(self) -> None:
+        """Verification decoder should reject tokens without the bound email claim."""
+        token = _encode_custom_token({"type": "verification", "email": None})
+
+        assert decode_verification_token(token) is None
+
+
+class TestPasswordResetTokens:
+    """Test cases for password reset tokens."""
+
+    def test_password_reset_token_round_trip(self) -> None:
+        """Password reset tokens should preserve user, email, and JTI."""
+        user_id = uuid4()
+        email = "reset@example.com"
+
+        token = create_password_reset_token(user_id=user_id, email=email)
+        token_data = decode_password_reset_token(token)
+
+        assert token_data is not None
+        assert token_data.user_id == user_id
+        assert token_data.email == email
+        assert token_data.jti is not None
+
+    def test_password_reset_token_rejects_wrong_token_type(self) -> None:
+        """Password reset decoder should reject verification tokens."""
+        user_id = uuid4()
+        token = create_verification_token(user_id=user_id, email="verify@example.com")
+
+        assert decode_password_reset_token(token) is None
+
+    def test_password_reset_token_rejects_missing_email_claim(self) -> None:
+        """Password reset decoder should reject tokens without email binding."""
+        token = _encode_custom_token({"type": "password_reset", "email": None})
+
+        assert decode_password_reset_token(token) is None
 
 
 class TestGetTokenExpiry:

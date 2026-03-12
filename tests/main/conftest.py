@@ -8,6 +8,7 @@ from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 from pytest import fixture
 
+from app.db import engine
 from app.dependencies.dependencies import is_admin
 from app.main import app
 from app.managers.rate_limiter import limiter
@@ -32,6 +33,10 @@ async def client(admin_user: UserDB) -> AsyncGenerator[AsyncClient]:
     """Create authenticated admin HTTP client for testing main endpoints."""
     limiter.enabled = True
 
+    # The async engine is a global singleton and may still hold pooled
+    # connections created on a previous test's event loop.
+    await engine.dispose()
+
     async def mock_is_admin() -> UserDB:
         return admin_user
 
@@ -54,6 +59,10 @@ async def client(admin_user: UserDB) -> AsyncGenerator[AsyncClient]:
 async def unauthenticated_client() -> AsyncGenerator[AsyncClient]:
     """Create unauthenticated HTTP client for access control tests."""
     limiter.enabled = True
+
+    # The async engine is a global singleton and may still hold pooled
+    # connections created on a previous test's event loop.
+    await engine.dispose()
 
     async with (
         LifespanManager(app),

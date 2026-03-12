@@ -2,12 +2,13 @@
 """Tests for ProfilePictureService."""
 
 from io import BytesIO
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from PIL import Image
 
 from app.errors.upload import (
+    ImageProcessingError,
     ImageTooLargeError,
     InvalidImageError,
     UnsupportedImageTypeError,
@@ -127,9 +128,45 @@ class TestProfilePictureServiceProcessing:
         assert result_img.width == 1024
         assert result_img.height == 512
 
+    def test_process_image_raises_processing_error_when_save_fails(self) -> None:
+        """Test processing errors are mapped to ImageProcessingError."""
+        service = ProfilePictureService()
+        img = MagicMock()
+        img.mode = "RGB"
+        img.width = 200
+        img.height = 200
+        img.save.side_effect = RuntimeError("disk full")
+
+        with pytest.raises(ImageProcessingError) as exc_info:
+            service.process_image(img)
+
+        assert "Failed to process image" in str(exc_info.value.detail)
+
 
 class TestProfilePictureServiceUpload:
     """Tests for upload functionality."""
+
+    @pytest.mark.asyncio
+    async def test_upload_profile_picture_success(
+        self,
+        profile_picture_service: ProfilePictureService,
+        mock_upload_file_png: MagicMock,
+        sample_user_id: str,
+    ) -> None:
+        """Test successful upload processes the image and sends JPEG to storage."""
+        picture_url = await profile_picture_service.upload_profile_picture(
+            user_id=sample_user_id,
+            file=mock_upload_file_png,
+        )
+
+        assert picture_url == "https://example.com/pic.jpg"
+        profile_picture_service.storage.upload_profile_picture.assert_awaited_once()  # type: ignore[union-attr]
+
+        args = profile_picture_service.storage.upload_profile_picture.await_args.args  # type: ignore[union-attr]
+        assert args[0] == sample_user_id
+        assert isinstance(args[1], bytes)
+        assert len(args[1]) > 0
+        assert args[2] == "image/jpeg"
 
     @pytest.mark.asyncio
     async def test_upload_profile_picture_unsupported_type(
@@ -157,6 +194,25 @@ class TestProfilePictureServiceUpload:
             await profile_picture_service.upload_profile_picture(
                 user_id=sample_user_id,
                 file=mock_upload_file_invalid,
+            )
+
+    @pytest.mark.asyncio
+    async def test_upload_profile_picture_too_large(
+        self,
+        profile_picture_service: ProfilePictureService,
+        sample_user_id: str,
+    ) -> None:
+        """Test upload fails for files over the configured size limit."""
+        mock_upload_file_large = MagicMock()
+        mock_upload_file_large.content_type = "image/jpeg"
+        mock_upload_file_large.read = AsyncMock(
+            return_value=b"x" * (profile_picture_service.max_size_bytes + 1),
+        )
+
+        with pytest.raises(ImageTooLargeError):
+            await profile_picture_service.upload_profile_picture(
+                user_id=sample_user_id,
+                file=mock_upload_file_large,
             )
 
 
@@ -212,3 +268,10 @@ class TestProfilePictureServiceDefaultAvatar:
 
         assert username in url
         assert user_id not in url  # Username takes precedence
+
+    def test_get_default_avatar_url_encodes_special_characters(self) -> None:
+        """Test avatar URL safely encodes usernames with spaces and slashes."""
+        url = ProfilePictureService.get_default_avatar_url("user-123", "Jane Doe/QA")
+
+        assert "Jane%20Doe%2FQA" in url
+        assert "Jane Doe/QA" not in url

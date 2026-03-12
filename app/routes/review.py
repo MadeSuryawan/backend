@@ -188,6 +188,71 @@ async def create_review(
 
 
 @router.get(
+    "/list",
+    response_class=ORJSONResponse,
+    summary="List reviews",
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "id": "123e4567-e89b-12d3-a456-426614174000",
+                            "userId": "123e4567-e89b-12d3-a456-426614174000",
+                            "itemId": None,
+                            "rating": 5,
+                            "comment": "Great product!",
+                            "imagesUrl": [],
+                            "createdAt": "2022-01-01T00:00:00Z",
+                            "updatedAt": "2022-01-01T00:00:00Z",
+                        },
+                    ],
+                },
+            },
+        },
+        404: {"content": {"application/json": {"example": {"detail": "Review not found"}}}},
+        429: {"content": {"application/json": {"example": {"detail": "Too many requests"}}}},
+        500: {"content": {"application/json": {"example": {"detail": "Internal server error"}}}},
+    },
+    operation_id="reviews_list",
+)
+@limiter.limit("30/minute")
+async def list_reviews(
+    request: Request,
+    response: Response,
+    repo: ReviewRepoDep,
+    deps: Annotated[ReviewListQuery, Depends()],
+) -> list[ReviewListResponse]:
+    """
+    List reviews with optional item filter.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming FastAPI request.
+    response : Response
+        The outgoing FastAPI response.
+    repo : ReviewRepoDep
+        The review repository dependency.
+    deps : ReviewListQuery
+        The list query parameters (itemId, skip, limit).
+
+    Returns
+    -------
+    list[ReviewListResponse]
+        The list of reviews.
+    """
+    if deps.item_id:
+        reviews = await repo.get_by_item(deps.item_id, skip=deps.skip, limit=deps.limit)
+    else:
+        reviews = await repo.get_all(skip=deps.skip, limit=deps.limit)
+
+    return [
+        cast(ReviewListResponse, _validate_review_response(ReviewListResponse, r)) for r in reviews
+    ]
+
+
+@router.get(
     "/{review_id}",
     response_class=ORJSONResponse,
     summary="Get a review by ID",
@@ -250,71 +315,6 @@ async def get_review(
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Review not found")
 
     return cast(ReviewResponse, _validate_review_response(ReviewResponse, db_review))
-
-
-@router.get(
-    "/list",
-    response_class=ORJSONResponse,
-    summary="List reviews",
-    responses={
-        200: {
-            "content": {
-                "application/json": {
-                    "example": [
-                        {
-                            "id": "123e4567-e89b-12d3-a456-426614174000",
-                            "userId": "123e4567-e89b-12d3-a456-426614174000",
-                            "itemId": None,
-                            "rating": 5,
-                            "comment": "Great product!",
-                            "imagesUrl": [],
-                            "createdAt": "2022-01-01T00:00:00Z",
-                            "updatedAt": "2022-01-01T00:00:00Z",
-                        },
-                    ],
-                },
-            },
-        },
-        404: {"content": {"application/json": {"example": {"detail": "Review not found"}}}},
-        429: {"content": {"application/json": {"example": {"detail": "Too many requests"}}}},
-        500: {"content": {"application/json": {"example": {"detail": "Internal server error"}}}},
-    },
-    operation_id="reviews_list",
-)
-@limiter.limit("30/minute")
-async def list_reviews(
-    request: Request,
-    response: Response,
-    repo: ReviewRepoDep,
-    deps: ReviewListQuery,
-) -> list[ReviewListResponse]:
-    """
-    List reviews with optional item filter.
-
-    Parameters
-    ----------
-    request : Request
-        The incoming FastAPI request.
-    response : Response
-        The outgoing FastAPI response.
-    repo : ReviewRepoDep
-        The review repository dependency.
-    deps : ReviewListQuery
-        The list query parameters (itemId, skip, limit).
-
-    Returns
-    -------
-    list[ReviewListResponse]
-        The list of reviews.
-    """
-    if deps.item_id:
-        reviews = await repo.get_by_item(deps.item_id, skip=deps.skip, limit=deps.limit)
-    else:
-        reviews = await repo.get_all(skip=deps.skip, limit=deps.limit)
-
-    return [
-        cast(ReviewListResponse, _validate_review_response(ReviewListResponse, r)) for r in reviews
-    ]
 
 
 @router.patch(

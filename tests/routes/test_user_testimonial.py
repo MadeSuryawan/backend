@@ -147,6 +147,26 @@ async def test_update_testimonial_clear(
 
 
 @pytest.mark.asyncio
+async def test_update_testimonial_returns_not_found_when_repo_update_fails(
+    client: AsyncClient,
+    sample_user: UserDB,
+    auth_headers: dict[str, str],
+    override_dependencies: MagicMock,
+) -> None:
+    """Test testimonial update returns 404 when repo update returns no user."""
+    override_dependencies.update.return_value = None
+
+    response = await client.patch(
+        f"/users/{sample_user.uuid}/testimonial",
+        json={"testimonial": "Still great!"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == f"User with ID {sample_user.uuid} not found"
+
+
+@pytest.mark.asyncio
 async def test_delete_testimonial_success(
     client: AsyncClient,
     sample_user: UserDB,
@@ -188,3 +208,22 @@ async def test_delete_testimonial_forbidden(
         headers=auth_headers,
     )
     assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delete_testimonial_returns_not_found_when_repo_update_fails(
+    client: AsyncClient,
+    sample_user: UserDB,
+    auth_headers: dict[str, str],
+    override_dependencies: MagicMock,
+) -> None:
+    """Test testimonial delete returns 404 when repo update returns no user."""
+    override_dependencies.update.return_value = None
+
+    response = await client.delete(
+        f"/users/{sample_user.uuid}/testimonial",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == f"User with ID {sample_user.uuid} not found"
