@@ -7,7 +7,7 @@ including image validation and storage errors.
 
 from starlette.status import (
     HTTP_400_BAD_REQUEST,
-    HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+    HTTP_413_CONTENT_TOO_LARGE,
     HTTP_415_UNSUPPORTED_MEDIA_TYPE,
     HTTP_500_INTERNAL_SERVER_ERROR,
 )
@@ -40,7 +40,7 @@ class ImageTooLargeError(UploadError):
         detail = f"Your image is too large. Please use an image smaller than {max_size_mb}MB."
         if actual_size_mb is not None:
             detail += f" Your file is {actual_size_mb:.1f}MB."
-        super().__init__(detail=detail, status_code=HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+        super().__init__(detail=detail, status_code=HTTP_413_CONTENT_TOO_LARGE)
         self.max_size_mb = max_size_mb
         self.actual_size_mb = actual_size_mb
 
@@ -122,7 +122,7 @@ class VideoTooLargeError(UploadError):
         detail = f"Your video is too large. Please use a video smaller than {max_size_mb}MB."
         if actual_size_mb is not None:
             detail += f" Your file is {actual_size_mb:.1f}MB."
-        super().__init__(detail=detail, status_code=HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+        super().__init__(detail=detail, status_code=HTTP_413_CONTENT_TOO_LARGE)
         self.max_size_mb = max_size_mb
         self.actual_size_mb = actual_size_mb
 

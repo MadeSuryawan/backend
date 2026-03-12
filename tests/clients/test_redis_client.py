@@ -159,7 +159,7 @@ class TestRedisClientDisconnect:
 
         await client.disconnect()
 
-        mock_redis.close.assert_called_once()
+        mock_redis.aclose.assert_called_once()
         mock_pool.disconnect.assert_called_once()
         assert client._redis is None
         assert client._pool is None

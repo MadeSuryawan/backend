@@ -43,7 +43,7 @@ from starlette.status import (
     HTTP_400_BAD_REQUEST,
     HTTP_404_NOT_FOUND,
     HTTP_409_CONFLICT,
-    HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+    HTTP_413_CONTENT_TOO_LARGE,
     HTTP_415_UNSUPPORTED_MEDIA_TYPE,
     HTTP_500_INTERNAL_SERVER_ERROR,
 )
@@ -138,7 +138,7 @@ def handle_image_error(e: Exception) -> HTTPException:
         case UnsupportedImageTypeError():
             return HTTPException(status_code=HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=e.detail)
         case ImageTooLargeError():
-            return HTTPException(status_code=HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=e.detail)
+            return HTTPException(status_code=HTTP_413_CONTENT_TOO_LARGE, detail=e.detail)
         case InvalidImageError() | ImageProcessingError():
             return HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail)
         case _:
