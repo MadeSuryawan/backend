@@ -12,6 +12,7 @@ from app.dependencies.dependencies import (
     HealthCheckerDep,
     ModeratorUserDep,
     OauthDep,
+    PasswordHasherDep,
     ReviewRepoDep,
     UserDBDep,
     UserQueryListDep,
@@ -24,11 +25,14 @@ from app.dependencies.dependencies import (
     get_current_user,
     get_email_client,
     get_user_or_404,
+    oauth,
     oauth2_scheme,
 )
 
 __all__ = [
     "AiDep",
+    "oauth",
+    "PasswordHasherDep",
     "AuthServiceDep",
     "AdminUserDep",
     "OauthDep",

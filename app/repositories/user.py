@@ -2,13 +2,12 @@
 
 from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.managers.password_manager import hash_password, verify_password
+from app.managers.password_manager import Argon2Hasher
 from app.models.user import UserDB
-from app.repositories.base import BaseRepository
+from app.repositories.base import BaseRepository, CreateUpdate
 from app.schemas.user import UserCreate, UserUpdate
 
 
@@ -49,26 +48,13 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
         """
         super().__init__(session)
 
-    async def create(
-        self,
-        schema: UserCreate,
-        timezone: str | None = None,
-        auth_provider: str = "email",
-        provider_id: str | None = None,
-        *,
-        is_verified: bool = False,
-        **kwargs: dict[str, Any],
-    ) -> UserDB:
+    async def create(self, schema: UserCreate, deps: CreateUpdate) -> UserDB:
         """
         Create a new user in the database.
 
         Args:
-            schema: User schema with user data
-            timezone: IANA timezone string (e.g., 'Asia/Makassar')
-            auth_provider: Authentication provider ('email', 'google', 'wechat')
-            provider_id: External provider user ID
-            is_verified: Whether the user's email is pre-verified (e.g., OAuth)
-            **kwargs: Additional arguments for creation
+            schema: User create schema
+            deps: Create user dependencies
 
         Returns:
             UserDB: Created user database model
@@ -78,27 +64,34 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
             DatabaseError: For other database errors
         """
         password_hash = None
-        if schema.password:
-            password_hash = await hash_password(schema.password.get_secret_value())
+        if schema.password and deps.hasher:
+            password_hash = await deps.hasher.hash_password(schema.password.get_secret_value())
+
+        # Normalize email to lowercase for consistent duplicate detection
+        normalized_email = schema.email.strip().lower()
 
         db_user = UserDB(
             username=schema.username,
-            email=schema.email,
+            email=normalized_email,
             password_hash=password_hash,
             first_name=schema.first_name,
             last_name=schema.last_name,
-            display_name=compute_display_name(schema.first_name, schema.last_name, schema.username),
+            display_name=compute_display_name(
+                schema.first_name,
+                schema.last_name,
+                schema.username,
+            ),
             bio=schema.bio,
             profile_picture=str(schema.profile_picture) if schema.profile_picture else None,
-            website=str(schema.website) if schema.website else None,
+            website=str(website) if (website := schema.website) else None,
             date_of_birth=schema.date_of_birth,
             gender=schema.gender,
             phone_number=schema.phone_number,
             country=schema.country,
-            timezone=timezone,
-            auth_provider=auth_provider,
-            provider_id=provider_id,
-            is_verified=is_verified,
+            timezone=deps.timezone,
+            auth_provider=deps.auth_provider,
+            provider_id=deps.provider_id,
+            is_verified=deps.is_verified,
         )
 
         # Use the base class helper method for consistent error handling
@@ -128,13 +121,17 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
         """
         return await self.get_by_field("email", email)
 
-    async def update(self, record_id: UUID, schema: UserUpdate | dict[str, Any]) -> UserDB | None:
+    async def update(
+        self,
+        schema: UserUpdate | dict[str, Any],
+        deps: CreateUpdate,
+    ) -> UserDB | None:
         """
         Update user information.
 
         Args:
-            record_id: User UUID
             schema: User update schema or dict with fields to update
+            deps: Update dependencies
 
         Returns:
             UserDB | None: Updated user if found, None otherwise
@@ -143,7 +140,7 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
             DuplicateEntryError: If email already exists for another user
             DatabaseError: For other database errors
         """
-        db_user = await self.get_by_id(record_id)
+        db_user = await self.get_by_id(user_id) if (user_id := deps.user_id) else None
         if not db_user:
             return None
 
@@ -152,8 +149,8 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
         else:
             update_data = schema.model_dump(exclude_unset=True, exclude_none=True)
 
-        if not isinstance(schema, dict) and schema.password:
-            password_hash = await hash_password(schema.password.get_secret_value())
+        if not isinstance(schema, dict) and schema.password and deps.hasher:
+            password_hash = await deps.hasher.hash_password(schema.password.get_secret_value())
             update_data["password_hash"] = password_hash
             update_data.pop("password", None)
             update_data.pop("confirmed_password", None)
@@ -180,13 +177,19 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
 
         return await self.add_and_refresh(db_user)
 
-    async def do_password_verify(self, username: str, password: str) -> UserDB | None:
+    async def do_password_verify(
+        self,
+        username: str,
+        password: str,
+        hasher: Argon2Hasher,
+    ) -> UserDB | None:
         """
         Verify user credentials.
 
         Args:
             username: Username
             password: Plain text password
+            hasher: Password hasher
 
         Returns:
             UserDB | None: User if credentials are valid, None otherwise
@@ -198,7 +201,7 @@ class UserRepository(BaseRepository[UserDB, UserCreate, UserUpdate]):
         if not db_user.password_hash:
             return None
 
-        if not await verify_password(password, db_user.password_hash):
+        if not await hasher.verify_password(password, db_user.password_hash):
             return None
 
         return db_user

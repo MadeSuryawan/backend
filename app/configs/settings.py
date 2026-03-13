@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Literal
 from warnings import warn
 
+from argon2 import PasswordHasher
 from pydantic import ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -70,8 +71,15 @@ class Settings(BaseSettings):
     OAUTH_STATE_EXPIRE_SECONDS: int = 600  # 10 minutes for state token
 
     # Password Security
+    # Security level for password hashing (development, standard, high, paranoid)
     PASSWORD_SECURITY_LEVEL: str = "standard"
     PASSWORD_HASHER_DEBUG: bool = False
+    # Dummy hash for timing attack protection - MUST be set in production
+    # Used when verifying passwords for users with no password (e.g., OAuth-only accounts)
+    # to ensure consistent timing regardless of whether the user has a password hash
+    # Format: Pre-generated argon2id hash of a random string
+    # Example: argon2id$v=19$m=65536,t=3,p=4$... (use: python -c "from argon2 import PasswordHasher; print(PasswordHasher(time_cost=2, memory_cost=524288, parallelism=2).hash('your-secret-dummy-string'))")
+    PASSWORD_DUMMY_HASH: str = "$argon2id$v=19$m=524288,t=2,p=2$3xo9Wpo4Kn0qjXSq3G2Yew$ojdbsjAnpbHjY+Z98yxePPCxR1IJBb9oupN0bCSI0c0"
 
     # Trusted Hosts (for security middleware)
     # Includes testserver and test for unit testing
@@ -324,6 +332,54 @@ class Settings(BaseSettings):
     def log_excluded_paths_list(self) -> list[str]:
         """Get LOG_EXCLUDED_PATHS as a list of strings."""
         return [path.strip() for path in self.LOG_EXCLUDED_PATHS.split(",") if path.strip()]
+
+    @field_validator("PASSWORD_DUMMY_HASH")
+    @classmethod
+    def validate_password_dummy_hash(cls, v: str, info: ValidationInfo) -> str:
+        """
+        Ensure PASSWORD_DUMMY_HASH is set and valid.
+
+        In production, this MUST be explicitly set to ensure consistent timing behavior.
+        In development, a hash will be auto-generated if not provided.
+
+        The dummy hash should be a pre-generated argon2id hash of a random string.
+        Generate one with:
+            python -c "from argon2 import PasswordHasher; print(PasswordHasher().hash('your-random-string'))"
+
+        Args:
+            v: The provided dummy hash value
+            info: Pydantic validation info
+
+        Returns:
+            The validated dummy hash
+
+        Raises:
+            ValueError: If not set in production environment
+        """
+        env = info.data.get("ENVIRONMENT", "development")
+        is_production = env in ("production", "prod")
+
+        if not v:
+            if is_production:
+                # In production, require explicit configuration
+                msg = (
+                    "PASSWORD_DUMMY_HASH must be explicitly set in production! "
+                    'Generate one with: python -c "from argon2 import PasswordHasher; '
+                    "print(PasswordHasher().hash('your-random-string'))\""
+                )
+                raise ValueError(msg)
+            # In development, auto-generate with warning
+            warn(
+                "PASSWORD_DUMMY_HASH not set - auto-generating for development. "
+                "This should be explicitly configured in production for consistent timing behavior.",
+                stacklevel=2,
+            )
+            v = PasswordHasher(time_cost=2, memory_cost=524288, parallelism=2).hash(
+                "@baliblised@dummy@hash",
+            )
+            return v
+
+        return v
 
 
 settings = Settings()

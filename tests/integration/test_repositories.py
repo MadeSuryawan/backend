@@ -9,6 +9,8 @@ from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors.database import DuplicateEntryError
+from app.managers.password_manager import Argon2Hasher
+from app.repositories.base import CreateUpdate
 from app.repositories.blog import BlogRepository
 from app.repositories.review import ReviewRepository
 from app.repositories.user import UserRepository
@@ -46,15 +48,16 @@ async def create_user(
     deps: User,
 ) -> UUID:
     """Create and commit a user for integration-test setup."""
-    user = await UserRepository(session).create(
-        UserCreate(
-            userName=deps.username,
-            email=deps.email,
-            password=SecretStr(deps.password),
-            first_name=deps.first_name,
-            last_name=deps.last_name,
-        ),
+    hasher = Argon2Hasher()
+    schema = UserCreate(
+        userName=deps.username,
+        email=deps.email,
+        password=SecretStr(deps.password),
+        first_name=deps.first_name,
+        last_name=deps.last_name,
     )
+    args = CreateUpdate(hasher=hasher)
+    user = await UserRepository(session).create(schema, args)
     await session.commit()
     return user.uuid
 
@@ -65,17 +68,16 @@ async def test_user_repository_create_and_update_persist_auth_fields(
 ) -> None:
     """UserRepository should hash passwords, compute names, and verify new passwords."""
     repository = UserRepository(db_session)
-
-    created = await repository.create(
-        UserCreate(
-            userName="made",
-            email="made@example.com",
-            password=SecretStr("Password123"),
-            first_name="Made",
-            last_name="Surya",
-        ),
-        timezone="Asia/Makassar",
+    hasher = Argon2Hasher()
+    schema = UserCreate(
+        userName="made",
+        email="made@example.com",
+        password=SecretStr("Password123"),
+        first_name="Made",
+        last_name="Surya",
     )
+    args = CreateUpdate(hasher=hasher, timezone="Asia/Makassar")
+    created = await repository.create(schema, args)
     await db_session.commit()
     original_password_hash = created.password_hash
 
@@ -83,22 +85,21 @@ async def test_user_repository_create_and_update_persist_auth_fields(
     assert created.password_hash != "Password123"
     assert created.display_name == "Made Surya"
     assert created.timezone == "Asia/Makassar"
-    assert await repository.do_password_verify("made", "Password123") is not None
+    assert await repository.do_password_verify("made", "Password123", hasher) is not None
 
-    updated = await repository.update(
-        created.uuid,
-        UserUpdate(
-            first_name="Komang",
-            last_name="Surya",
-            password=SecretStr("NewPassword123"),
-            confirmed_password=SecretStr("NewPassword123"),
-        ),
+    schema = UserUpdate(
+        first_name="Komang",
+        last_name="Surya",
+        password=SecretStr("NewPassword123"),
+        confirmed_password=SecretStr("NewPassword123"),
     )
+    args = CreateUpdate(hasher=hasher, user_id=created.uuid)
+    updated = await repository.update(schema, args)
 
     assert updated is not None
     assert updated.display_name == "Komang Surya"
     assert updated.password_hash != original_password_hash
-    assert await repository.do_password_verify("made", "NewPassword123") is not None
+    assert await repository.do_password_verify("made", "NewPassword123", hasher) is not None
 
 
 @pytest.mark.asyncio
@@ -107,6 +108,7 @@ async def test_user_repository_create_maps_duplicate_email_to_conflict(
 ) -> None:
     """Duplicate user emails should surface as DuplicateEntryError from Postgres."""
     repository = UserRepository(db_session)
+    hasher = Argon2Hasher()
     deps = User(
         username="first-user",
         email="shared@example.com",
@@ -114,13 +116,13 @@ async def test_user_repository_create_maps_duplicate_email_to_conflict(
     await create_user(db_session, deps)
 
     with pytest.raises(DuplicateEntryError) as exc_info:
-        await repository.create(
-            UserCreate(
-                userName="second-user",
-                email="shared@example.com",
-                password=SecretStr("Password123"),
-            ),
+        schema = UserCreate(
+            userName="second-user",
+            email="shared@example.com",
+            password=SecretStr("Password123"),
         )
+        arg = CreateUpdate(hasher=hasher)
+        await repository.create(schema, arg)
 
     assert "email" in exc_info.value.detail
     assert "already exists" in exc_info.value.detail
@@ -138,37 +140,34 @@ async def test_blog_repository_create_computes_metadata_and_supports_tag_queries
     author_id = await create_user(db_session, deps)
     repository = BlogRepository(db_session)
 
-    created = await repository.create(
-        BlogSchema(
-            authorId=author_id,
-            title="Bali Packing Guide",
-            slug="bali-packing-guide",
-            content=blog_content("Packing early"),
-            tags=["packing", "bali"],
-            imagesUrl=["https://example.com/blog-media/packing-cover.jpg"],
-        ),
-        author_id=author_id,
+    schema = BlogSchema(
+        authorId=author_id,
+        title="Bali Packing Guide",
+        slug="bali-packing-guide",
+        content=blog_content("Packing early"),
+        tags=["packing", "bali"],
+        imagesUrl=["https://example.com/blog-media/packing-cover.jpg"],
     )
-    any_match = await repository.create(
-        BlogSchema(
-            authorId=author_id,
-            title="Bali Culture Tips",
-            slug="bali-culture-tips",
-            content=blog_content("Understanding ceremonies"),
-            tags=["culture", "bali"],
-        ),
-        author_id=author_id,
+
+    created = await repository.create(schema, CreateUpdate())
+
+    schema = BlogSchema(
+        authorId=author_id,
+        title="Bali Culture Tips",
+        slug="bali-culture-tips",
+        content=blog_content("Understanding ceremonies"),
+        tags=["culture", "bali"],
     )
-    all_match = await repository.create(
-        BlogSchema(
-            authorId=author_id,
-            title="Bali Culture And Packing Tips",
-            slug="bali-culture-and-packing-tips",
-            content=blog_content("Balancing packing with etiquette"),
-            tags=["culture", "packing", "bali"],
-        ),
-        author_id=author_id,
+    any_match = await repository.create(schema, CreateUpdate())
+
+    schema = BlogSchema(
+        authorId=author_id,
+        title="Bali Culture And Packing Tips",
+        slug="bali-culture-and-packing-tips",
+        content=blog_content("Balancing packing with etiquette"),
+        tags=["culture", "packing", "bali"],
     )
+    all_match = await repository.create(schema, CreateUpdate())
 
     assert created.word_count >= 50
     assert created.reading_time_minutes >= 1
@@ -193,29 +192,25 @@ async def test_blog_repository_create_maps_duplicate_slug_to_friendly_error(
     author_id = await create_user(db_session, deps)
     repository = BlogRepository(db_session)
 
-    await repository.create(
-        BlogSchema(
-            authorId=author_id,
-            title="Unique Bali Blog",
-            slug="unique-bali-blog",
-            content=blog_content("Writing the first post"),
-            tags=["bali"],
-        ),
-        author_id=author_id,
+    schema = BlogSchema(
+        authorId=author_id,
+        title="Unique Bali Blog",
+        slug="unique-bali-blog",
+        content=blog_content("Writing the first post"),
+        tags=["bali"],
     )
+    await repository.create(schema, CreateUpdate())
     await db_session.commit()
 
     with pytest.raises(DuplicateEntryError) as exc_info:
-        await repository.create(
-            BlogSchema(
-                authorId=author_id,
-                title="Conflicting Bali Blog",
-                slug="unique-bali-blog",
-                content=blog_content("Writing the second post"),
-                tags=["bali", "travel"],
-            ),
-            author_id=author_id,
+        schema = BlogSchema(
+            authorId=author_id,
+            title="Conflicting Bali Blog",
+            slug="unique-bali-blog",
+            content=blog_content("Writing the second post"),
+            tags=["bali", "travel"],
         )
+        await repository.create(schema, CreateUpdate())
 
     assert exc_info.value.detail == (
         "A blog with the URL 'unique-bali-blog' already exists. Please choose a different title."
@@ -235,19 +230,24 @@ async def test_review_repository_orders_queries_and_persists_image_changes(
     item_id = UUID("11111111-1111-1111-1111-111111111111")
     repository = ReviewRepository(db_session)
 
-    older = await repository.create(
-        ReviewCreate(item_id=item_id, rating=4, title="Solid trip", content="Loved it a lot."),
-        user_id=user_id,
+    schema = ReviewCreate(
+        item_id=item_id,
+        rating=4,
+        title="Solid trip",
+        content="Loved it a lot.",
     )
-    newer = await repository.create(
-        ReviewCreate(
-            item_id=item_id,
-            rating=5,
-            title="Amazing trip",
-            content="Loved it even more.",
-        ),
-        user_id=user_id,
+    arg = CreateUpdate(user_id=user_id)
+    older = await repository.create(schema, arg)
+
+    schema = ReviewCreate(
+        item_id=item_id,
+        rating=5,
+        title="Amazing trip",
+        content="Loved it even more.",
     )
+    arg = CreateUpdate(user_id=user_id)
+    newer = await repository.create(schema, arg)
+
     older.created_at = datetime.now(tz=UTC) - timedelta(days=1)
     newer.created_at = datetime.now(tz=UTC)
     await db_session.commit()

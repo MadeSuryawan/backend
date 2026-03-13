@@ -1,7 +1,7 @@
 """Blog repository for database operations."""
 
 from datetime import UTC, datetime
-from typing import Any, Literal, cast
+from typing import Literal, cast
 from uuid import UUID
 
 from sqlalchemy import desc, func, or_, select
@@ -12,7 +12,7 @@ from sqlalchemy.sql.expression import ColumnElement
 from app.errors.database import DuplicateEntryError
 from app.logging import get_logger
 from app.models.blog import BlogDB
-from app.repositories.base import BaseRepository
+from app.repositories.base import BaseRepository, CreateUpdate
 from app.schemas.blog import BlogSchema, BlogUpdate
 
 logger = get_logger(__name__)
@@ -66,19 +66,13 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
         """
         super().__init__(session)
 
-    async def create(
-        self,
-        schema: BlogSchema,
-        author_id: UUID | None = None,
-        **kwargs: dict[str, Any],
-    ) -> BlogDB:
+    async def create(self, schema: BlogSchema, deps: CreateUpdate) -> BlogDB:
         """
         Create a new blog post in the database.
 
         Args:
             schema: Blog schema with blog data
-            author_id: UUID of the blog author (required, but optional in signature to match base)
-            **kwargs: Additional arguments for creation
+            deps: Additional arguments for creation
 
         Returns:
             BlogDB: Created blog database model
@@ -88,7 +82,7 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
             DatabaseError: For other database errors
             ValueError: If author_id is missing
         """
-        if author_id is None:
+        if schema.author_id is None:
             detail = "author_id is required for creating a blog"
             raise ValueError(detail)
 
@@ -96,7 +90,7 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
         reading_time = calculate_reading_time(word_count)
 
         db_blog = BlogDB(
-            author_id=author_id,
+            author_id=schema.author_id,
             title=schema.title,
             slug=schema.slug,
             content=schema.content,
@@ -190,13 +184,13 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
         """
         return await self.get_all(skip=skip, limit=limit, author_id=author_id)
 
-    async def update(self, record_id: UUID, schema: BlogUpdate) -> BlogDB | None:
+    async def update(self, schema: BlogUpdate, deps: CreateUpdate) -> BlogDB | None:
         """
         Update blog information.
 
         Args:
-            record_id: Blog UUID
             schema: Blog update schema with fields to update
+            deps: Update dependencies
 
         Returns:
             BlogDB | None: Updated blog if found, None otherwise
@@ -204,9 +198,9 @@ class BlogRepository(BaseRepository[BlogDB, BlogSchema, BlogUpdate]):
         Raises:
             ValueError: If slug already exists for another blog
         """
-        db_blog = await self.get_by_id(record_id)
+        db_blog = await self.get_by_id(record_id) if (record_id := deps.user_id) else None
         if not db_blog:
-            return None
+            return
 
         # Check if slug is being updated and already exists
         if schema.slug:

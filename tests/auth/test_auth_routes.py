@@ -69,6 +69,7 @@ async def test_login_for_access_token_returns_token_pair(
     client: AsyncClient,
     sample_user: UserDB,
     auth_route_deps: tuple[MagicMock, MagicMock],
+    mock_password_hasher: MagicMock,
 ) -> None:
     mock_auth_service, _ = auth_route_deps
     mock_auth_service.authenticate_user.return_value = sample_user
@@ -81,6 +82,7 @@ async def test_login_for_access_token_returns_token_pair(
     assert response.status_code == 200
     assert response.json()["access_token"] == "new-access-token"
     mock_auth_service.authenticate_user.assert_awaited_once_with(
+        mock_password_hasher,
         sample_user.username,
         "Password123",
     )
@@ -263,6 +265,7 @@ async def test_reset_password_marks_token_used_after_success(
     client: AsyncClient,
     sample_user: UserDB,
     auth_route_deps: tuple[MagicMock, MagicMock],
+    mock_password_hasher: MagicMock,
 ) -> None:
     mock_auth_service, mock_repo = auth_route_deps
     token_data = PasswordResetTokenData(
@@ -280,7 +283,11 @@ async def test_reset_password_marks_token_used_after_success(
 
     assert response.status_code == 200
     assert response.json()["message"] == "Password reset successfully"
-    mock_auth_service.reset_password.assert_awaited_once_with(sample_user.uuid, "NewPassword123")
+    mock_auth_service.reset_password.assert_awaited_once_with(
+        mock_password_hasher,
+        sample_user.uuid,
+        "NewPassword123",
+    )
     mock_auth_service.mark_reset_token_used.assert_awaited_once_with(
         "reset-jti",
         expires_hours=settings.PASSWORD_RESET_TOKEN_EXPIRE_HOURS,
@@ -291,6 +298,7 @@ async def test_change_password_returns_bad_request_when_service_rejects_change(
     client: AsyncClient,
     sample_user: UserDB,
     auth_route_deps: tuple[MagicMock, MagicMock],
+    mock_password_hasher: MagicMock,
 ) -> None:
     mock_auth_service, _ = auth_route_deps
     mock_auth_service.change_password.return_value = False
@@ -308,6 +316,7 @@ async def test_change_password_returns_bad_request_when_service_rejects_change(
     assert response.status_code == 400
     assert "couldn't change your password" in response.json()["detail"].lower()
     mock_auth_service.change_password.assert_awaited_once_with(
+        mock_password_hasher,
         user_id=sample_user.uuid,
         old_password="OldPassword123",
         new_password="NewPassword123",

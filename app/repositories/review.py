@@ -10,7 +10,7 @@ from sqlalchemy.sql.expression import ColumnElement
 
 from app.logging import get_logger
 from app.models.review import ReviewDB
-from app.repositories.base import BaseRepository
+from app.repositories.base import BaseRepository, CreateUpdate
 from app.schemas.review import ReviewCreate, ReviewUpdate
 
 logger = get_logger(__name__)
@@ -30,29 +30,23 @@ class ReviewRepository(BaseRepository[ReviewDB, ReviewCreate, ReviewUpdate]):
         """Initialize the repository with a database session."""
         super().__init__(session)
 
-    async def create(
-        self,
-        schema: ReviewCreate,
-        user_id: UUID | None = None,
-        **kwargs: dict[str, Any],
-    ) -> ReviewDB:
+    async def create(self, schema: ReviewCreate, deps: CreateUpdate) -> ReviewDB:
         """
         Create a new review.
 
         Args:
             schema: Review creation data
-            user_id: ID of the user creating the review
-            **kwargs: Additional arguments for creation
+            deps: Additional arguments for creation
 
         Returns:
             ReviewDB: Created review
         """
-        if user_id is None:
+        if deps.user_id is None:
             detail = "user_id is required for creating a review"
             raise ValueError(detail)
 
         db_review = ReviewDB(
-            user_id=user_id,
+            user_id=deps.user_id,
             item_id=schema.item_id,
             rating=schema.rating,
             title=schema.title,
@@ -120,22 +114,18 @@ class ReviewRepository(BaseRepository[ReviewDB, ReviewCreate, ReviewUpdate]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def update(
-        self,
-        record_id: UUID,
-        schema: ReviewUpdate,
-    ) -> ReviewDB | None:
+    async def update(self, schema: ReviewUpdate, deps: CreateUpdate) -> ReviewDB | None:
         """
         Update a review.
 
         Args:
-            record_id: Review ID
             schema: Update data
+            deps: Update dependencies
 
         Returns:
             ReviewDB | None: Updated review or None if not found
         """
-        db_review = await self.get_by_id(record_id)
+        db_review = await self.get_by_id(user_id) if (user_id := deps.user_id) else None
         if not db_review:
             return None
 

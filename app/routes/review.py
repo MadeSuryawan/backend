@@ -29,6 +29,7 @@ from app.errors.upload import (
 from app.logging import get_logger
 from app.managers.rate_limiter import limiter
 from app.models.review import ReviewDB
+from app.repositories.base import CreateUpdate
 from app.schemas.review import (
     MediaUploadResponse,
     ReviewCreate,
@@ -180,10 +181,8 @@ async def create_review(
     ReviewResponse
         The created review details.
     """
-    db_review = await deps.repo.create(
-        review_data,
-        deps.current_user.uuid,
-    )
+    arg = CreateUpdate(user_id=deps.current_user.uuid)
+    db_review = await deps.repo.create(review_data, arg)
     return cast(ReviewResponse, _validate_review_response(ReviewResponse, db_review))
 
 
@@ -384,7 +383,8 @@ async def update_review(
 
     check_owner_or_admin(db_review.user_id, deps.current_user)
 
-    updated = await deps.repo.update(review_id, review_data)
+    arg = CreateUpdate(user_id=deps.current_user.uuid)
+    updated = await deps.repo.update(review_data, arg)
     if not updated:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Review not found")
 

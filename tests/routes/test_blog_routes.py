@@ -101,7 +101,7 @@ async def test_create_blog_success(
     assert response.json()["slug"] == "bali-packing-guide"
     override_blog_dependencies.create.assert_awaited_once()
     assert override_blog_dependencies.create.call_args.args[0].title == "Bali Packing Guide"
-    assert override_blog_dependencies.create.call_args.kwargs["author_id"] == sample_user.uuid
+    assert override_blog_dependencies.create.call_args.args[0].author_id == sample_user.uuid
 
 
 @pytest.mark.asyncio

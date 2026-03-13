@@ -20,7 +20,12 @@ from app.dependencies.dependencies import get_auth_service, oauth
 from app.errors.auth import OAuthError
 from app.main import app
 from app.models import UserDB
-from app.routes.oauth import _exchange_oauth_token, _get_user_info, _process_oauth_user
+from app.routes.oauth import (
+    ProcessOauthUserParams,
+    _exchange_oauth_token,
+    _get_user_info,
+    _process_oauth_user,
+)
 
 
 def setup_mock_cache() -> MagicMock:
@@ -345,14 +350,21 @@ class TestOAuthHelpers:
         mock_auth_service = MagicMock()
         mock_client.userinfo = AsyncMock(return_value={"sub": "123", "email": "user@test.dev"})
         mock_auth_service.get_or_create_oauth_user = AsyncMock(side_effect=RuntimeError("db down"))
+        # Create mock password hasher
+        mock_hasher = MagicMock()
+        mock_hasher.hash_password = AsyncMock(return_value="$argon2id$v=19$m=65536,t=3,p=4$hashed")
+        mock_hasher.verify_password = AsyncMock(return_value=True)
 
         with pytest.raises(OAuthError):
             await _process_oauth_user(
-                mock_client,
-                {"access_token": "token"},
-                "google",
-                make_oauth_request(),
-                mock_auth_service,
+                ProcessOauthUserParams(
+                    client=mock_client,
+                    token={"access_token": "token"},
+                    provider="google",
+                    request=make_oauth_request(),
+                    auth_service=mock_auth_service,
+                    hasher=mock_hasher,
+                ),
             )
 
     async def test_process_oauth_user_reraises_existing_oauth_error(self) -> None:
@@ -361,13 +373,21 @@ class TestOAuthHelpers:
         mock_auth_service = MagicMock()
         mock_client.userinfo = AsyncMock(side_effect=OAuthError("provider failed"))
 
+        # Create mock password hasher
+        mock_hasher = MagicMock()
+        mock_hasher.hash_password = AsyncMock(return_value="$argon2id$v=19$m=65536,t=3,p=4$hashed")
+        mock_hasher.verify_password = AsyncMock(return_value=True)
+
         with pytest.raises(OAuthError):
             await _process_oauth_user(
-                mock_client,
-                {"access_token": "token"},
-                "google",
-                make_oauth_request(),
-                mock_auth_service,
+                ProcessOauthUserParams(
+                    client=mock_client,
+                    token={"access_token": "token"},
+                    provider="google",
+                    request=make_oauth_request(),
+                    auth_service=mock_auth_service,
+                    hasher=mock_hasher,
+                ),
             )
 
     async def test_csrf_protection_enforced(self, client: AsyncClient) -> None:

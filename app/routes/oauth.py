@@ -39,9 +39,10 @@ from starlette.responses import RedirectResponse, Response
 
 from app.configs.settings import settings
 from app.decorators.metrics import timed
-from app.dependencies import AuthServiceDep, CacheDep, OauthDep
+from app.dependencies import AuthServiceDep, CacheDep, OauthDep, PasswordHasherDep
 from app.errors.auth import OAuthError, OAuthStateError
 from app.logging import get_logger
+from app.managers.password_manager import Argon2Hasher
 from app.managers.rate_limiter import limiter
 from app.schemas.auth import Token
 from app.services.auth import AuthService
@@ -198,28 +199,24 @@ async def _get_user_info(
     return dict(user_info)
 
 
-async def _process_oauth_user(
-    client: OAuthClient,
-    token: dict,
-    provider: str,
-    request: Request,
-    auth_service: AuthService,
-) -> Token:
+@dataclass(frozen=True)
+class ProcessOauthUserParams:
+    client: OAuthClient
+    token: dict
+    provider: str
+    request: Request
+    auth_service: AuthService
+    hasher: Argon2Hasher
+
+
+async def _process_oauth_user(deps: Annotated[ProcessOauthUserParams, Depends()]) -> Token:
     """
     Process OAuth user and return JWT tokens.
 
     Parameters
     ----------
-    client : OAuthClient
-        The OAuth client for the provider.
-    token : dict
-        The token response from the OAuth provider.
-    provider : str
-        The OAuth provider name.
-    request : Request
-        The incoming HTTP request.
-    auth_service : AuthService
-        Authentication service for user management.
+    deps : Annotated[ProcessOauthUserParams, Depends()]
+        Dependencies for processing the OAuth user.
 
     Returns
     -------
@@ -232,19 +229,15 @@ async def _process_oauth_user(
         If user processing fails.
     """
     try:
-        user_info = await _get_user_info(client, token)
-        user_timezone = await _detect_user_timezone(request)
-
-        user = await auth_service.get_or_create_oauth_user(
-            user_info,
-            provider,
-            timezone=user_timezone,
-        )
-        return auth_service.create_token_for_user(user)
+        user_info = await _get_user_info(deps.client, deps.token)
+        user_timezone = await _detect_user_timezone(deps.request)
+        args = deps.hasher, user_info, deps.provider, user_timezone
+        user = await deps.auth_service.get_or_create_oauth_user(*args)
+        return deps.auth_service.create_token_for_user(user)
     except OAuthError:
         raise
     except Exception as exc:
-        logger.exception("OAuth user processing failed", extra={"provider": provider})
+        logger.exception("OAuth user processing failed", extra={"provider": deps.provider})
         details = f"OAuth user processing failed: {exc}"
         raise OAuthError(details) from exc
 
@@ -367,6 +360,7 @@ class CallbackParams:
     auth_service: AuthServiceDep
     oauth_client: OauthDep
     cache: CacheDep
+    hasher: PasswordHasherDep
 
 
 @router.get(
@@ -500,4 +494,12 @@ async def auth_callback(
 
     token = await _exchange_oauth_token(oauth_client, request, provider)
 
-    return await _process_oauth_user(oauth_client, token, provider, request, deps.auth_service)
+    args = ProcessOauthUserParams(
+        client=oauth_client,
+        token=token,
+        provider=provider,
+        request=request,
+        auth_service=deps.auth_service,
+        hasher=deps.hasher,
+    )
+    return await _process_oauth_user(args)

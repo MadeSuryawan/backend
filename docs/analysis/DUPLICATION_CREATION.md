@@ -119,14 +119,14 @@ The [`UserRepository.create()`](/app/repositories/user.py) method directly attem
 
 ```python
 # app/repositories/user.py:52-105
-async def create(self, schema: UserCreate, ...) -> UserDB:
+async def create(self, deps: CreateUserData) -> UserDB:
     password_hash = None
-    if schema.password:
-        password_hash = await hash_password(schema.password.get_secret_value())
+    if deps.password:
+        password_hash = await deps.hasher.hash_password(deps.password.get_secret_value())
 
     db_user = UserDB(
-        username=schema.username,
-        email=schema.email,
+        username=deps.username,
+        email=deps.email,
         password_hash=password_hash,
         # ... other fields
     )
@@ -492,7 +492,7 @@ Add a proactive duplicate check before attempting insertion:
 ```python
 # app/repositories/user.py (proposed enhancement)
 
-async def create(self, schema: UserCreate, ...) -> UserDB:
+async def create(self, deps: CreateUserData) -> UserDB:
     """Create a new user with pre-check for duplicates."""
     
     # Pre-check both email and username in a single query
@@ -515,12 +515,12 @@ async def create(self, schema: UserCreate, ...) -> UserDB:
     
     # Proceed with insert (original logic)
     password_hash = None
-    if schema.password:
-        password_hash = await hash_password(schema.password.get_secret_value())
+    if deps.schema.password:
+        password_hash = await deps.hasher.hash_password(deps.schema.password.get_secret_value())
     
     db_user = UserDB(
-        username=schema.username,
-        email=schema.email,
+        username=deps.schema.username,
+        email=deps.schema.email,
         password_hash=password_hash,
         # ... rest of fields
     )

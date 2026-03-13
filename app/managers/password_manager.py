@@ -1,63 +1,62 @@
 """
-Password hashing module using Argon2 with passlib's CryptContext.
+Password hashing module using Argon2id with direct argon2-cffi.
 
 This module provides secure password hashing and verification using Argon2id,
 which is considered one of the most secure password hashing algorithms available.
+
+Migration from passlib to argon2-cffi - simplified version (no legacy support).
+Uses current security levels to maintain existing protection.
 """
 
 from asyncio import get_event_loop
 from concurrent.futures import ThreadPoolExecutor
-from contextvars import ContextVar
+from contextlib import suppress
+from typing import ClassVar
 
-from passlib.context import CryptContext
-from passlib.exc import InternalBackendError
+from argon2 import PasswordHasher
+from argon2.exceptions import (
+    HashingError,
+    InvalidHashError,
+    VerificationError,
+    VerifyMismatchError,
+)
 
-from app.configs.security import CONFIG_MAP
+from app.configs.argon2 import Argon2Config, get_argon2_config
 from app.configs.settings import settings
 from app.decorators.with_retry import with_retry
 from app.errors import PasswordHashingError, PasswordRehashError
 from app.logging import get_logger
 
-executor = ThreadPoolExecutor(max_workers=4)
 logger = get_logger(__name__)
 
 
-class PasswordHasher:
+class Argon2Hasher:
     """
-    A secure password hashing and verification manager using Argon2id algorithm.
+    Direct argon2-cffi implementation for password hashing.
 
-    This class wraps passlib's CryptContext to provide:
-    - Secure password hashing with Argon2id
-    - Password verification
-    - Hash deprecation checking and rehashing capabilities
+    This class provides secure password hashing using argon2-cffi directly,
+    eliminating the passlib dependency.
     """
 
-    def __init__(self) -> None:
-        """
-        Initialize the PasswordHasher with Argon2id as the primary scheme.
+    CURRENT_VERSION: ClassVar[str] = "v=19"
 
-        Configuration:
-        - schemes: List of supported hashing schemes (argon2 as primary)
-        - deprecated: List of deprecated schemes for automatic migration
-        - argon2__memory_cost: Memory usage (default: 512MB for security)
-        - argon2__time_cost: Time cost/iterations (default: 2)
-        - argon2__parallelism: Parallelism factor (default: 2 threads)
-        """
-
-        self.request_id = ContextVar("request_id", default="")
-        self.level = settings.PASSWORD_SECURITY_LEVEL
-        self.pwd_context = CryptContext(
-            schemes=[
-                "argon2",
-                "pbkdf2_sha256",
-            ],  # argon2 as primary, pbkdf2 for fallback
-            deprecated="pbkdf2_sha256",  # Mark pbkdf2 as deprecated for auto-migration
-            # Argon2id specific parameters
-            argon2__memory_cost=CONFIG_MAP[self.level].memory_cost,
-            argon2__time_cost=CONFIG_MAP[self.level].time_cost,
-            argon2__parallelism=CONFIG_MAP[self.level].parallelism,
+    def __init__(self, config: Argon2Config | None = None) -> None:
+        """Initialize the hasher with specified or default configuration."""
+        self.config = config or self._get_config_for_level()
+        self._hasher = PasswordHasher(
+            time_cost=self.config.time_cost,
+            memory_cost=self.config.memory_cost,
+            parallelism=self.config.parallelism,
+            hash_len=self.config.hash_len,
+            type=self.config.type,
         )
-        logger.info(f"PasswordHasher initialized with Argon2id on level {self.level}")
+        self.level = settings.PASSWORD_SECURITY_LEVEL
+        logger.info("Argon2Hasher initialized on level %s", self.level)
+
+    def _get_config_for_level(self) -> Argon2Config:
+        """Get configuration based on current security level setting."""
+        level = settings.PASSWORD_SECURITY_LEVEL
+        return get_argon2_config(level, settings.ENVIRONMENT)
 
     def hash(self, password: str) -> str:
         """
@@ -72,28 +71,19 @@ class PasswordHasher:
         Raises:
             ValueError: If password is empty or invalid
             PasswordHashingError: If hashing fails
-
-        Example:
-            >>> hasher = PasswordHasher()
-            >>> hashed = hasher.hash("my_secure_password")
-            >>> print(hashed)  # $argon2id$v=19$m=524288,t=2,p=2$...
         """
         if not password:
             msg = "Password cannot be empty"
-            raise ValueError(msg) from None
+            raise ValueError(msg)
 
         try:
-            hashed_password = self.pwd_context.hash(password)
-            logger.debug(f"Password hashed successfully on level {self.level}")
-        except (ValueError, InternalBackendError, UnicodeError) as e:
-            logger.exception("Invalid password format")
-            mssg = "Failed to hash password"
-            raise PasswordHashingError(mssg) from e
-        except Exception as e:
+            hashed = self._hasher.hash(password)
+            logger.debug("Password hashed successfully")
+            return hashed
+        except HashingError as e:
             logger.exception("Error hashing password")
             mssg = "Failed to hash password"
             raise PasswordHashingError(mssg) from e
-        return hashed_password
 
     def verify(self, password: str, hashed_password: str) -> bool:
         """
@@ -107,55 +97,129 @@ class PasswordHasher:
             bool: True if password matches, False otherwise
 
         Example:
-            >>> hasher = PasswordHasher()
+            >>> hasher = Argon2Hasher()
             >>> hashed = hasher.hash("my_password")
             >>> hasher.verify("my_password", hashed)
             True
             >>> hasher.verify("wrong_password", hashed)
             False
         """
-        if not isinstance(hashed_password, str) or not hashed_password.strip():
+        if not hashed_password or not isinstance(hashed_password, str):
             logger.warning("Invalid hash format provided")
             return False
 
         try:
-            is_valid = self.pwd_context.verify(password, hashed_password)
-        except ValueError:
-            logger.exception("Stored hash is corrupted or invalid format")
-            return False  # Or raise, depending on policy
+            self._hasher.verify(hashed_password, password)
+            return True
+        except (VerifyMismatchError, InvalidHashError):
+            return False
+        except VerificationError:
+            logger.warning("Verification failed due to invalid hash")
+            return False
         except Exception:
             logger.exception("Unexpected error during verification")
             return False
 
-        return is_valid
-
     def check_needs_rehash(self, hashed_password: str) -> bool:
         """
-        Check if a hashed password needs to be rehashed due to deprecated scheme or outdated parameters.
+        Check if a hashed password needs to be rehashed due to outdated parameters.
 
         Args:
             hashed_password: The hashed password to check
 
         Returns:
             bool: True if rehashing is needed, False otherwise
-
-        Example:
-            >>> hasher = PasswordHasher()
-            >>> old_pbkdf2_hash = "$pbkdf2-sha256$..."
-            >>> hasher.check_needs_rehash(old_pbkdf2_hash)
-            True
         """
-        try:
-            needs_rehash = self.pwd_context.needs_update(hashed_password)
-            if needs_rehash:
-                logger.info(
-                    f"Hash needs update due to deprecated scheme or outdated parameters on level {self.level}",
-                )
-        except Exception:
-            logger.exception(f"Error checking hash currency on level {self.level}")
-            return False
+        if not hashed_password:
+            return True
 
-        return needs_rehash
+        try:
+            return self._needs_parameters_upgrade(hashed_password)
+        except Exception:
+            logger.exception("Error checking hash parameters")
+            return True
+
+    def _needs_parameters_upgrade(self, hashed_password: str) -> bool:
+        """
+        Check if hash parameters are below current minimums.
+
+        This parses the existing hash and compares its parameters
+        against current configuration requirements.
+
+        Args:
+            hashed_password: The hashed password to analyze
+
+        Returns:
+            bool: True if parameters need upgrading
+        """
+        if not hashed_password.startswith("$argon2id$"):
+            return True
+
+        try:
+            if not self._is_valid_hash_format(hashed_password):
+                return True
+
+            if not self._is_current_version(hashed_password):
+                return True
+
+            return self._are_parameters_outdated(hashed_password)
+
+        except (ValueError, IndexError):
+            return True
+
+    def _is_valid_hash_format(self, hashed_password: str) -> bool:
+        """Check if hash has valid format structure."""
+        parts = hashed_password.split("$")
+        return len(parts) >= 4
+
+    def _is_current_version(self, hashed_password: str) -> bool:
+        """Check if hash uses current version."""
+        parts = hashed_password.split("$")
+        if len(parts) < 3:
+            return False
+        version = parts[2]
+        return version == self.CURRENT_VERSION
+
+    def _are_parameters_outdated(self, hashed_password: str) -> bool:
+        """Check if hash parameters are below current minimums."""
+        parts = hashed_password.split("$")
+
+        # Validate we have enough parts before accessing
+        if len(parts) < 4:
+            return True
+
+        params = parts[3]
+
+        current_memory = self.config.memory_cost
+        current_time = self.config.time_cost
+        current_parallel = self.config.parallelism
+
+        parsed_params = self._parse_hash_parameters(params)
+
+        if parsed_params["memory"] is not None and parsed_params["memory"] < current_memory:
+            return True
+        if parsed_params["time"] is not None and parsed_params["time"] < current_time:
+            return True
+        return (
+            parsed_params["parallelism"] is not None
+            and parsed_params["parallelism"] < current_parallel
+        )
+
+    def _parse_hash_parameters(self, params_str: str) -> dict[str, int | None]:
+        """Parse hash parameter string into individual values."""
+        memory_val: int | None = None
+        time_val: int | None = None
+        parallel_val: int | None = None
+
+        for param in params_str.split(","):
+            if param.startswith("m="):
+                memory_val = int(param[2:])
+            elif param.startswith("t="):
+                time_val = int(param[2:])
+            elif param.startswith("p="):
+                parallel_val = int(param[2:])
+
+        return {"memory": memory_val, "time": time_val, "parallelism": parallel_val}
 
     def verify_and_update(
         self,
@@ -173,25 +237,20 @@ class PasswordHasher:
             hashed_password: The hashed password (can be None for missing passwords)
 
         Returns:
-            tuple[bool, Optional[str]]:
+            tuple[bool, str | None]:
                 - First element: True if password is correct, False otherwise
                 - Second element: New hash if rehashing needed, None otherwise
-
-        Example:
-            >>> hasher = PasswordHasher()
-            >>> hashed = hasher.hash("password123")
-            >>> is_valid, new_hash = hasher.verify_and_update("password123", hashed)
-            >>> if is_valid:
-            ...     if new_hash:
-            ...         # Update database with new_hash
-            ...         db.update_password_hash(user_id, new_hash)
         """
         if hashed_password is None:
-            logger.warning(
-                "Hashed password is None, using dummy hash for timing consistency",
-            )
-            # Use dummy_verify() to maintain timing consistency against timing attacks
-            self.pwd_context.dummy_verify()
+            logger.warning("Hashed password is None")
+            # Perform dummy verification for constant-time behavior.
+            # The result is discarded intentionally - this ensures similar computation
+            # time regardless of whether a hash is stored in the database.
+            # This prevents timing attacks that could enumerate whether a user has
+            # a password set (e.g., OAuth-only accounts).
+            # Using the same parameters as standard profile to match typical verification time.
+            with suppress(Exception):
+                self._hasher.verify(settings.PASSWORD_DUMMY_HASH, password)
             return False, None
 
         # Verify the password
@@ -206,12 +265,12 @@ class PasswordHasher:
             try:
                 new_hash = self.hash(password)
                 logger.info(
-                    f"Password needs rehashing, new hash generated on level {self.level}",
+                    "Password needs rehashing, new hash generated",
                 )
             except Exception as e:
                 logger.exception("Error generating new hash")
-                mssg = "Failed to rehash password"
-                raise PasswordRehashError(mssg) from e
+                details = "Failed to rehash password"
+                raise PasswordRehashError(details) from e
 
         return is_valid, new_hash
 
@@ -227,134 +286,120 @@ class PasswordHasher:
                 - scheme: The hashing algorithm used
                 - deprecated: Whether the scheme is deprecated
                 - needs_update: Whether the hash needs updating
-
-        Example:
-            >>> hasher = PasswordHasher()
-            >>> hashed = hasher.hash("password")
-            >>> info = hasher.get_hash_info(hashed)
-            >>> print(info)
-            {'scheme': 'argon2', 'deprecated': False, 'needs_update': False}
         """
         try:
-            scheme = self.pwd_context.identify(hashed_password)
-            needs_update = self.check_needs_rehash(hashed_password)
+            if not hashed_password.startswith("$argon2id$"):
+                return {
+                    "scheme": "unknown",
+                    "deprecated": True,
+                    "needs_update": True,
+                }
 
-            info = {
-                "scheme": scheme,
-                "deprecated": scheme != "argon2",
-                "needs_update": needs_update,
+            parts = hashed_password.split("$")
+            version = parts[2] if len(parts) > 2 else "unknown"
+            params = parts[3] if len(parts) > 3 else ""
+
+            return {
+                "scheme": "argon2id",
+                "version": version,
+                "deprecated": version != self.CURRENT_VERSION,
+                "needs_update": self.check_needs_rehash(hashed_password),
+                "parameters": params,
             }
         except Exception as e:
-            logger.exception(f"Error extracting hash info on level {self.level}")
+            logger.exception("Error extracting hash info")
             return {"error": str(e)}
-        return info
 
+    @with_retry(base_delay=1, max_delay=10, exec_retry=PasswordHashingError)
+    async def hash_password(self, password: str) -> str:
+        """
+        Module-level function to hash a password using the default hasher.
 
-_default_hasher = PasswordHasher()
+        Args:
+            password: The plaintext password to hash
 
+        Returns:
+            str: The hashed password
 
-def get_password_hasher() -> PasswordHasher:
-    """
-    Get or create the default password hasher instance.
+        Example:
+            >>> hashed = hash_password("my_password")
+        """
 
-    Returns:
-        PasswordHasher: The singleton password hasher instance
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            return await get_event_loop().run_in_executor(
+                executor,
+                self.hash,
+                password,
+            )
 
-    Example:
-        >>> hasher = get_password_hasher()
-        >>> hashed = hasher.hash("password")
-    """
-    return _default_hasher
+    @with_retry(base_delay=1, max_delay=10, exec_retry=PasswordHashingError)
+    async def verify_password(self, password: str, hashed_password: str) -> bool:
+        """
+        Module-level function to verify a password using the default hasher.
 
+        Args:
+            password: The plaintext password to verify
+            hashed_password: The hashed password to verify against
 
-@with_retry(base_delay=1, max_delay=10, exec_retry=PasswordHashingError)
-async def hash_password(password: str) -> str:
-    """
-    Module-level function to hash a password using the default hasher.
+        Returns:
+            bool: True if password matches, False otherwise
 
-    Args:
-        password: The plaintext password to hash
+        Example:
+            >>> is_valid = verify_password("my_password", hashed_password)
+        """
 
-    Returns:
-        str: The hashed password
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            return await get_event_loop().run_in_executor(
+                executor,
+                self.verify,
+                password,
+                hashed_password,
+            )
 
-    Example:
-        >>> hashed = hash_password("my_password")
-    """
+    @with_retry(base_delay=1, max_delay=10, exec_retry=PasswordHashingError)
+    async def verify_and_update_password(
+        self,
+        password: str,
+        hashed_password: str | None,
+    ) -> tuple[bool, str | None]:
+        """
+        Module-level function to verify a password and get a new hash if needed.
 
-    hashed = await get_event_loop().run_in_executor(
-        executor,
-        get_password_hasher().hash,
-        password,
-    )
-    return hashed
+        Args:
+            password: The plaintext password to verify
+            hashed_password: The hashed password (can be None)
 
+        Returns:
+            tuple[bool, str | None]: Verification result and new hash if needed
 
-@with_retry(base_delay=1, max_delay=10, exec_retry=PasswordHashingError)
-async def verify_password(password: str, hashed_password: str) -> bool:
-    """
-    Module-level function to verify a password using the default hasher.
+        Example:
+            >>> is_valid, new_hash = verify_and_update_password("password", hashed)
+        """
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            return await get_event_loop().run_in_executor(
+                executor,
+                self.verify_and_update,
+                password,
+                hashed_password,
+            )
 
-    Args:
-        password: The plaintext password to verify
-        hashed_password: The hashed password to verify against
+    @with_retry(base_delay=1, max_delay=10, exec_retry=PasswordHashingError)
+    async def password_info(self, hashed_password: str) -> dict:
+        """
+        Module-level function to get information about a hashed password.
 
-    Returns:
-        bool: True if password matches, False otherwise
+        Args:
+            hashed_password: The hashed password to analyze
 
-    Example:
-        >>> is_valid = verify_password("my_password", hashed_password)
-    """
-    return await get_event_loop().run_in_executor(
-        executor,
-        get_password_hasher().verify,
-        password,
-        hashed_password,
-    )
+        Returns:
+            dict: Information about the hash
 
-
-@with_retry(base_delay=1, max_delay=10, exec_retry=PasswordHashingError)
-async def verify_and_update_password(
-    password: str,
-    hashed_password: str | None,
-) -> tuple[bool, str | None]:
-    """
-    Module-level function to verify a password and get a new hash if needed.
-
-    Args:
-        password: The plaintext password to verify
-        hashed_password: The hashed password (can be None)
-
-    Returns:
-        tuple[bool, str | None]: Verification result and new hash if needed
-
-    Example:
-        >>> is_valid, new_hash = verify_and_update_password("password", hashed)
-    """
-    return await get_event_loop().run_in_executor(
-        executor,
-        get_password_hasher().verify_and_update,
-        password,
-        hashed_password,
-    )
-
-
-@with_retry(base_delay=1, max_delay=10, exec_retry=PasswordHashingError)
-async def password_info(hashed_password: str) -> dict:
-    """
-    Module-level function to get information about a hashed password.
-
-    Args:
-        hashed_password: The hashed password to analyze
-
-    Returns:
-        dict: Information about the hash
-
-    Example:
-        >>> info = password_info(hashed_password)
-    """
-    return await get_event_loop().run_in_executor(
-        executor,
-        get_password_hasher().get_hash_info,
-        hashed_password,
-    )
+        Example:
+            >>> info = password_info(hashed_password)
+        """
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            return await get_event_loop().run_in_executor(
+                executor,
+                self.get_hash_info,
+                hashed_password,
+            )

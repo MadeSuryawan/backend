@@ -12,9 +12,19 @@ from httpx import ASGITransport, AsyncClient
 from PIL import Image
 
 from app.main import app
+from app.managers.password_manager import Argon2Hasher
 from app.managers.rate_limiter import limiter
 from app.managers.token_manager import create_access_token
 from app.models import UserDB
+
+
+@pytest.fixture
+def mock_password_hasher() -> MagicMock:
+    """Create a mock password hasher for testing."""
+    mock = MagicMock(spec=Argon2Hasher)
+    mock.hash_password = AsyncMock(return_value="$argon2id$v=19$m=65536,t=3,p=4$hashed")
+    mock.verify_password = AsyncMock(return_value=True)
+    return mock
 
 
 @pytest.fixture
@@ -80,9 +90,11 @@ def admin_auth_headers(admin_access_token: str) -> dict[str, str]:
 
 
 @pytest.fixture
-async def client() -> AsyncGenerator[AsyncClient]:
+async def client(mock_password_hasher: MagicMock) -> AsyncGenerator[AsyncClient]:
     """Create async HTTP client for testing."""
     limiter.enabled = False
+    # Set up password_hasher in app state for tests
+    app.state.password_hasher = mock_password_hasher
     async with AsyncClient(
         base_url="http://test",
         transport=ASGITransport(app=app),

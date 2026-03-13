@@ -53,6 +53,7 @@ from app.decorators.metrics import timed
 from app.dependencies import (
     AdminUserDep,
     AuthServiceDep,
+    PasswordHasherDep,
     UserDBDep,
     UserQueryListDep,
     UserRepoDep,
@@ -70,6 +71,7 @@ from app.errors.upload import (
 from app.logging import get_logger
 from app.managers.rate_limiter import limiter
 from app.models import UserDB
+from app.repositories.base import CreateUpdate
 from app.schemas import (
     TestimonialUpdate,
     UserCreate,
@@ -201,11 +203,7 @@ async def _handle_email_change(
     logger.info("Verification email sent to new address: %s", db_user.email)
 
 
-async def _invalidate_user_cache(
-    request: Request,
-    user_id: UUID,
-    username: str,
-) -> None:
+async def _invalidate_user_cache(request: Request, user_id: UUID, username: str) -> None:
     """
     Invalidate cache entries for a user.
 
@@ -286,6 +284,15 @@ async def _upload_pp(
 # =============================================================================
 
 
+@dataclass(frozen=True)
+class UserCreateDeps:
+    """Dependencies for user creation."""
+
+    repo: UserRepoDep
+    admin_user: AdminUserDep
+    hasher: PasswordHasherDep
+
+
 @router.post(
     "/create",
     response_class=ORJSONResponse,
@@ -357,8 +364,7 @@ async def create_user(
             },
         ),
     ],
-    repo: UserRepoDep,
-    admin_user: AdminUserDep,
+    deps: Annotated[UserCreateDeps, Depends()],
 ) -> UserResponse:
     """
     Create a new user and return the safe response model.
@@ -371,10 +377,8 @@ async def create_user(
         Response object for middleware/decorators.
     user : UserCreate
         User input payload.
-    repo : UserRepository
-        Repository dependency.
-    admin_user : AdminUserDep
-        Admin user dependency.
+    deps : UserCreateDeps
+        Dependencies for user creation.
 
     Returns
     -------
@@ -388,16 +392,14 @@ async def create_user(
     """
     # Get timezone from middleware header (set by client)
     user_timezone = getattr(request.state, "user_timezone", "UTC")
-
     # Fallback to IP geolocation if timezone is default UTC (likely not sent by client)
-    if user_timezone == "UTC":
-        client_ip = request.client.host if request.client else None
-        if client_ip:
-            user_timezone = await detect_timezone_by_ip(client_ip)
+    if user_timezone == "UTC" and (client_ip := request.client.host if request.client else None):
+        user_timezone = await detect_timezone_by_ip(client_ip)
 
     async with db_operation_context():
         # Pass detect timezone to repo
-        db_user = await repo.create(user, timezone=user_timezone)
+        params = CreateUpdate(hasher=deps.hasher, timezone=user_timezone)
+        db_user = await deps.repo.create(user, params)
         await _invalidate_user_cache(request, db_user.uuid, db_user.username)
         return validate_user_response(db_user)
 
@@ -473,8 +475,7 @@ async def get_users(
     list[UserResponse] | str
         List of users or informational message when none found.
     """
-    db_users = await repo.get_all(skip=skip, limit=limit)
-    if not db_users:
+    if not (db_users := await repo.get_all(skip=skip, limit=limit)):
         return "No users found"
     return [validate_user_response(user) for user in db_users]
 
@@ -636,6 +637,12 @@ async def get_user_by_username(
     return validate_user_response(db_user)
 
 
+@dataclass(frozen=True)
+class AuthDeps:
+    auth_service: AuthServiceDep
+    hasher: PasswordHasherDep
+
+
 @router.patch(
     "/update/{user_id}",
     response_class=ORJSONResponse,
@@ -710,7 +717,7 @@ async def update_user(
         ),
     ],
     deps: Annotated[UserOpsDeps, Depends()],
-    auth_service: AuthServiceDep,
+    auth_deps: Annotated[AuthDeps, Depends()],
 ) -> UserResponse:
     """
     Update user information and return the safe response model.
@@ -728,8 +735,8 @@ async def update_user(
         Update payload (partial updates accepted).
     deps : UserOpsDeps
         Operation dependencies (repo + current_user).
-    auth_service : AuthServiceDep
-        Authentication service for sending verification emails.
+    auth_deps : AuthDeps
+        Authentication dependencies (auth_service + hasher).
 
     Returns
     -------
@@ -748,7 +755,10 @@ async def update_user(
             user_update.email and user_update.email != existing.email,
         )
 
-        db_user = await deps.repo.update(deps.user_id, user_update)
+        db_user = await deps.repo.update(
+            user_update,
+            CreateUpdate(user_id=deps.user_id, hasher=auth_deps.hasher),
+        )
         if not db_user:
             raise HTTPException(
                 status_code=HTTP_404_NOT_FOUND,
@@ -756,7 +766,7 @@ async def update_user(
             )
 
         if email_changed:
-            await _handle_email_change(db_user, existing, auth_service, deps.repo)
+            await _handle_email_change(db_user, existing, auth_deps.auth_service, deps.repo)
 
         if existing.username != db_user.username:
             await get_cache_manager(request).delete(
@@ -921,6 +931,7 @@ async def upload_profile_picture(
     response: Response,
     file: UploadFile,
     deps: Annotated[UserOpsDeps, Depends()],
+    hasher: PasswordHasherDep,
 ) -> UserResponse:
     """
     Upload or replace a user's profile picture.
@@ -935,6 +946,10 @@ async def upload_profile_picture(
         Uploaded image file.
     deps : UserOpsDeps
         Operation dependencies (repo + current_user).
+    file : UploadFile
+        Uploaded image file.
+    hasher : Argon2Hasher
+        Password hasher dependency.
 
     Returns
     -------
@@ -949,7 +964,10 @@ async def upload_profile_picture(
     db_user = await get_authorized_user(deps.repo, deps.user_id, deps.current_user)
     picture_url = await _upload_pp(str(deps.user_id), file)
 
-    updated_user = await deps.repo.update(deps.user_id, {"profile_picture": picture_url})
+    updated_user = await deps.repo.update(
+        {"profile_picture": picture_url},
+        CreateUpdate(user_id=deps.user_id, hasher=hasher),
+    )
     if not updated_user:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
@@ -1003,6 +1021,7 @@ async def delete_profile_picture(
     request: Request,
     response: Response,
     deps: Annotated[UserOpsDeps, Depends()],
+    hasher: PasswordHasherDep,
 ) -> Response:
     """
     Delete a user's profile picture.
@@ -1015,6 +1034,8 @@ async def delete_profile_picture(
         Response object for middleware/decorators.
     deps : UserOpsDeps
         Operation dependencies (repo + current_user).
+    hasher : Argon2Hasher
+        Password hasher dependency.
 
     Raises
     ------
@@ -1039,7 +1060,10 @@ async def delete_profile_picture(
         )
 
     # Update user's profile_picture field to None
-    await deps.repo.update(deps.user_id, {"profile_picture": None})
+    await deps.repo.update(
+        {"profile_picture": None},
+        CreateUpdate(user_id=deps.user_id, hasher=hasher),
+    )
 
     # Invalidate cache
     await _invalidate_user_cache(request, deps.user_id, db_user.username)
@@ -1077,6 +1101,7 @@ async def update_testimonial(
     response: Response,
     payload: Annotated[TestimonialUpdate, Body(...)],
     deps: Annotated[UserOpsDeps, Depends()],
+    hasher: PasswordHasherDep,
 ) -> UserResponse:
     """
     Update user testimonial.
@@ -1091,6 +1116,10 @@ async def update_testimonial(
         Testimonial content.
     deps : UserOpsDeps
         Authenticated user operation dependencies.
+    payload : TestimonialUpdate
+        Testimonial content.
+    hasher : Argon2Hasher
+        Password hasher dependency.
 
     Returns
     -------
@@ -1103,7 +1132,10 @@ async def update_testimonial(
         If user not found or unauthorized.
     """
     db_user = await get_authorized_user(deps.repo, deps.user_id, deps.current_user, "testimonial")
-    updated_user = await deps.repo.update(deps.user_id, {"testimonial": payload.testimonial})
+    updated_user = await deps.repo.update(
+        {"testimonial": payload.testimonial},
+        CreateUpdate(user_id=deps.user_id, hasher=hasher),
+    )
     if not updated_user:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
@@ -1136,6 +1168,7 @@ async def delete_testimonial(
     request: Request,
     response: Response,
     deps: Annotated[UserOpsDeps, Depends()],
+    hasher: PasswordHasherDep,
 ) -> Response:
     """
     Delete user testimonial.
@@ -1148,6 +1181,8 @@ async def delete_testimonial(
         Response object for middleware/decorators.
     deps : UserOpsDeps
         Authenticated user operation dependencies.
+    hasher : Argon2Hasher
+        Password hasher dependency.
 
     Returns
     -------
@@ -1160,7 +1195,10 @@ async def delete_testimonial(
         If user not found or unauthorized.
     """
     db_user = await get_authorized_user(deps.repo, deps.user_id, deps.current_user, "testimonial")
-    if not await deps.repo.update(deps.user_id, {"testimonial": None}):
+    if not await deps.repo.update(
+        {"testimonial": None},
+        CreateUpdate(user_id=deps.user_id, hasher=hasher),
+    ):
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
             detail=f"User with ID {deps.user_id} not found",

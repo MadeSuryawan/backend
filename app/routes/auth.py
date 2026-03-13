@@ -33,6 +33,7 @@ Rate limits are enforced per-endpoint and can be configured via settings.
 For OAuth 2.0 authentication (Google, WeChat), see app/routes/oauth.py.
 """
 
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -51,6 +52,7 @@ from app.decorators.caching import get_cache_manager
 from app.decorators.metrics import timed
 from app.dependencies import (
     AuthServiceDep,
+    PasswordHasherDep,
     UserDBDep,
     UserRepoDep,
     UserRespDep,
@@ -69,6 +71,7 @@ from app.managers.token_manager import (
     decode_password_reset_token,
     decode_verification_token,
 )
+from app.repositories.base import CreateUpdate
 from app.schemas.auth import (
     EmailVerificationRequest,
     LogoutRequest,
@@ -136,6 +139,7 @@ async def login_for_access_token(
     response: Response,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     auth_service: AuthServiceDep,
+    hasher: PasswordHasherDep,
 ) -> Token:
     r"""
     Authenticate user and issue JWT tokens.
@@ -165,6 +169,8 @@ async def login_for_access_token(
         - ``client_id``/``client_secret``: Optional client credentials (unused)
     auth_service : AuthService
         Authentication service for credential validation and token generation.
+    hasher : PasswordHasher
+        Password hasher for credential validation.
 
     Returns
     -------
@@ -205,7 +211,7 @@ async def login_for_access_token(
             tokens = response.json()
             # {'access_token': 'eyJ...', 'refresh_token': 'eyJ...', 'token_type': 'bearer'}
     """
-    user = await auth_service.authenticate_user(form_data.username, form_data.password)
+    user = await auth_service.authenticate_user(hasher, form_data.username, form_data.password)
     return auth_service.create_token_for_user(user)
 
 
@@ -776,6 +782,7 @@ async def reset_password(
     response: Response,
     body: PasswordResetConfirm,
     auth_service: AuthServiceDep,
+    hasher: PasswordHasherDep,
 ) -> MessageResponse:
     """
     Reset user password using token from reset email.
@@ -805,6 +812,8 @@ async def reset_password(
         - ``confirm_new_password``: Confirmation of new password (must match)
     auth_service : AuthService
         Authentication service for password reset operations.
+    hasher : Argon2Hasher
+        Password hasher for password reset operations.
 
     Returns
     -------
@@ -859,7 +868,7 @@ async def reset_password(
         raise PasswordResetError
 
     # Reset the password
-    success = await auth_service.reset_password(token_data.user_id, body.new_password)
+    success = await auth_service.reset_password(hasher, token_data.user_id, body.new_password)
     if not success:
         raise PasswordResetError
 
@@ -871,6 +880,14 @@ async def reset_password(
         )
 
     return MessageResponse(message="Password reset successfully", success=True)
+
+
+@dataclass(frozen=True)
+class ChangePasswordParams:
+    body: PasswordChangeRequest
+    current_user: UserDBDep
+    auth_service: AuthServiceDep
+    hasher: PasswordHasherDep
 
 
 @router.post(
@@ -921,9 +938,7 @@ async def reset_password(
 async def change_password(
     request: Request,
     response: Response,
-    body: PasswordChangeRequest,
-    current_user: UserDBDep,
-    auth_service: AuthServiceDep,
+    deps: Annotated[ChangePasswordParams, Depends()],
 ) -> MessageResponse:
     """
     Change password for authenticated user.
@@ -937,12 +952,8 @@ async def change_password(
         The incoming HTTP request.
     response : Response
         The outgoing HTTP response.
-    body : PasswordChangeRequest
-        Contains old_password, new_password, and confirm_new_password.
-    current_user : UserDB
-        The currently authenticated user from JWT token.
-    auth_service : AuthService
-        The authentication service for password operations.
+    deps : Annotated[ChangePasswordParams, Depends()]
+        Dependency injection container for change password parameters.
 
     Returns
     -------
@@ -954,15 +965,24 @@ async def change_password(
     PasswordChangeError
         If old password is incorrect or user not found.
     """
-    success = await auth_service.change_password(
-        user_id=current_user.uuid,
-        old_password=body.old_password,
-        new_password=body.new_password,
+    success = await deps.auth_service.change_password(
+        deps.hasher,
+        user_id=deps.current_user.uuid,
+        old_password=deps.body.old_password,
+        new_password=deps.body.new_password,
     )
     if not success:
         raise PasswordChangeError
 
     return MessageResponse(message="Password changed successfully", success=True)
+
+
+@dataclass(frozen=True)
+class RegisterParams:
+    user_create: UserCreate
+    repo: UserRepoDep
+    auth_service: AuthServiceDep
+    hasher: PasswordHasherDep
 
 
 @router.post(
@@ -1032,9 +1052,7 @@ async def change_password(
 async def register_user(
     request: Request,
     response: Response,
-    user_create: UserCreate,
-    repo: UserRepoDep,
-    auth_service: AuthServiceDep,
+    deps: Annotated[RegisterParams, Depends()],
 ) -> UserResponse:
     """
     Register a new user account.
@@ -1057,7 +1075,12 @@ async def register_user(
         The incoming HTTP request, used for rate limiting.
     response : Response
         The outgoing HTTP response.
-    user_create : UserCreate
+    deps : Annotated[RegisterParams, Depends()]
+        Dependency injection container for register parameters.
+
+    Returns
+    -------
+    UserResponse
         Registration data containing:
         - ``username``: Unique username (alphanumeric, underscores)
         - ``email``: Valid email address
@@ -1069,6 +1092,8 @@ async def register_user(
         Repository for user creation operations.
     auth_service : AuthService
         Authentication service for sending verification email.
+    hasher : Argon2Hasher
+        Password hasher for password storage.
 
     Returns
     -------
@@ -1119,11 +1144,15 @@ async def register_user(
                 user_timezone = await detect_timezone_by_ip(client_ip)
 
         # Create user with detected timezone
-        user = await repo.create(user_create, timezone=user_timezone)
+        args = CreateUpdate(
+            hasher=deps.hasher,
+            timezone=user_timezone,
+        )
+        user = await deps.repo.create(deps.user_create, args)
 
         # Trigger verification email
-        await auth_service.send_verification_email(user)
-        await auth_service.record_verification_sent(user.uuid)
+        await deps.auth_service.send_verification_email(user)
+        await deps.auth_service.record_verification_sent(user.uuid)
 
         await get_cache_manager(request).delete(
             user_id_key(user.uuid),

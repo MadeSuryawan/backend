@@ -66,7 +66,7 @@ async def test_create_review_success(
     override_review_dependencies.create.assert_called_once()
     args = override_review_dependencies.create.call_args.args
     assert args[0].rating == 5
-    assert args[1] == sample_user.uuid
+    assert args[1].user_id == sample_user.uuid
 
 
 @pytest.mark.asyncio

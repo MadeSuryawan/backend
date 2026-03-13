@@ -12,9 +12,20 @@ from app.main import app
 from app.models import UserDB
 
 
+@pytest.fixture
+def mock_cache_manager() -> MagicMock:
+    """Create a mock cache manager."""
+    mock = MagicMock()
+    mock.delete = AsyncMock()
+    mock.get = AsyncMock(return_value=None)
+    mock.set = AsyncMock()
+    return mock
+
+
 @pytest.fixture(autouse=True)
-def setup_app_state(mock_cache_manager: MagicMock) -> Generator:
+def setup_app_state(mock_cache_manager: MagicMock, mock_password_hasher: MagicMock) -> Generator:
     app.state.cache_manager = mock_cache_manager
+    app.state.password_hasher = mock_password_hasher
     yield
     # del app.state.cache_manager # verify if we need to delete, safe to enable if needed
 

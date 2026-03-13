@@ -11,6 +11,7 @@ from app.dependencies.dependencies import get_cache_manager, get_current_user, g
 from app.errors.upload import ImageTooLargeError, UnsupportedImageTypeError
 from app.main import app
 from app.models import UserDB
+from app.repositories.base import CreateUpdate
 
 
 @pytest.fixture
@@ -65,12 +66,13 @@ class TestUploadProfilePicture:
         assert response.status_code in [401, 422]
 
     @pytest.mark.asyncio
-    async def test_upload_success(
+    async def test_upload_success(  # noqa: PLR0913
         self,
         client: AsyncClient,
         sample_user: UserDB,
         auth_headers: dict[str, str],
         override_dependencies: MagicMock,
+        mock_password_hasher: MagicMock,
         valid_jpeg_bytes: bytes,
     ) -> None:
         """Test successful profile picture upload."""
@@ -92,8 +94,8 @@ class TestUploadProfilePicture:
         assert response.json()["profilePicture"] == picture_url
         mock_upload_pp.assert_awaited_once()
         override_dependencies.update.assert_awaited_once_with(
-            sample_user.uuid,
             {"profile_picture": picture_url},
+            CreateUpdate(user_id=sample_user.uuid, hasher=mock_password_hasher),
         )
 
     @pytest.mark.asyncio
@@ -225,6 +227,7 @@ class TestDeleteProfilePicture:
         sample_user: UserDB,
         auth_headers: dict[str, str],
         override_dependencies: MagicMock,
+        mock_password_hasher: MagicMock,
     ) -> None:
         """Test successful profile picture deletion."""
         user_with_picture = sample_user.model_copy()
@@ -243,8 +246,8 @@ class TestDeleteProfilePicture:
         assert response.status_code == 204
         mock_service.delete_profile_picture.assert_awaited_once_with(str(sample_user.uuid))
         override_dependencies.update.assert_awaited_once_with(
-            sample_user.uuid,
             {"profile_picture": None},
+            CreateUpdate(user_id=sample_user.uuid, hasher=mock_password_hasher),
         )
 
     @pytest.mark.asyncio

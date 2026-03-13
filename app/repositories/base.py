@@ -1,5 +1,7 @@
 """Base repository for database operations."""
 
+from abc import abstractmethod
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -17,8 +19,22 @@ from app.errors.database import (
     RecordNotFoundError,
     parse_unique_violation,
 )
+from app.managers.password_manager import Argon2Hasher
 
 type FilterValue = str | int | float | bool | UUID | datetime | None
+
+
+@dataclass(frozen=True)
+class CreateUpdate:
+    """Universal data required to create or update a record."""
+
+    hasher: Argon2Hasher | None = None
+    user_id: UUID | None = None
+    timezone: str | None = None
+    auth_provider: str = "email"
+    provider_id: str | None = None
+    is_verified: bool = False
+    additional_kwargs: dict[str, Any] = field(default_factory=dict)
 
 
 class BaseRepository[ModelT: SQLModel, CreateSchemaT: BaseModel, UpdateSchemaT: BaseModel]:
@@ -46,22 +62,19 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT: BaseModel, UpdateSchemaT: 
         """
         self.session = session
 
-    async def create(self, schema: CreateSchemaT, **kwargs: dict[str, Any]) -> ModelT:
+    @abstractmethod
+    async def create(self, schema: CreateSchemaT, deps: CreateUpdate) -> ModelT:
         """
         Create a new record in the database.
 
         Args:
-            schema: Creation schema with data
-            **kwargs: Additional arguments for creation
+            schema: Create schema
+            deps: Create dependencies
 
         Returns:
             ModelT: Created database model
         """
-        # Convert Pydantic schema to dict, excluding unset fields
-        data = schema.model_dump(exclude_unset=True)
-        # Create database model instance
-        db_obj = self.model.model_validate(data)
-        return await self.add_and_refresh(db_obj)
+        ...
 
     async def get_by_id(self, record_id: UUID) -> ModelT | None:
         """
@@ -78,11 +91,7 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT: BaseModel, UpdateSchemaT: 
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()
 
-    async def get_by_field(
-        self,
-        field_name: str,
-        value: FilterValue,
-    ) -> ModelT | None:
+    async def get_by_field(self, field_name: str, value: FilterValue) -> ModelT | None:
         """
         Get a record by a specific field value.
 
@@ -118,11 +127,7 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT: BaseModel, UpdateSchemaT: 
             )
         return record
 
-    async def get_all(
-        self,
-        skip: int = 0,
-        limit: int = 10,
-    ) -> list[ModelT]:
+    async def get_all(self, skip: int = 0, limit: int = 10) -> list[ModelT]:
         """
         Get all records with pagination.
 
@@ -164,30 +169,19 @@ class BaseRepository[ModelT: SQLModel, CreateSchemaT: BaseModel, UpdateSchemaT: 
         result = await self.session.execute(statement)
         return list(result.scalars().all())
 
-    async def update(
-        self,
-        record_id: UUID,
-        schema: UpdateSchemaT,
-    ) -> ModelT | None:
+    @abstractmethod
+    async def update(self, schema: UpdateSchemaT, deps: CreateUpdate) -> ModelT | None:
         """
         Update a record.
 
         Args:
-            record_id: Record UUID
             schema: Update schema with fields to update
+            deps: Update dependencies
 
         Returns:
             ModelT | None: Updated record if found, None otherwise
         """
-        db_obj = await self.get_by_id(record_id)
-        if not db_obj:
-            return None
-
-        obj_data = schema.model_dump(exclude_unset=True)
-        for key, value in obj_data.items():
-            setattr(db_obj, key, value)
-
-        return await self.add_and_refresh(db_obj)
+        ...
 
     async def delete(self, record_id: UUID) -> bool:
         """

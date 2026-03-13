@@ -49,6 +49,7 @@ from app.db import close_db, init_db
 from app.logging import bind_request_id, clear_context, get_logger
 from app.managers.cache_manager import CacheManager
 from app.managers.login_attempt_tracker import init_login_tracker
+from app.managers.password_manager import Argon2Hasher
 from app.managers.rate_limiter import close_limiter
 from app.managers.token_blacklist import init_token_blacklist
 from app.monitoring import HealthChecker
@@ -127,6 +128,7 @@ async def _init_services(app: FastAPI) -> CacheManager:
 
     await init_db()
 
+    app.state.password_hasher = Argon2Hasher()
     app.state.health_checker = HealthChecker(
         app=app,
         version=app.version,

@@ -33,7 +33,7 @@ def async_mock(method: object) -> AsyncMock:
 @pytest.fixture
 def auth_service_deps(
     mock_redis_client: MagicMock,
-) -> tuple[AuthService, MagicMock, MagicMock, MagicMock]:
+) -> tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock]:
     mock_repo = MagicMock()
     mock_repo.get_by_email = AsyncMock()
     mock_repo.get_by_username = AsyncMock()
@@ -50,6 +50,11 @@ def auth_service_deps(
     mock_tracker.record_failed_attempt = AsyncMock()
     mock_tracker.reset_attempts = AsyncMock()
 
+    # Create mock password hasher
+    mock_hasher = MagicMock()
+    mock_hasher.hash_password = AsyncMock(return_value="$argon2id$v=19$m=65536,t=3,p=4$hashed")
+    mock_hasher.verify_password = AsyncMock(return_value=True)
+
     service = AuthService(
         mock_repo,
         token_blacklist=mock_blacklist,
@@ -62,18 +67,17 @@ def auth_service_deps(
     service.mark_reset_token_unused = AsyncMock()
     service.record_reset_sent = AsyncMock()
     service.check_reset_rate_limit = AsyncMock(return_value=True)
-    return service, mock_repo, mock_blacklist, mock_tracker
+    return service, mock_repo, mock_blacklist, mock_tracker, mock_hasher
 
 
 async def test_authenticate_user_accepts_email_and_resets_attempts(
     sample_user: UserDB,
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, mock_repo, _, mock_tracker = auth_service_deps
+    service, mock_repo, _, mock_tracker, mock_hasher = auth_service_deps
     mock_repo.get_by_email.return_value = sample_user
 
-    with patch("app.services.auth.verify_password", new=AsyncMock(return_value=True)):
-        result = await service.authenticate_user(sample_user.email, "Password123")
+    result = await service.authenticate_user(mock_hasher, sample_user.email, "Password123")
 
     assert result is sample_user
     mock_repo.get_by_email.assert_awaited_once_with(sample_user.email)
@@ -83,16 +87,14 @@ async def test_authenticate_user_accepts_email_and_resets_attempts(
 
 async def test_authenticate_user_records_failed_attempt_for_bad_password(
     sample_user: UserDB,
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, mock_repo, _, mock_tracker = auth_service_deps
+    service, mock_repo, _, mock_tracker, mock_hasher = auth_service_deps
     mock_repo.get_by_username.return_value = sample_user
+    mock_hasher.verify_password.return_value = False
 
-    with (
-        patch("app.services.auth.verify_password", new=AsyncMock(return_value=False)),
-        pytest.raises(InvalidCredentialsError),
-    ):
-        await service.authenticate_user(sample_user.username, "wrong-password")
+    with pytest.raises(InvalidCredentialsError):
+        await service.authenticate_user(mock_hasher, sample_user.username, "wrong-password")
 
     mock_tracker.record_failed_attempt.assert_awaited_once_with(sample_user.username)
     mock_tracker.reset_attempts.assert_not_awaited()
@@ -123,9 +125,9 @@ async def test_create_token_for_user_builds_bearer_token(sample_user: UserDB) ->
 
 
 async def test_refresh_tokens_rejects_invalid_token(
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, _, _, _ = auth_service_deps
+    service, _, _, _, _ = auth_service_deps
 
     with (
         patch("app.services.auth.decode_refresh_token", return_value=None),
@@ -136,9 +138,9 @@ async def test_refresh_tokens_rejects_invalid_token(
 
 async def test_refresh_tokens_rejects_revoked_token(
     sample_user: UserDB,
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, mock_repo, mock_blacklist, _ = auth_service_deps
+    service, mock_repo, mock_blacklist, _, _ = auth_service_deps
     token_data = TokenData(
         username=sample_user.username,
         user_id=sample_user.uuid,
@@ -158,9 +160,9 @@ async def test_refresh_tokens_rejects_revoked_token(
 
 async def test_refresh_tokens_blacklists_old_refresh_and_rotates_tokens(
     sample_user: UserDB,
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, mock_repo, mock_blacklist, _ = auth_service_deps
+    service, mock_repo, mock_blacklist, _, _ = auth_service_deps
     token_data = TokenData(
         username=sample_user.username,
         user_id=sample_user.uuid,
@@ -184,9 +186,9 @@ async def test_refresh_tokens_blacklists_old_refresh_and_rotates_tokens(
 
 
 async def test_logout_user_blacklists_access_and_refresh_tokens(
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, _, mock_blacklist, _ = auth_service_deps
+    service, _, mock_blacklist, _, _ = auth_service_deps
     access_exp = datetime.now(UTC) + timedelta(minutes=30)
     refresh_exp = datetime.now(UTC) + timedelta(days=7)
 
@@ -205,9 +207,9 @@ async def test_logout_user_blacklists_access_and_refresh_tokens(
 
 async def test_send_verification_email_creates_token_and_dispatches_email(
     sample_user: UserDB,
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, _, _, _ = auth_service_deps
+    service, _, _, _, _ = auth_service_deps
     service._send_verification_email_to_user = AsyncMock()
 
     with patch("app.services.auth.create_verification_token", return_value="verify-token"):
@@ -218,9 +220,9 @@ async def test_send_verification_email_creates_token_and_dispatches_email(
 
 async def test_verify_email_rejects_token_for_stale_email(
     sample_user: UserDB,
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, mock_repo, _, _ = auth_service_deps
+    service, mock_repo, _, _, _ = auth_service_deps
     mock_repo.get_by_id.return_value = sample_user
     token_data = VerificationTokenData(
         user_id=sample_user.uuid,
@@ -236,9 +238,9 @@ async def test_verify_email_rejects_token_for_stale_email(
 
 async def test_verify_email_marks_unverified_user_as_verified(
     unverified_user: UserDB,
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, mock_repo, _, _ = auth_service_deps
+    service, mock_repo, _, _, _ = auth_service_deps
     mock_repo.get_by_id.return_value = unverified_user
     token_data = VerificationTokenData(
         user_id=unverified_user.uuid,
@@ -255,9 +257,9 @@ async def test_verify_email_marks_unverified_user_as_verified(
 
 async def test_check_verification_rate_limit_blocks_when_limit_reached(
     sample_user: UserDB,
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, _, _, _ = auth_service_deps
+    service, _, _, _, _ = auth_service_deps
     redis = redis_mock(service)
     redis.get.return_value = str(settings.VERIFICATION_RESEND_LIMIT)
 
@@ -268,9 +270,9 @@ async def test_check_verification_rate_limit_blocks_when_limit_reached(
 
 async def test_record_verification_sent_sets_counter_for_first_request(
     sample_user: UserDB,
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, _, _, _ = auth_service_deps
+    service, _, _, _, _ = auth_service_deps
     redis = redis_mock(service)
     redis.get.return_value = None
 
@@ -284,9 +286,9 @@ async def test_record_verification_sent_sets_counter_for_first_request(
 
 
 async def test_verification_token_helpers_use_redis_expiry(
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, _, _, _ = auth_service_deps
+    service, _, _, _, _ = auth_service_deps
     redis = redis_mock(service)
     redis.exists.return_value = 1
 
@@ -298,9 +300,9 @@ async def test_verification_token_helpers_use_redis_expiry(
 
 
 async def test_send_password_reset_hides_missing_email(
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, mock_repo, _, _ = auth_service_deps
+    service, mock_repo, _, _, _ = auth_service_deps
     mock_repo.get_by_email.return_value = None
 
     result = await service.send_password_reset("missing@example.com")
@@ -313,9 +315,9 @@ async def test_send_password_reset_hides_missing_email(
 
 async def test_send_password_reset_swallows_rate_limit_without_sending(
     sample_user: UserDB,
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, mock_repo, _, _ = auth_service_deps
+    service, mock_repo, _, _, _ = auth_service_deps
     mock_repo.get_by_email.return_value = sample_user
     service.check_reset_rate_limit.return_value = False
 
@@ -329,9 +331,9 @@ async def test_send_password_reset_swallows_rate_limit_without_sending(
 
 async def test_send_password_reset_tracks_single_use_token_and_records_send(
     sample_user: UserDB,
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, mock_repo, _, _ = auth_service_deps
+    service, mock_repo, _, _, _ = auth_service_deps
     mock_repo.get_by_email.return_value = sample_user
 
     with (
@@ -354,9 +356,9 @@ async def test_send_password_reset_tracks_single_use_token_and_records_send(
 
 async def test_reset_helpers_use_redis_for_rate_limits_and_single_use_tokens(
     sample_user: UserDB,
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, _, _, _ = auth_service_deps
+    service, _, _, _, _ = auth_service_deps
     redis = redis_mock(service)
     helper_service = AuthService(MagicMock(), redis_client=redis)
     helper_redis = redis_mock(helper_service)
@@ -380,28 +382,33 @@ async def test_reset_helpers_use_redis_for_rate_limits_and_single_use_tokens(
 
 async def test_reset_password_hashes_and_persists_user(
     sample_user: UserDB,
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, mock_repo, _, _ = auth_service_deps
+    service, mock_repo, _, _, mock_hasher = auth_service_deps
     mock_repo.get_by_id.return_value = sample_user
 
-    with patch("app.services.auth.hash_password", new=AsyncMock(return_value="new-hash")):
-        result = await service.reset_password(sample_user.uuid, "NewPassword123")
+    result = await service.reset_password(mock_hasher, sample_user.uuid, "NewPassword123")
 
     assert result is True
-    assert sample_user.password_hash == "new-hash"
+    assert sample_user.password_hash == "$argon2id$v=19$m=65536,t=3,p=4$hashed"
+    mock_hasher.hash_password.assert_awaited_once_with("NewPassword123")
     mock_repo.add_and_refresh.assert_awaited_once_with(sample_user)
 
 
 async def test_change_password_returns_false_for_wrong_current_password(
     sample_user: UserDB,
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, mock_repo, _, _ = auth_service_deps
+    service, mock_repo, _, _, mock_hasher = auth_service_deps
     mock_repo.get_by_id.return_value = sample_user
+    mock_hasher.verify_password.return_value = False
 
-    with patch("app.services.auth.verify_password", new=AsyncMock(return_value=False)):
-        result = await service.change_password(sample_user.uuid, "wrong-old", "NewPassword123")
+    result = await service.change_password(
+        mock_hasher,
+        sample_user.uuid,
+        "wrong-old",
+        "NewPassword123",
+    )
 
     assert result is False
     mock_repo.add_and_refresh.assert_not_awaited()
@@ -410,36 +417,44 @@ async def test_change_password_returns_false_for_wrong_current_password(
 
 async def test_change_password_updates_hash_and_sends_confirmation(
     sample_user: UserDB,
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, mock_repo, _, _ = auth_service_deps
+    service, mock_repo, _, _, mock_hasher = auth_service_deps
     mock_repo.get_by_id.return_value = sample_user
+    # Save original password_hash before change_password modifies it
+    original_password_hash = sample_user.password_hash
 
-    with (
-        patch("app.services.auth.verify_password", new=AsyncMock(return_value=True)),
-        patch("app.services.auth.hash_password", new=AsyncMock(return_value="rotated-hash")),
-    ):
-        result = await service.change_password(sample_user.uuid, "OldPassword123", "NewPassword123")
+    result = await service.change_password(
+        mock_hasher,
+        sample_user.uuid,
+        "OldPassword123",
+        "NewPassword123",
+    )
 
     assert result is True
-    assert sample_user.password_hash == "rotated-hash"
+    assert sample_user.password_hash == "$argon2id$v=19$m=65536,t=3,p=4$hashed"
+    mock_hasher.verify_password.assert_awaited_once_with(
+        "OldPassword123",
+        original_password_hash,  # Original password hash from fixture
+    )
+    mock_hasher.hash_password.assert_awaited_once_with("NewPassword123")
     mock_repo.add_and_refresh.assert_awaited_once_with(sample_user)
     async_mock(service._send_password_change_email).assert_awaited_once_with(sample_user)
 
 
 async def test_get_or_create_oauth_user_requires_email(
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, _, _, _ = auth_service_deps
+    service, _, _, _, mock_hasher = auth_service_deps
 
     with pytest.raises(ValueError, match="Email required from identity provider"):
-        await service.get_or_create_oauth_user({}, "google")
+        await service.get_or_create_oauth_user(mock_hasher, {}, "google")
 
 
 async def test_get_or_create_oauth_user_marks_existing_user_verified(
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, mock_repo, _, _ = auth_service_deps
+    service, mock_repo, _, _, mock_hasher = auth_service_deps
     existing_user = UserDB(
         uuid=UUID("12345678-1234-5678-1234-567812345679"),
         username="oauth_user",
@@ -448,7 +463,11 @@ async def test_get_or_create_oauth_user_marks_existing_user_verified(
     )
     mock_repo.get_by_email.return_value = existing_user
 
-    result = await service.get_or_create_oauth_user({"email": existing_user.email}, "google")
+    result = await service.get_or_create_oauth_user(
+        mock_hasher,
+        {"email": existing_user.email},
+        "google",
+    )
 
     assert result is existing_user
     assert existing_user.is_verified is True
@@ -457,9 +476,9 @@ async def test_get_or_create_oauth_user_marks_existing_user_verified(
 
 
 async def test_get_or_create_oauth_user_creates_new_verified_user(
-    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock],
+    auth_service_deps: tuple[AuthService, MagicMock, MagicMock, MagicMock, MagicMock],
 ) -> None:
-    service, mock_repo, _, _ = auth_service_deps
+    service, mock_repo, _, _, mock_hasher = auth_service_deps
     created_user = UserDB(
         uuid=UUID("12345678-1234-5678-1234-567812345680"),
         username="oauthuser_1234",
@@ -481,6 +500,7 @@ async def test_get_or_create_oauth_user_creates_new_verified_user(
         return_value=UUID("12345678-1234-5678-1234-567812345678"),
     ):
         result = await service.get_or_create_oauth_user(
+            mock_hasher,
             user_info,
             "google",
             timezone="Asia/Makassar",
@@ -488,16 +508,15 @@ async def test_get_or_create_oauth_user_creates_new_verified_user(
 
     assert result is created_user
     args = mock_repo.create.await_args.args
-    kwargs = mock_repo.create.await_args.kwargs
-    user_create = args[0]
-    assert user_create.username == "oauthuser_1234"
-    assert user_create.email == "oauthuser@example.com"
-    assert user_create.first_name == "OAuth"
-    assert user_create.last_name == "User"
-    assert str(user_create.profile_picture) == "https://example.com/avatar.jpg"
-    assert kwargs == {
-        "auth_provider": "google",
-        "provider_id": "provider-sub",
-        "is_verified": True,
-        "timezone": "Asia/Makassar",
-    }
+    user_create_schema, create_update = args[0], args[1]
+    # Now user_create is a UserCreate dataclass
+    assert user_create_schema.username == "oauthuser_1234"
+    assert user_create_schema.email == "oauthuser@example.com"
+    assert user_create_schema.first_name == "OAuth"
+    assert user_create_schema.last_name == "User"
+    assert str(user_create_schema.profile_picture) == "https://example.com/avatar.jpg"
+    # The other params are fields of CreateUpdate dataclass
+    assert create_update.auth_provider == "google"
+    assert create_update.provider_id == "provider-sub"
+    assert create_update.is_verified is True
+    assert create_update.timezone == "Asia/Makassar"

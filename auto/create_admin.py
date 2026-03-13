@@ -42,7 +42,7 @@ try:
     from sqlmodel import Column, select
 
     from app.db.database import transaction
-    from app.managers.password_manager import hash_password
+    from app.managers.password_manager import Argon2Hasher
     from app.models import UserDB
 except ImportError:
     # Re-add project root to path if import fails
@@ -50,7 +50,7 @@ except ImportError:
     from sqlalchemy import Column, select
 
     from app.db.database import transaction
-    from app.managers.password_manager import hash_password
+    from app.managers.password_manager import Argon2Hasher
     from app.models import UserDB
 
 
@@ -290,6 +290,7 @@ async def create_admin_user(admin_data: AdminUserData) -> UserDB:
     ValueError
         If user with email or username already exists.
     """
+    hasher = Argon2Hasher()
     async with transaction() as session:
         email_clause = cast(Column[bool], UserDB.email == admin_data.email)
         existing_email = await session.execute(
@@ -307,7 +308,7 @@ async def create_admin_user(admin_data: AdminUserData) -> UserDB:
             msg = f"User with username '{admin_data.username}' already exists"
             raise ValueError(msg)
 
-        password_hash = await hash_password(admin_data.password)
+        password_hash = await hasher.hash_password(admin_data.password)
 
         admin_user = UserDB(
             uuid=uuid4(),

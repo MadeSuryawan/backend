@@ -25,6 +25,7 @@ from app.configs.settings import settings
 from app.db import get_session
 from app.managers.cache_manager import CacheManager
 from app.managers.login_attempt_tracker import LoginAttemptTracker
+from app.managers.password_manager import Argon2Hasher
 from app.managers.token_blacklist import TokenBlacklist
 from app.managers.token_manager import decode_access_token
 from app.models import UserDB
@@ -75,6 +76,13 @@ def get_auth_service(
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 
+
+def get_password_hasher(request: Request) -> Argon2Hasher:
+    """Dependency to get the password hasher instance."""
+    return request.app.state.password_hasher
+
+
+PasswordHasherDep = Annotated[Argon2Hasher, Depends(get_password_hasher)]
 
 # OAuth Configuration
 oauth = OAuth()

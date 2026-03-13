@@ -42,7 +42,6 @@ dependencies = [
   "opentelemetry-instrumentation-fastapi>=0.60b1",
   "opentelemetry-sdk>=1.39.1",
   "orjson>=3.11.4",
-  "passlib[argon2]>=1.7.4",
   "pillow>=12.1.0",
   "prometheus-client>=0.24.1",
   "prometheus-fastapi-instrumentator>=7.1.0",

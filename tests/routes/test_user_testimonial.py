@@ -8,6 +8,7 @@ from httpx import AsyncClient
 from app.dependencies.dependencies import get_cache_manager, get_current_user, get_user_repository
 from app.main import app
 from app.models import UserDB
+from app.repositories.base import CreateUpdate
 
 
 @pytest.fixture
@@ -172,6 +173,7 @@ async def test_delete_testimonial_success(
     sample_user: UserDB,
     auth_headers: dict[str, str],
     override_dependencies: MagicMock,
+    mock_password_hasher: MagicMock,
 ) -> None:
     """Test successful testimonial deletion."""
     override_dependencies.update.return_value = sample_user
@@ -182,7 +184,10 @@ async def test_delete_testimonial_success(
     )
 
     assert response.status_code == 204
-    override_dependencies.update.assert_called_once_with(sample_user.uuid, {"testimonial": None})
+    override_dependencies.update.assert_called_once_with(
+        {"testimonial": None},
+        CreateUpdate(user_id=sample_user.uuid, hasher=mock_password_hasher),
+    )
 
 
 @pytest.mark.asyncio

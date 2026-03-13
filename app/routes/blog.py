@@ -70,6 +70,7 @@ from app.errors.upload import (
 from app.logging import get_logger
 from app.managers.rate_limiter import limiter
 from app.models import BlogDB
+from app.repositories.base import CreateUpdate
 from app.schemas import BlogCreate, BlogListResponse, BlogResponse, BlogSchema, BlogUpdate
 from app.schemas.review import MediaUploadResponse
 from app.services import MediaService
@@ -537,10 +538,7 @@ async def create_blog(
     check_owner_or_admin(blog.author_id, deps.current_user, "create_blog")
     try:
         blog_full = BlogSchema.model_validate(blog.model_dump())
-        db_blog = await deps.repo.create(
-            blog_full,
-            author_id=blog.author_id,
-        )
+        db_blog = await deps.repo.create(blog_full, CreateUpdate())
         return cast(BlogResponse, _validate_blog_response(BlogResponse, db_blog))
     except DuplicateEntryError as e:
         logger.exception(f"Duplicate slug '{blog.slug}' detected on blog creation")
@@ -1040,7 +1038,7 @@ async def update_blog(
     existing = await _get_blog_or_404(deps.blog_id, deps.repo)
     check_owner_or_admin(existing.author_id, deps.current_user, "update_blog")
 
-    if not (db_blog := await deps.repo.update(deps.blog_id, blog_update)):
+    if not (db_blog := await deps.repo.update(blog_update, CreateUpdate(user_id=deps.blog_id))):
         _404_not_found(deps.blog_id, by="id")
 
     await delete_cache_keys(existing, db_blog, request)

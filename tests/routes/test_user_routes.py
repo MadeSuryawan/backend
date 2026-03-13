@@ -85,7 +85,9 @@ async def test_create_user_uses_detected_timezone_when_request_timezone_is_utc(
     assert response.status_code == 201
     assert response.json()["username"] == "createduser"
     mock_detect_timezone.assert_awaited_once()
-    assert mock_repo.create.await_args.kwargs["timezone"] == "Asia/Makassar"
+    # Access timezone from CreateUpdate dataclass (passed as positional arg)
+    create_user_data = mock_repo.create.await_args.args[1]
+    assert create_user_data.timezone == "Asia/Makassar"
     mock_invalidate.assert_awaited_once_with(ANY, created_user.uuid, created_user.username)
 
 

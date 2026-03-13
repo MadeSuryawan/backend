@@ -11,6 +11,7 @@ from pytest import fixture
 from app.clients.redis_client import RedisClient
 from app.main import app
 from app.managers.login_attempt_tracker import LoginAttemptTracker
+from app.managers.password_manager import Argon2Hasher
 from app.managers.rate_limiter import limiter
 from app.managers.token_blacklist import TokenBlacklist
 from app.managers.token_manager import create_access_token, create_refresh_token
@@ -132,9 +133,20 @@ def expired_access_token(sample_user: UserDB) -> str:
 
 
 @fixture
-async def client() -> AsyncGenerator[AsyncClient]:
+def mock_password_hasher() -> MagicMock:
+    """Create a mock password hasher for testing."""
+    mock = MagicMock(spec=Argon2Hasher)
+    mock.hash_password = AsyncMock(return_value="$argon2id$v=19$m=65536,t=3,p=4$hashed")
+    mock.verify_password = AsyncMock(return_value=True)
+    return mock
+
+
+@fixture
+async def client(mock_password_hasher: MagicMock) -> AsyncGenerator[AsyncClient]:
     """Create async HTTP client for testing auth endpoints."""
     limiter.enabled = False
+    # Set up password_hasher in app state for tests
+    app.state.password_hasher = mock_password_hasher
     async with AsyncClient(
         base_url="http://test",
         transport=ASGITransport(app=app),

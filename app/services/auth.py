@@ -16,7 +16,7 @@ from app.errors.auth import (
 )
 from app.logging import get_logger
 from app.managers.login_attempt_tracker import LoginAttemptTracker
-from app.managers.password_manager import hash_password, verify_password
+from app.managers.password_manager import Argon2Hasher
 from app.managers.token_blacklist import TokenBlacklist
 from app.managers.token_manager import (
     create_access_token,
@@ -29,6 +29,7 @@ from app.managers.token_manager import (
 )
 from app.models import UserDB
 from app.repositories import UserRepository
+from app.repositories.base import CreateUpdate
 from app.schemas.auth import Token, VerificationTokenData
 from app.schemas.user import UserCreate
 from app.services.email_template import EmailTemplate
@@ -88,11 +89,17 @@ class AuthService:
             return await self.user_repo.get_by_email(identifier)
         return await self.user_repo.get_by_username(identifier)
 
-    async def authenticate_user(self, username_or_email: str, password: str | None) -> UserDB:
+    async def authenticate_user(
+        self,
+        hasher: Argon2Hasher,
+        username_or_email: str,
+        password: str | None,
+    ) -> UserDB:
         """
         Authenticate a user by username or email and password.
 
         Args:
+            hasher: Password hasher dependency
             username_or_email: User username or email
             password: User password
 
@@ -110,7 +117,7 @@ class AuthService:
             await self._record_failed_attempt(username_or_email)
             raise InvalidCredentialsError
 
-        if not await verify_password(password, user.password_hash):
+        if not await hasher.verify_password(password, user.password_hash):
             await self._record_failed_attempt(username_or_email)
             raise InvalidCredentialsError
 
@@ -546,11 +553,12 @@ class AuthService:
         await self._redis.delete(unused_key)
         await self._redis.set(used_key, "1", ex=expires_hours * 3600)
 
-    async def reset_password(self, user_id: UUID, new_password: str) -> bool:
+    async def reset_password(self, hasher: Argon2Hasher, user_id: UUID, new_password: str) -> bool:
         """
         Reset user password.
 
         Args:
+            hasher: Password hasher dependency
             user_id: User UUID
             new_password: New password to set
 
@@ -562,7 +570,7 @@ class AuthService:
             return False
 
         # Hash the new password
-        password_hash = await hash_password(new_password)
+        password_hash = await hasher.hash_password(new_password)
         user.password_hash = password_hash
         user.updated_at = datetime.now(UTC)
         await self.user_repo.add_and_refresh(user)
@@ -635,6 +643,7 @@ class AuthService:
 
     async def change_password(
         self,
+        hasher: Argon2Hasher,
         user_id: UUID,
         old_password: str,
         new_password: str,
@@ -646,6 +655,7 @@ class AuthService:
         and invalidates all existing refresh tokens for security.
 
         Args:
+            hasher: Password hasher dependency
             user_id: User UUID
             old_password: Current password for verification
             new_password: New password to set
@@ -659,11 +669,11 @@ class AuthService:
             return False
 
         # Verify old password
-        if not await verify_password(old_password, user.password_hash):
+        if not await hasher.verify_password(old_password, user.password_hash):
             return False
 
         # Hash and set new password
-        password_hash = await hash_password(new_password)
+        password_hash = await hasher.hash_password(new_password)
         user.password_hash = password_hash
         user.updated_at = datetime.now(UTC)
         await self.user_repo.add_and_refresh(user)
@@ -679,6 +689,7 @@ class AuthService:
 
     async def get_or_create_oauth_user(
         self,
+        hasher: Argon2Hasher,
         user_info: dict[str, Any],
         provider: str,
         timezone: str = "UTC",
@@ -687,6 +698,7 @@ class AuthService:
         Get existing user or create new one from OAuth data.
 
         Args:
+            hasher: Password hasher dependency
             user_info: Dictionary containing user info from provider
             provider: Provider name (google, wechat)
             timezone: User's timezone (default: UTC)
@@ -694,13 +706,11 @@ class AuthService:
         Returns:
             UserDB: The user entity
         """
-        email = user_info.get("email")
-        if not email:
+        if not (email := user_info.get("email")):
             msg = "Email required from identity provider"
             raise ValueError(msg)
 
-        existing_user = await self.user_repo.get_by_email(email)
-        if existing_user:
+        if existing_user := await self.user_repo.get_by_email(email):
             # OAuth providers verify email, so ensure user is marked as verified
             if not existing_user.is_verified:
                 existing_user.is_verified = True
@@ -713,7 +723,7 @@ class AuthService:
         random_suffix = str(uuid4())[:4]
         final_username = f"{base_username}_{random_suffix}"
 
-        user_create = UserCreate(
+        schema = UserCreate(
             userName=final_username,
             email=email,
             password=None,
@@ -722,10 +732,11 @@ class AuthService:
             profilePicture=user_info.get("picture"),
         )
 
-        return await self.user_repo.create(
-            user_create,
+        args = CreateUpdate(
+            hasher=hasher,
+            timezone=timezone,
             auth_provider=provider,
             provider_id=user_info.get("sub"),
             is_verified=True,
-            timezone=timezone,
         )
+        return await self.user_repo.create(schema, args)

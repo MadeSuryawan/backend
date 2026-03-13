@@ -30,31 +30,22 @@ Implement the indexing strategies and architectural optimizations identified in 
 Normalize email to lowercase **before** insertion and lookup:
 
 ```diff
- async def create(
-     self,
-     schema: UserCreate,
-     timezone: str | None = None,
-     auth_provider: str = "email",
-     provider_id: str | None = None,
-     *,
-     is_verified: bool = False,
-     **kwargs: dict[str, Any],
- ) -> UserDB:
-     password_hash = None
-     if schema.password:
-         password_hash = await hash_password(schema.password.get_secret_value())
+ async def create(self, deps: CreateUserData) -> UserDB:
+    schema = deps.schema
+    password_hash = None
+    if schema.password:
+        password_hash = await deps.hasher.hash_password(schema.password.get_secret_value())
 
-+    # Normalize email to lowercase for consistent duplicate detection
-+    normalized_email = schema.email.strip().lower()
+    # Normalize email to lowercase for consistent duplicate detection
+    normalized_email = schema.email.strip().lower()
 
-     db_user = UserDB(
-         username=schema.username,
--        email=schema.email,
-+        email=normalized_email,
-         password_hash=password_hash,
-         ...
-     )
-     return await self.add_and_refresh(db_user)
+    db_user = UserDB(
+        username=schema.username,
+        email=normalized_email,
+        password_hash=password_hash,
+        ...
+    )
+    return await self.add_and_refresh(db_user)
 ```
 
 #### [MODIFY] [user.py](/app/repositories/user.py)
@@ -160,12 +151,13 @@ Add a pre-check before the INSERT:
 +from sqlalchemy import select
 +from app.errors.database import DuplicateEntryError
 +
- async def create(self, schema: UserCreate, ...) -> UserDB:
-     password_hash = None
-     if schema.password:
-         password_hash = await hash_password(schema.password.get_secret_value())
+ async def create(self, deps: CreateUserData) -> UserDB:
+    schema = deps.schema
+    password_hash = None
+    if schema.password:
+        password_hash = await deps.hasher.hash_password(schema.password.get_secret_value())
 
-     normalized_email = schema.email.strip().lower()
+    normalized_email = schema.email.strip().lower()
 
 +    # Pre-check: detect duplicates before INSERT to avoid
 +    # unnecessary transaction rollbacks and WAL writes.
