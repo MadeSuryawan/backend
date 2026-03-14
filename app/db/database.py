@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
 from app.configs.settings import settings
 from app.logging.logging import get_logger
@@ -60,9 +59,9 @@ engine: AsyncEngine = create_async_engine(
 if settings.DEBUG:
     _configure_engine_events(engine)
 
-async_session_maker: async_sessionmaker[SQLModelAsyncSession] = async_sessionmaker(
+async_session_maker: async_sessionmaker[AsyncSession] = async_sessionmaker(
     engine,
-    class_=SQLModelAsyncSession,
+    class_=AsyncSession,
     expire_on_commit=False,
     autocommit=False,
     autoflush=False,
